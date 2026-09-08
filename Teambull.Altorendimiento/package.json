@@ -1,4 +1,4 @@
- {
+{
   "name": "team-bull",
   "private": true,
   "version": "0.1.0",
@@ -18,3 +18,4 @@
     "@vitejs/plugin-react": "^4.2.1"
   }
 }
+ 
