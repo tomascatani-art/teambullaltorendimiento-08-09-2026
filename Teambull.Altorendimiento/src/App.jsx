@@ -970,6 +970,14 @@ const TEMPLATES_INICIAL = [
     ], rm: [],
   }},
 ];
+// Combina las plantillas ya guardadas (en la nube) con las que vienen nuevas en el código —
+// así, cada vez que agrego una plantilla nueva en una actualización futura, aparece sola sin
+// pisar ni duplicar las que el coach ya tiene guardadas o modificó.
+function combinarPlantillas(guardadas) {
+  const existentes = new Set((guardadas || []).map((t) => t.id));
+  const nuevasDelCodigo = TEMPLATES_INICIAL.filter((t) => !existentes.has(t.id));
+  return [...(guardadas || []), ...nuevasDelCodigo];
+}
 
 /* ---------- Alumnos/as (basado en tu planilla real) ---------- */
 const HELENA_PLAN = {
@@ -3473,7 +3481,7 @@ export default function GymPlannerCoachApp() {
           if (typeof remoto.diasAvisoPlan === "number") setDiasAvisoPlan(remoto.diasAvisoPlan);
           if (remoto.coaches) setCoaches(remoto.coaches);
           if (remoto.alumnos) setAlumnos(sanearAlumnos(remoto.alumnos) || ALUMNOS_INICIAL);
-          if (remoto.templates) setTemplates(remoto.templates);
+          setTemplates(combinarPlantillas(remoto.templates));
           if (typeof remoto._uidMax === "number" && remoto._uidMax > _uid) _uid = remoto._uidMax;
         }
       }
@@ -3499,7 +3507,7 @@ export default function GymPlannerCoachApp() {
           if (typeof remoto.diasAvisoPlan === "number") setDiasAvisoPlan(remoto.diasAvisoPlan);
           if (remoto.coaches) setCoaches(remoto.coaches);
           if (remoto.alumnos) setAlumnos(sanearAlumnos(remoto.alumnos) || ALUMNOS_INICIAL);
-          if (remoto.templates) setTemplates(remoto.templates);
+          setTemplates(combinarPlantillas(remoto.templates));
         }
       }
     }, 15000);
