@@ -30,8 +30,17 @@ const GYM_PATTERN_B64 = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3d
    ========================================================= */
 const CATALOGO = [
   { categoria: "Olímpico", emoji: "🏋️", color: "#FF6B35", material: "Barra olímpica", movimientos: ["Arranque", "Cargada", "Envión", "Cargada y Envión", "Push Press", "Push Jerk", "Split Jerk", "Power Jerk", "Cargada de potencia", "Arranque de potencia", "Primer tirón", "Segundo tirón", "Sentadilla frontal olímpica", "Sentadilla overhead", "Snatch balance", "Muscle snatch", "Tall snatch", "Tall clean", "Clean pull", "Snatch pull", "Behind the neck jerk", "Press Jerk"], variantes: ["Desde el piso", "Colgante (hang)", "Desde bloques", "Con pausa en la rodilla", "Con pausa bajo la rodilla", "Tempo lento", "Con banda elástica", "Con cadenas", "Técnica (barra vacía)", "Velocidad máxima"] },
-  { categoria: "Fuerza", emoji: "💪", color: "#FF6B35", material: "Barra / Mancuernas", movimientos: ["Sentadilla trasera", "Sentadilla frontal", "Sentadilla búlgara", "Sentadilla sumo", "Sentadilla hack", "Sentadilla goblet", "Peso muerto convencional", "Peso muerto sumo", "Peso muerto rumano", "Peso muerto piernas rígidas", "Peso muerto con trap bar", "Hip thrust", "Puente de glúteo", "Press banca plano", "Press banca inclinado", "Press banca declinado", "Press de pecho con mancuernas", "Press militar de pie", "Press militar sentado", "Press de hombro sentado", "Press Arnold", "Press de hombro con mancuernas", "Estocada con mancuernas", "Remo con barra", "Remo con mancuerna", "Remo en polea", "Remo en máquina", "Jalón al pecho", "Dominadas lastradas", "Curl de bíceps con barra", "Curl de bíceps con mancuerna", "Extensión de tríceps en polea", "Press francés", "Elevaciones laterales", "Encogimientos de trapecio"], variantes: ["Con pausa", "Tempo 3-1-1", "Con banda elástica", "Con cadenas", "Unilateral", "Con déficit", "Elevado en cajón", "Agarre cerrado", "Agarre ancho", "Con cinturón", "Sin calzado", "Excéntrica enfatizada", "Isométrico en rango medio", "1.5 repeticiones"] },
-  { categoria: "Calistenia", emoji: "🤸", color: "#7DD6C0", material: "Peso corporal", movimientos: ["Flexión de brazos", "Dominada", "Fondos en paralelas", "Zancada", "Plancha frontal", "Elevación de piernas colgado", "Muscle up", "Pistol squat", "Sentadilla búlgara sin peso", "Handstand push-up", "L-sit", "Front lever", "Australian pull-up", "Salto al cajón sin impulso", "Fondos en banco"], variantes: ["Estándar", "Diamante", "Arquera", "Con palmada", "Declinada", "Inclinada", "Con lastre", "Excéntrica lenta", "Isométrica", "Asistida con banda", "Explosiva"] },
+  // "Fuerza" separado en 3 subgrupos: las variantes de agarre (agarre ancho/cerrado) solo tienen
+  // sentido en ejercicios de empuje/tracción con barra o mancuerna — no en sentadillas ni en
+  // ejercicios de aislamiento, así que cada grupo tiene su propia lista de variantes coherente.
+  { categoria: "Fuerza", emoji: "💪", color: "#FF6B35", material: "Barra / Mancuernas", movimientos: ["Sentadilla trasera", "Sentadilla frontal", "Sentadilla búlgara", "Sentadilla sumo", "Sentadilla hack", "Sentadilla goblet", "Peso muerto convencional", "Peso muerto sumo", "Peso muerto rumano", "Peso muerto piernas rígidas", "Peso muerto con trap bar", "Hip thrust", "Puente de glúteo", "Estocada con mancuernas"], variantes: ["Con pausa", "Tempo 3-1-1", "Con banda elástica", "Con cadenas", "Unilateral", "Con déficit", "Elevado en cajón", "Con cinturón", "Sin calzado", "Excéntrica enfatizada", "Isométrico en rango medio", "1.5 repeticiones"] },
+  { categoria: "Fuerza", emoji: "💪", color: "#FF6B35", material: "Barra / Mancuernas", movimientos: ["Press banca plano", "Press banca inclinado", "Press banca declinado", "Press de pecho con mancuernas", "Press militar de pie", "Press militar sentado", "Press de hombro sentado", "Press Arnold", "Press de hombro con mancuernas", "Remo con barra", "Remo con mancuerna", "Remo en polea", "Remo en máquina", "Jalón al pecho", "Dominadas lastradas"], variantes: ["Con pausa", "Tempo 3-1-1", "Con banda elástica", "Con cadenas", "Unilateral", "Agarre cerrado", "Agarre ancho", "Excéntrica enfatizada", "Isométrico en rango medio", "1.5 repeticiones"] },
+  { categoria: "Fuerza", emoji: "💪", color: "#FF6B35", material: "Barra / Mancuernas", movimientos: ["Curl de bíceps con barra", "Curl de bíceps con mancuerna", "Extensión de tríceps en polea", "Press francés", "Elevaciones laterales", "Encogimientos de trapecio"], variantes: ["Con pausa", "Tempo 3-1-1", "Con banda elástica", "Unilateral", "Excéntrica enfatizada", "1.5 repeticiones"] },
+  // "Calistenia" separado en 2 subgrupos: las variantes de tipo de agarre/apoyo (diamante, arquera,
+  // con palmada) son propias de ejercicios de empuje/tracción de brazos — no se aplican a
+  // sentadillas a una pierna, zancadas, ni ejercicios de core/estático.
+  { categoria: "Calistenia", emoji: "🤸", color: "#7DD6C0", material: "Peso corporal", movimientos: ["Flexión de brazos", "Dominada", "Fondos en paralelas", "Muscle up", "Handstand push-up", "Australian pull-up", "Fondos en banco"], variantes: ["Estándar", "Diamante", "Arquera", "Con palmada", "Declinada", "Inclinada", "Con lastre", "Excéntrica lenta", "Asistida con banda", "Explosiva"] },
+  { categoria: "Calistenia", emoji: "🤸", color: "#7DD6C0", material: "Peso corporal", movimientos: ["Zancada", "Plancha frontal", "Elevación de piernas colgado", "Pistol squat", "Sentadilla búlgara sin peso", "L-sit", "Front lever", "Salto al cajón sin impulso"], variantes: ["Estándar", "Con lastre", "Excéntrica lenta", "Isométrica", "Asistida con banda", "Explosiva"] },
   { categoria: "Pliometría", emoji: "🦘", color: "#FF6B35", material: "Cajón / Ninguno", movimientos: ["Salto al cajón", "Salto en profundidad", "Salto con contramovimiento", "Salto a una pierna", "Burpee", "Salto de longitud", "Bound lateral", "Skipping con salto", "Salto con banda", "Salto vertical", "Salto triple", "Bounding", "Salto con giro"], variantes: ["Bajo", "Medio", "Alto", "Doble contacto", "Reactivo", "Con carga", "Máxima altura", "Series cortas"] },
   { categoria: "Core", emoji: "🔥", color: "#7DD6C0", material: "Peso corporal / Disco", movimientos: ["Plancha frontal", "Plancha lateral", "Rueda abdominal", "Elevación de piernas", "Giro ruso", "Dead bug", "Pallof press", "Hollow hold", "Arco (superman)", "Toes to bar", "Windshield wipers", "Farmer carry", "Suitcase carry", "Bird dog"], variantes: ["Estándar", "Con peso", "Unilateral", "En superficie inestable", "Tempo lento", "Isométrico largo", "Con banda", "Explosivo"] },
   { categoria: "Movilidad", emoji: "🔄", color: "#8B8698", material: "Banda / Peso corporal", movimientos: ["Movilidad de cadera", "Movilidad de tobillo", "Movilidad torácica", "Movilidad de hombro", "Movilidad de columna", "Movilidad de muñeca", "Cat-camel", "90/90 de cadera", "Rotación de cadera en cuadrupedia", "Círculos de brazos", "Balanceo de pierna (leg swing)", "Apertura de cadera con paso", "Rotación de tronco de pie", "Movilidad de tobillo en pared", "World's greatest stretch", "Inchworm", "Liberación miofascial"], variantes: ["Dinámica", "Activa", "Con banda", "Lenta y controlada", "Amplitud máxima", "Por tiempo", "Series cortas"] },
@@ -49,6 +58,15 @@ const DIFICULTADES = ["Principiante", "Intermedio", "Avanzado"];
 function generarEjercicios() {
   const out = []; let id = 1;
   CATALOGO.forEach(({ categoria, emoji, color, material, movimientos, variantes }) => {
+    if (!variantes || variantes.length === 0) {
+      // Sin lista de variantes: el nombre ya viene completo (ejercicios combinados, nombres propios,
+      // o estiramientos con nombre puntual) — no le agregamos nada más.
+      movimientos.forEach((nombre) => {
+        out.push({ id: `x${id}`, nombre, categoria, emoji, color, material, dificultad: DIFICULTADES[id % 3], video: `https://www.youtube.com/results?search_query=${encodeURIComponent(nombre + " técnica")}` });
+        id++;
+      });
+      return;
+    }
     movimientos.forEach((m) => variantes.forEach((v) => {
       const nombre = `${m} — ${v}`;
       out.push({ id: `x${id}`, nombre, categoria, emoji, color, material, dificultad: DIFICULTADES[id % 3], video: `https://www.youtube.com/results?search_query=${encodeURIComponent(nombre + " técnica")}` });
@@ -58,7 +76,6 @@ function generarEjercicios() {
   return out;
 }
 const EXERCISES = generarEjercicios();
-const CATEGORIAS = ["Todos", ...CATALOGO.map((c) => c.categoria)];
 
 // Roles posibles de un ejercicio dentro de la sesión, cada uno con su color fijo para reconocerlo de un vistazo.
 const ROLES_EJERCICIO = [
@@ -486,10 +503,129 @@ const EJERCICIOS_REALES_TOMAS = [
   { nombre: "remo bajo  1 brazo con mancuerna", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
   { nombre: "salto al cajon desde sentado", categoria: "Pliometría", emoji: "🦘", color: "#FF6B35" },
   { nombre: "subida al cajón con barra", categoria: "Pliometría", emoji: "🦘", color: "#FF6B35" },
+
+  // --- Agregados de las planificaciones reales que mandó Tomás (natación) ---
+  { nombre: "Floor escorpion mobility exercise", categoria: "Movilidad", emoji: "🔄", color: "#8B8698" },
+  { nombre: "Rotación de tren superior con banda", categoria: "Movilidad", emoji: "🔄", color: "#8B8698" },
+  { nombre: "Sentadilla + halo", categoria: "Complejos", emoji: "🔗", color: "#F2A93B" },
+  { nombre: "Movilidad de hombros boca abajo", categoria: "Movilidad", emoji: "🔄", color: "#8B8698" },
+  { nombre: "Rotación columna torácica", categoria: "Movilidad", emoji: "🔄", color: "#8B8698" },
+  { nombre: "Rotación torácica en split", categoria: "Movilidad", emoji: "🔄", color: "#8B8698" },
+  { nombre: "Rotación side to side", categoria: "Movilidad", emoji: "🔄", color: "#8B8698" },
+  { nombre: "Kneeling hip flex", categoria: "Movilidad", emoji: "🔄", color: "#8B8698" },
+  { nombre: "Spiderman mov lumbar", categoria: "Movilidad", emoji: "🔄", color: "#8B8698" },
+  { nombre: "Movilidad tren superior", categoria: "Movilidad", emoji: "🔄", color: "#8B8698" },
+  { nombre: "Movilidad de hombro con banda aducción/abducción", categoria: "Movilidad", emoji: "🔄", color: "#8B8698" },
+  { nombre: "Movilidad de cadera con banda lateral en estocada", categoria: "Movilidad", emoji: "🔄", color: "#8B8698" },
+  { nombre: "Zona media en estocada con disco", categoria: "Movilidad", emoji: "🔄", color: "#8B8698" },
+  { nombre: "Tirón de colgado con barra (vacía)", categoria: "Olímpico", emoji: "🏋️", color: "#FF6B35" },
+  { nombre: "Crab reach", categoria: "Movilidad", emoji: "🔄", color: "#8B8698" },
+  { nombre: "Boots strappers", categoria: "Movilidad", emoji: "🔄", color: "#8B8698" },
+  { nombre: "Shoulder extension c/baston", categoria: "Movilidad", emoji: "🔄", color: "#8B8698" },
+  { nombre: "Abdominales bisagra", categoria: "Core", emoji: "🔥", color: "#7DD6C0" },
+  { nombre: "Sentadilla 90 + rotación", categoria: "Complejos", emoji: "🔗", color: "#F2A93B" },
+  { nombre: "Buenos días a sentadilla", categoria: "Complejos", emoji: "🔗", color: "#F2A93B" },
+  { nombre: "Saltos 1 corto/1 largo/1 hacia adelante", categoria: "Pliometría", emoji: "🦘", color: "#FF6B35" },
+  { nombre: "Brazada el estilo que van a nadar", categoria: "Natación en seco", emoji: "🏊", color: "#33D6A6" },
+  { nombre: "Cargada + 2do tiempo tijera", categoria: "Complejos", emoji: "🔗", color: "#F2A93B" },
+  { nombre: "Lanzamiento de MB + extensión de cadera", categoria: "Complejos", emoji: "🔗", color: "#F2A93B" },
+  { nombre: "Salto al cajón + rotación a 1 pie", categoria: "Complejos", emoji: "🔗", color: "#F2A93B" },
+  { nombre: "Puente de glúteo + lanzamiento de MB", categoria: "Complejos", emoji: "🔗", color: "#F2A93B" },
+  { nombre: "Puente de glúteo + pull over", categoria: "Complejos", emoji: "🔗", color: "#F2A93B" },
+  { nombre: "Abdominales + lanzamiento de MB", categoria: "Complejos", emoji: "🔗", color: "#F2A93B" },
+  { nombre: "Plancha lateral + tracción con banda", categoria: "Complejos", emoji: "🔗", color: "#F2A93B" },
+  { nombre: "Push pull", categoria: "Complejos", emoji: "🔗", color: "#F2A93B" },
+  { nombre: "Tirón de cargada + cargada", categoria: "Complejos", emoji: "🔗", color: "#F2A93B" },
+  { nombre: "Segundo tirón de arranque", categoria: "Olímpico", emoji: "🏋️", color: "#FF6B35" },
+  { nombre: "Arodillada lanzamiento de MB pecho", categoria: "Complejos", emoji: "🔗", color: "#F2A93B" },
+  { nombre: "Colgados abdominales rodillas al pecho", categoria: "Core", emoji: "🔥", color: "#7DD6C0" },
+  { nombre: "Press de pecho con MB + puente de glúteo", categoria: "Complejos", emoji: "🔗", color: "#F2A93B" },
+  { nombre: "Plancha Copenhague", categoria: "Core", emoji: "🔥", color: "#7DD6C0" },
+  { nombre: "Prensa 45", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Sots press", categoria: "Olímpico", emoji: "🏋️", color: "#FF6B35" },
+  { nombre: "Landmine squat", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Landmine press", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Landmine split drop", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Front squat", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Colgado a 1 brazo isométrico", categoria: "Core", emoji: "🔥", color: "#7DD6C0" },
+  { nombre: "Cable pall off press", categoria: "Core", emoji: "🔥", color: "#7DD6C0" },
+  { nombre: "Retropulsión de escápula", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Vuelta al mundo con mancuerna", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Plancha barquito", categoria: "Core", emoji: "🔥", color: "#7DD6C0" },
+  { nombre: "Crunch lateral + plancha", categoria: "Complejos", emoji: "🔗", color: "#F2A93B" },
+  { nombre: "Windshield wiper abs", categoria: "Core", emoji: "🔥", color: "#7DD6C0" },
+  { nombre: "Fondo en accesorio", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Remo con barra en banco", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Pall off + extensión arriba de la cabeza", categoria: "Core", emoji: "🔥", color: "#7DD6C0" },
+  { nombre: "Remo en accesorio con barra (banco lumbar)", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Subida al cajón c/ barra", categoria: "Pliometría", emoji: "🦘", color: "#FF6B35" },
+  { nombre: "Salto al cajón sentada", categoria: "Pliometría", emoji: "🦘", color: "#FF6B35" },
+  { nombre: "Subida al cajón pesado", categoria: "Pliometría", emoji: "🦘", color: "#FF6B35" },
+  { nombre: "Sentadilla 3/4 con tope cajón", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Aductores isométrico con disco", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Pull down brazos extendidos", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Espinales en banco buena extensión", categoria: "Core", emoji: "🔥", color: "#7DD6C0" },
+  { nombre: "Espinales con rotación en fitball", categoria: "Core", emoji: "🔥", color: "#7DD6C0" },
+  { nombre: "Abs sobre fitball", categoria: "Core", emoji: "🔥", color: "#7DD6C0" },
+  { nombre: "Sentadilla isométrica con barra", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Press de hombro con empuje", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Press de pecho isométrico", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Face pull", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Saltos laterales", categoria: "Pliometría", emoji: "🦘", color: "#FF6B35" },
+  { nombre: "Puente de glúteo explosivo", categoria: "Pliometría", emoji: "🦘", color: "#FF6B35" },
+  { nombre: "Dominadas con banda elástica", categoria: "Calistenia", emoji: "🤸", color: "#7DD6C0" },
+  { nombre: "Dominadas australiana", categoria: "Calistenia", emoji: "🤸", color: "#7DD6C0" },
+  { nombre: "Remo 3 apoyo", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Bíceps con rotación", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Fondo en banco tríceps", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Plancha alta dinámica con kb", categoria: "Core", emoji: "🔥", color: "#7DD6C0" },
+  { nombre: "Apertura en banco", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Tríceps a 1 brazo en polea", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Plancha en fitball", categoria: "Core", emoji: "🔥", color: "#7DD6C0" },
+  { nombre: "Abs pelota mb", categoria: "Core", emoji: "🔥", color: "#7DD6C0" },
+  { nombre: "Fondos en paralelas con banda", categoria: "Calistenia", emoji: "🤸", color: "#7DD6C0" },
+  { nombre: "Apertura boca abajo", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Crunch en banco", categoria: "Core", emoji: "🔥", color: "#7DD6C0" },
+  { nombre: "Oblicuos de pie con disco", categoria: "Core", emoji: "🔥", color: "#7DD6C0" },
+  { nombre: "Estocada hacia atrás", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Remo a 1 brazo en banco con activación", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Cruce de polea unilateral", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Puente de glúteo a 1 pierna + press", categoria: "Complejos", emoji: "🔗", color: "#F2A93B" },
+  { nombre: "Abdominales bolita laterales", categoria: "Core", emoji: "🔥", color: "#7DD6C0" },
+  { nombre: "Plancha baja + kb", categoria: "Core", emoji: "🔥", color: "#7DD6C0" },
+  { nombre: "Caminata de granjero asimétrico", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Dominadas supino", categoria: "Calistenia", emoji: "🤸", color: "#7DD6C0" },
+  { nombre: "Crunch con disco (brazos extendidos)", categoria: "Core", emoji: "🔥", color: "#7DD6C0" },
+  { nombre: "Oblicuos en banco", categoria: "Core", emoji: "🔥", color: "#7DD6C0" },
+  { nombre: "Ladmine press", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Hiperextensión con peso", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Windmill", categoria: "Kettlebell", emoji: "🔔", color: "#FF6B35" },
+  { nombre: "Sentadilla barra libre", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Elevación de cadera", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Push press con toque de hombro", categoria: "Olímpico", emoji: "🏋️", color: "#FF6B35" },
+  { nombre: "Jalón unilateral en estocada", categoria: "Fuerza", emoji: "💪", color: "#FF6B35" },
+  { nombre: "Espinales en banco \"Y\"", categoria: "Core", emoji: "🔥", color: "#7DD6C0" },
+  { nombre: "Lizard stretch", categoria: "Flexibilidad", emoji: "🧘", color: "#7DD6C0" },
+  { nombre: "Pigeon stretch", categoria: "Flexibilidad", emoji: "🧘", color: "#7DD6C0" },
+  { nombre: "Butterfly stretch", categoria: "Flexibilidad", emoji: "🧘", color: "#7DD6C0" },
+  { nombre: "Prone bent arm stretch", categoria: "Flexibilidad", emoji: "🧘", color: "#7DD6C0" },
+  { nombre: "Sphinx stretch", categoria: "Flexibilidad", emoji: "🧘", color: "#7DD6C0" },
+  { nombre: "Postura del niño (child's pose)", categoria: "Flexibilidad", emoji: "🧘", color: "#7DD6C0" },
+  { nombre: "Thread the needle", categoria: "Flexibilidad", emoji: "🧘", color: "#7DD6C0" },
+  { nombre: "Seated biceps stretch", categoria: "Flexibilidad", emoji: "🧘", color: "#7DD6C0" },
+  { nombre: "Half hero reclining stretch", categoria: "Flexibilidad", emoji: "🧘", color: "#7DD6C0" },
+  { nombre: "Supine twist stretch", categoria: "Flexibilidad", emoji: "🧘", color: "#7DD6C0" },
+  { nombre: "Supine butterfly stretch", categoria: "Flexibilidad", emoji: "🧘", color: "#7DD6C0" },
+  { nombre: "Kneeling t-spine (estático)", categoria: "Flexibilidad", emoji: "🧘", color: "#7DD6C0" },
+  { nombre: "Downward dog stretch", categoria: "Flexibilidad", emoji: "🧘", color: "#7DD6C0" },
+  { nombre: "Kneeling hamstring stretch", categoria: "Flexibilidad", emoji: "🧘", color: "#7DD6C0" },
 ];
 EJERCICIOS_REALES_TOMAS.forEach((it, i) => {
   EXERCISES.push({ id: `real${i}`, nombre: it.nombre, categoria: it.categoria, emoji: it.emoji, color: it.color, material: "Según planilla", dificultad: DIFICULTADES[i % 3], video: `https://www.youtube.com/results?search_query=${encodeURIComponent(it.nombre + " técnica")}` });
 });
+// Se calcula recién acá (no antes) para que incluya también las categorías que solo existen
+// en EJERCICIOS_REALES_TOMAS (como "Complejos"), no solo las de CATALOGO.
+const CATEGORIAS = ["Todos", ...new Set(EXERCISES.map((e) => e.categoria))];
 const findEx = (nombre) => EXERCISES.find((e) => e.nombre === nombre);
 // Extrae el ID de un video de YouTube de cualquier formato de link (watch, youtu.be, shorts).
 // Si es un link de búsqueda (con varios resultados, sin un video puntual), devuelve null.
@@ -1262,7 +1398,7 @@ function ExercisePicker({ onPick, onClose, version }) {
   );
 }
 
-function FilaEjercicio({ fila, onChange, onRemove, onAddToLibrary }) {
+function FilaEjercicio({ fila, onChange, onRemove, onAddToLibrary, rolesPersonalizados, onAgregarRolPersonalizado }) {
   const set = (field) => (v) => onChange({ ...fila, [field]: v });
   const setSemana = (i, v) => { const s = [...fila.semanas]; s[i] = v; onChange({ ...fila, semanas: s }); };
   const addSemana = () => onChange({ ...fila, semanas: [...fila.semanas, fila.semanas[fila.semanas.length - 1] || ""] });
@@ -1273,7 +1409,8 @@ function FilaEjercicio({ fila, onChange, onRemove, onAddToLibrary }) {
   // (los que ya vienen cargados por tipo de movimiento), o como último recurso una búsqueda de YouTube.
   const videoActual = videoDe(fila);
   const esBusqueda = videoActual.includes("youtube.com/results");
-  const rol = rolDe(fila.rol);
+  const todosLosRoles = [...ROLES_EJERCICIO, ...(rolesPersonalizados || [])];
+  const rol = todosLosRoles.find((r) => r.id === fila.rol);
   // Si el nombre que escribiste no existe en la biblioteca general, ofrecemos guardarlo ahí también
   // (con un toque, opcional) — así queda disponible para cualquier otro plan en el futuro.
   const nombreLimpio = fila.nombre.trim();
@@ -1281,9 +1418,20 @@ function FilaEjercicio({ fila, onChange, onRemove, onAddToLibrary }) {
   const guardarEnBiblioteca = () => {
     onAddToLibrary({ id: uid(), nombre: nombreLimpio, categoria: "Otro", emoji: fila.emoji || "⭐", color: "#7DD6C0", material: "Sin especificar", dificultad: "Intermedio", video: fila.video || `https://www.youtube.com/results?search_query=${encodeURIComponent(nombreLimpio + " técnica")}`, custom: true });
   };
+  const [creandoRol, setCreandoRol] = useState(false);
+  const [nombreRolNuevo, setNombreRolNuevo] = useState("");
+  const PALETA_ROLES = ["#5AA0E6", "#FF6B35", "#E85D5D", "#F2A93B", "#4ADE80", "#AA6EE6", "#7DD6C0", "#FFC94A", "#8BC98A", "#4FD1E8", "#D97D9C", "#94A3B8"];
+  const crearRolNuevo = () => {
+    const nombre = nombreRolNuevo.trim();
+    if (!nombre) return;
+    const color = PALETA_ROLES[(ROLES_EJERCICIO.length + (rolesPersonalizados?.length || 0)) % PALETA_ROLES.length];
+    onAgregarRolPersonalizado(nombre, color);
+    setNombreRolNuevo("");
+    setCreandoRol(false);
+  };
 
   return (
-    <div style={{ background: "#1C1A24", border: `1px solid ${rol ? rol.color : "#322E3D"}`, borderRadius: 8, padding: 8, marginBottom: 6 }}>
+    <div style={{ background: rol ? `${rol.color}38` : "#1C1A24", border: `1px solid ${rol ? rol.color : "#322E3D"}`, borderRadius: 8, padding: 8, marginBottom: 6 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2, gap: 6 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 0 }}>
           {fila.emoji && <span style={{ fontSize: 15, flexShrink: 0 }}>{fila.emoji}</span>}
@@ -1296,11 +1444,20 @@ function FilaEjercicio({ fila, onChange, onRemove, onAddToLibrary }) {
       )}
 
       <div className="font-body" style={{ fontSize: 9, color: "#8B8698", marginBottom: 3 }}>Rol en la sesión</div>
-      <div style={{ display: "flex", gap: 4, overflowX: "auto", flexWrap: "nowrap", paddingBottom: 2, marginBottom: 8 }}>
-        {ROLES_EJERCICIO.map((r) => (
+      <div style={{ display: "flex", gap: 4, overflowX: "auto", flexWrap: "nowrap", paddingBottom: 2, marginBottom: 4 }}>
+        {todosLosRoles.map((r) => (
           <button key={r.id} onClick={() => set("rol")(fila.rol === r.id ? null : r.id)} className="font-body" style={{ flexShrink: 0, background: fila.rol === r.id ? r.color : "#26232F", border: `1px solid ${r.color}`, borderRadius: 999, color: fila.rol === r.id ? "#121017" : r.color, fontWeight: 700, fontSize: 9, padding: "4px 9px", cursor: "pointer" }}>{r.label}</button>
         ))}
+        {onAgregarRolPersonalizado && (
+          <button onClick={() => setCreandoRol(!creandoRol)} className="font-body" style={{ flexShrink: 0, background: "#26232F", border: "1px dashed #8B8698", borderRadius: 999, color: "#8B8698", fontWeight: 700, fontSize: 9, padding: "4px 9px", cursor: "pointer" }}>+ Nuevo</button>
+        )}
       </div>
+      {creandoRol && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+          <input value={nombreRolNuevo} onChange={(e) => setNombreRolNuevo(e.target.value)} placeholder="Ej: Contraste francés" className="font-body" style={{ flex: 1, background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "6px 8px", fontSize: 11, boxSizing: "border-box" }} />
+          <button onClick={crearRolNuevo} className="font-body" style={{ background: "#7DD6C0", border: "none", borderRadius: 6, color: "#0B2A2E", fontWeight: 700, padding: "0 12px", cursor: "pointer", fontSize: 11 }}>Crear</button>
+        </div>
+      )}
 
       <button
         onClick={() => set("sinDescansoSiguiente")(!fila.sinDescansoSiguiente)}
@@ -1356,7 +1513,7 @@ function FilaEjercicio({ fila, onChange, onRemove, onAddToLibrary }) {
   );
 }
 
-function BloqueEditor({ bloque, onChange, onRemove, version, onAddToLibrary }) {
+function BloqueEditor({ bloque, onChange, onRemove, version, onAddToLibrary, rolesPersonalizados, onAgregarRolPersonalizado }) {
   const [picking, setPicking] = useState(false);
   const [custom, setCustom] = useState("");
   const setFila = (f) => onChange({ ...bloque, ejercicios: bloque.ejercicios.map((x) => (x.id === f.id ? f : x)) });
@@ -1385,7 +1542,7 @@ function BloqueEditor({ bloque, onChange, onRemove, version, onAddToLibrary }) {
             <button onClick={() => moverFila(i, 1)} disabled={i === bloque.ejercicios.length - 1} className="font-body" style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 5, color: i === bloque.ejercicios.length - 1 ? "#3A3646" : "#7DD6C0", fontSize: 10, width: 20, height: 20, cursor: i === bloque.ejercicios.length - 1 ? "default" : "pointer", padding: 0, lineHeight: "18px" }}>▼</button>
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <FilaEjercicio fila={f} onChange={setFila} onRemove={() => removeFila(f.id)} onAddToLibrary={onAddToLibrary} />
+            <FilaEjercicio fila={f} onChange={setFila} onRemove={() => removeFila(f.id)} onAddToLibrary={onAddToLibrary} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={onAgregarRolPersonalizado} />
             {f.sinDescansoSiguiente && i < bloque.ejercicios.length - 1 && (
               <div className="font-body" style={{ display: "flex", alignItems: "center", gap: 6, margin: "-2px 0 6px 8px", color: "#FFC94A", fontSize: 9, fontWeight: 700 }}>
                 <div style={{ width: 2, height: 14, background: "#FFC94A" }} />
@@ -1408,7 +1565,7 @@ function BloqueEditor({ bloque, onChange, onRemove, version, onAddToLibrary }) {
   );
 }
 
-function DiaEditor({ dia, onChange, onRemove, version, onAddToLibrary }) {
+function DiaEditor({ dia, onChange, onRemove, version, onAddToLibrary, rolesPersonalizados, onAgregarRolPersonalizado }) {
   const updateBloque = (id, u) => onChange({ ...dia, bloques: dia.bloques.map((b) => (b.id === id ? u : b)) });
   const removeBloque = (id) => onChange({ ...dia, bloques: dia.bloques.filter((b) => b.id !== id) });
   const addBloque = () => onChange({ ...dia, bloques: [...dia.bloques, mkBloque("Nuevo bloque")] });
@@ -1435,7 +1592,7 @@ function DiaEditor({ dia, onChange, onRemove, version, onAddToLibrary }) {
             </div>
           )}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <BloqueEditor bloque={b} onChange={(u) => updateBloque(b.id, u)} onRemove={() => removeBloque(b.id)} version={version} onAddToLibrary={onAddToLibrary} />
+            <BloqueEditor bloque={b} onChange={(u) => updateBloque(b.id, u)} onRemove={() => removeBloque(b.id)} version={version} onAddToLibrary={onAddToLibrary} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={onAgregarRolPersonalizado} />
           </div>
         </div>
       ))}
@@ -1444,7 +1601,7 @@ function DiaEditor({ dia, onChange, onRemove, version, onAddToLibrary }) {
   );
 }
 
-function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibrary }) {
+function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibrary, rolesPersonalizados, onAgregarRolPersonalizado }) {
   const [warmPicking, setWarmPicking] = useState(false);
   const [dragIdx, setDragIdx] = useState(null);
   const setMeta = (field) => (v) => onChange({ ...plan, meta: { ...plan.meta, [field]: v } });
@@ -1514,7 +1671,7 @@ function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibr
               {DIAS_SEMANA.map((ds) => <option key={ds} value={ds}>{ds}</option>)}
             </select>
           </div>
-          <DiaEditor dia={d} onChange={(u) => updateDia(d.id, u)} onRemove={() => removeDia(d.id)} version={version} onAddToLibrary={onAddToLibrary} />
+          <DiaEditor dia={d} onChange={(u) => updateDia(d.id, u)} onRemove={() => removeDia(d.id)} version={version} onAddToLibrary={onAddToLibrary} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={onAgregarRolPersonalizado} />
         </div>
       ))}
       <div style={{ display: "flex", gap: 6, marginBottom: 22 }}>
@@ -1752,7 +1909,7 @@ function NuevaAlumnaForm({ onCrear, onCancelar }) {
   );
 }
 
-function CoachAlumnos({ alumnos, selectedId, setSelectedId, templates, onAsignarPlantilla, onCopiarPlan, onGuardarComoPlantilla, onUpdatePlan, onUpdateAlumno, onDeleteAlumno, onAddAlumno, onSendMsg, onGuardarVersion, onRestaurarVersion, onGuardarHistorialRM, onAddToLibrary, version }) {
+function CoachAlumnos({ alumnos, selectedId, setSelectedId, templates, onAsignarPlantilla, onCopiarPlan, onGuardarComoPlantilla, onUpdatePlan, onUpdateAlumno, onDeleteAlumno, onAddAlumno, onSendMsg, onGuardarVersion, onRestaurarVersion, onGuardarHistorialRM, onAddToLibrary, version, coaches, coachIdActual, onCompartirAlumno, onDejarDeCompartir, rolesPersonalizados, onAgregarRolPersonalizado }) {
   const [creando, setCreando] = useState(false);
   const [credencialesNuevas, setCredencialesNuevas] = useState(null);
   const alumno = alumnos.find((a) => a.id === selectedId);
@@ -1787,10 +1944,10 @@ function CoachAlumnos({ alumnos, selectedId, setSelectedId, templates, onAsignar
       </div>
     );
   }
-  return <AlumnoDetalle alumno={alumno} alumnos={alumnos} templates={templates} onBack={() => setSelectedId(null)} onAsignarPlantilla={onAsignarPlantilla} onCopiarPlan={onCopiarPlan} onGuardarComoPlantilla={onGuardarComoPlantilla} onUpdatePlan={onUpdatePlan} onUpdateAlumno={onUpdateAlumno} onDeleteAlumno={() => { onDeleteAlumno(alumno.id); setSelectedId(null); }} onSendMsg={onSendMsg} onGuardarVersion={onGuardarVersion} onRestaurarVersion={onRestaurarVersion} onGuardarHistorialRM={onGuardarHistorialRM} onAddToLibrary={onAddToLibrary} version={version} />;
+  return <AlumnoDetalle alumno={alumno} alumnos={alumnos} templates={templates} onBack={() => setSelectedId(null)} onAsignarPlantilla={onAsignarPlantilla} onCopiarPlan={onCopiarPlan} onGuardarComoPlantilla={onGuardarComoPlantilla} onUpdatePlan={onUpdatePlan} onUpdateAlumno={onUpdateAlumno} onDeleteAlumno={() => { onDeleteAlumno(alumno.id); setSelectedId(null); }} onSendMsg={onSendMsg} onGuardarVersion={onGuardarVersion} onRestaurarVersion={onRestaurarVersion} onGuardarHistorialRM={onGuardarHistorialRM} onAddToLibrary={onAddToLibrary} version={version} coaches={coaches} coachIdActual={coachIdActual} onCompartirAlumno={onCompartirAlumno} onDejarDeCompartir={onDejarDeCompartir} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={onAgregarRolPersonalizado} />;
 }
 
-function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla, onCopiarPlan, onGuardarComoPlantilla, onUpdatePlan, onUpdateAlumno, onDeleteAlumno, onSendMsg, onGuardarVersion, onRestaurarVersion, onGuardarHistorialRM, onAddToLibrary, version }) {
+function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla, onCopiarPlan, onGuardarComoPlantilla, onUpdatePlan, onUpdateAlumno, onDeleteAlumno, onSendMsg, onGuardarVersion, onRestaurarVersion, onGuardarHistorialRM, onAddToLibrary, version, coaches, coachIdActual, onCompartirAlumno, onDejarDeCompartir, rolesPersonalizados, onAgregarRolPersonalizado }) {
   const [tab, setTab] = useState("plan");
   const [msg, setMsg] = useState("");
   const [confirmarBorrado, setConfirmarBorrado] = useState(false);
@@ -1817,6 +1974,7 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [alumno.id, ejerciciosConHistorialCoach.join(",")]);
   const [copiandoPlan, setCopiandoPlan] = useState(false);
+  const [compartiendoCoach, setCompartiendoCoach] = useState(false);
   const [guardandoPlantilla, setGuardandoPlantilla] = useState(false);
   const [nombrePlantillaNueva, setNombrePlantillaNueva] = useState("");
   const [viendoVersion, setViendoVersion] = useState(null);
@@ -1894,6 +2052,29 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
               ))}
             </div>
           )}
+          {coaches && coaches.length > 1 && (
+            <div style={{ marginBottom: 6 }}>
+              <button onClick={() => setCompartiendoCoach(!compartiendoCoach)} className="font-body" style={{ width: "100%", background: "rgba(90,160,230,0.1)", border: "1px dashed #5AA0E6", borderRadius: 8, color: "#5AA0E6", fontWeight: 700, fontSize: 10, padding: 9, cursor: "pointer" }}>🤝 Compartir con otro entrenador</button>
+            </div>
+          )}
+          {compartiendoCoach && (
+            <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 10 }}>
+              <div className="font-body" style={{ color: "#8B8698", fontSize: 10, marginBottom: 6 }}>Los entrenadores que agregues acá también van a poder ver y editar a {alumno.nombre}. Vos seguís teniendo acceso igual.</div>
+              {coaches.filter((c) => c.id !== coachIdActual).map((c) => {
+                const yaComparte = alumno.coachIds === null || alumno.coachIds.includes(c.id);
+                return (
+                  <div key={c.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 4 }}>
+                    <span className="font-body" style={{ color: "#F4F1EA", fontSize: 11 }}>{c.nombre}</span>
+                    {yaComparte ? (
+                      <button onClick={() => onDejarDeCompartir(alumno.id, c.id)} className="font-body" style={{ background: "none", border: "1px solid #E85D5D", borderRadius: 999, color: "#E85D5D", fontSize: 9, padding: "4px 10px", cursor: "pointer" }}>Ya lo ve — Quitar</button>
+                    ) : (
+                      <button onClick={() => onCompartirAlumno(alumno.id, c.id)} className="font-body" style={{ background: "#5AA0E6", border: "none", borderRadius: 999, color: "#0B1A2E", fontWeight: 700, fontSize: 9, padding: "4px 10px", cursor: "pointer" }}>Compartir</button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
             <button onClick={() => compartirPorWhatsApp(alumno)} className="font-body" style={{ flex: 1, background: "#25D366", border: "none", borderRadius: 8, color: "#0B2A2E", fontWeight: 700, fontSize: 10, padding: 9, cursor: "pointer" }}>💬 Enviar por WhatsApp</button>
             <button onClick={() => descargarPlanPDF(alumno)} className="font-body" style={{ flex: 1, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, color: "#8B8698", fontWeight: 700, fontSize: 10, padding: 9, cursor: "pointer" }}>⬇️ Descargar</button>
@@ -1939,7 +2120,7 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
           {historialPlan.length > 0 && (
             <button onClick={deshacerUltimoCambio} className="font-body" style={{ width: "100%", background: "rgba(255,201,74,0.1)", border: "1px solid #FFC94A", borderRadius: 8, color: "#FFC94A", fontWeight: 700, fontSize: 11, padding: 9, cursor: "pointer", marginBottom: 8 }}>↩️ Deshacer último cambio</button>
           )}
-          <PlanEditor plan={alumno.plan} onChange={cambiarPlanConHistorial} version={version} onGuardarHistorialRM={(ejercicio, valor) => onGuardarHistorialRM(alumno.id, ejercicio, valor)} onAddToLibrary={onAddToLibrary} />
+          <PlanEditor plan={alumno.plan} onChange={cambiarPlanConHistorial} version={version} onGuardarHistorialRM={(ejercicio, valor) => onGuardarHistorialRM(alumno.id, ejercicio, valor)} onAddToLibrary={onAddToLibrary} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={onAgregarRolPersonalizado} />
         </div>
       )}
 
@@ -2072,8 +2253,9 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
   );
 }
 
-function CoachPlantillas({ templates, alumnos, onAsignar, onCrearPlantilla, onAddToLibrary, version }) {
+function CoachPlantillas({ templates, alumnos, onAsignar, onCrearPlantilla, onAddToLibrary, version, rolesPersonalizados, onAgregarRolPersonalizado }) {
   const [targetOpen, setTargetOpen] = useState(null);
+  const [previewOpen, setPreviewOpen] = useState(null);
   const [creando, setCreando] = useState(false);
   const [nombre, setNombre] = useState("");
   const [categoria, setCategoria] = useState("Hipertrofia");
@@ -2097,7 +2279,7 @@ function CoachPlantillas({ templates, alumnos, onAsignar, onCrearPlantilla, onAd
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
             {["Hipertrofia", "Fuerza", "Potencia", "Running", "Natación", "Cross Training", "Pérdida de grasa", "Rehabilitación"].map((c) => <Pill key={c} active={categoria === c} onClick={() => setCategoria(c)}>{c}</Pill>)}
           </div>
-          <PlanEditor plan={plan} onChange={setPlan} version={version} onAddToLibrary={onAddToLibrary} />
+          <PlanEditor plan={plan} onChange={setPlan} version={version} onAddToLibrary={onAddToLibrary} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={onAgregarRolPersonalizado} />
           <button onClick={guardar} disabled={!nombre.trim() || plan.dias.length === 0} className="font-body" style={{ width: "100%", marginTop: 4, marginBottom: 20, background: (!nombre.trim() || plan.dias.length === 0) ? "#3A3646" : "#FF6B35", color: (!nombre.trim() || plan.dias.length === 0) ? "#8B8698" : "#121017", border: "none", borderRadius: 12, padding: "12px 0", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
             Guardar plantilla
           </button>
@@ -2115,7 +2297,35 @@ function CoachPlantillas({ templates, alumnos, onAsignar, onCrearPlantilla, onAd
           <div key={t.id} style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 14, padding: 14 }}>
             <div className="font-display" style={{ color: "#F4F1EA", fontSize: 14, fontWeight: 600 }}>{t.nombre}</div>
             <div className="font-body" style={{ color: "#7DD6C0", fontSize: 11, marginTop: 2, fontWeight: 600 }}>{t.categoria} · {t.plan.dias.length} días</div>
-            <button onClick={() => setTargetOpen(targetOpen === t.id ? null : t.id)} className="font-body" style={{ marginTop: 10, background: "#FF6B35", border: "none", borderRadius: 8, color: "#121017", fontWeight: 700, fontSize: 11, padding: "8px 12px", cursor: "pointer" }}>Usar plantilla</button>
+            <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+              <button onClick={() => { setPreviewOpen(previewOpen === t.id ? null : t.id); setTargetOpen(null); }} className="font-body" style={{ background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, color: "#8B8698", fontWeight: 700, fontSize: 11, padding: "8px 12px", cursor: "pointer" }}>👁️ Ver ejercicios</button>
+              <button onClick={() => { setTargetOpen(targetOpen === t.id ? null : t.id); setPreviewOpen(null); }} className="font-body" style={{ background: "#FF6B35", border: "none", borderRadius: 8, color: "#121017", fontWeight: 700, fontSize: 11, padding: "8px 12px", cursor: "pointer" }}>Usar plantilla</button>
+            </div>
+            {previewOpen === t.id && (
+              <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                {t.plan.calentamiento.length > 0 && (
+                  <div style={{ background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, padding: 10 }}>
+                    <div className="font-body" style={{ color: "#FF6B35", fontSize: 10, fontWeight: 700, marginBottom: 4 }}>🔥 ENTRADA EN CALOR</div>
+                    {t.plan.calentamiento.map((w) => (
+                      <div key={w.id} className="font-body" style={{ color: "#8B8698", fontSize: 11, marginBottom: 2 }}>• {w.nombre}{w.series && w.reps ? ` (${w.series}x${w.reps})` : ""}</div>
+                    ))}
+                  </div>
+                )}
+                {t.plan.dias.map((d) => (
+                  <div key={d.id} style={{ background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, padding: 10 }}>
+                    <div className="font-body" style={{ color: "#F4F1EA", fontSize: 11, fontWeight: 700, marginBottom: 4 }}>{d.nombre}</div>
+                    {d.bloques.map((b) => (
+                      <div key={b.id} style={{ marginBottom: 4 }}>
+                        <div className="font-body" style={{ color: "#7DD6C0", fontSize: 9, fontWeight: 700, marginBottom: 2 }}>{b.nombre}</div>
+                        {b.ejercicios.map((e) => (
+                          <div key={e.id} className="font-body" style={{ color: "#8B8698", fontSize: 11, marginLeft: 4 }}>• {e.nombre}{e.semanas?.[0] ? ` — ${e.semanas[0]}` : ""}</div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
             {targetOpen === t.id && (
               <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
                 {alumnos.map((a) => (
@@ -2418,7 +2628,7 @@ function formatObjetivo(obj) {
   return `Serie ${series} · Repeticiones ${reps}`;
 }
 
-function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota }) {
+function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizados }) {
   const dias = alumno.plan.dias;
   const [diaIdx, setDiaIdx] = useState(0);
   const ejercicios = flatEjercicios(dias[diaIdx]);
@@ -2491,10 +2701,10 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota }) {
           const done = tieneNota(pe.id);
           const obj = pe.tipo === "tabata" ? `Tabata ${pe.tabata.trabajo}s/${pe.tabata.descanso}s × ${pe.tabata.rounds}` : (pe.semanas[semana] || pe.semanas[0] || "—");
           const videoFila = videoDe(pe);
-          const rolPE = rolDe(pe.rol);
+          const rolPE = [...ROLES_EJERCICIO, ...(rolesPersonalizados || [])].find((r) => r.id === pe.rol);
           return (
             <div key={pe.id}>
-              <div onClick={() => setActiveId(pe.id)} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 12px", borderRadius: 10, cursor: "pointer", border: activeId === pe.id ? "1px solid #FF6B35" : "1px solid #322E3D", background: activeId === pe.id ? "rgba(255,107,53,0.12)" : "#1C1A24", boxSizing: "border-box" }}>
+              <div onClick={() => setActiveId(pe.id)} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 12px", borderRadius: 10, cursor: "pointer", border: activeId === pe.id ? "1px solid #FF6B35" : `1px solid ${rolPE ? rolPE.color : "#322E3D"}`, background: activeId === pe.id ? "rgba(255,107,53,0.12)" : (rolPE ? `${rolPE.color}38` : "#1C1A24"), boxSizing: "border-box" }}>
                 <span style={{ fontSize: 16, flexShrink: 0 }}>{pe.emoji}</span>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <button onClick={(e) => { e.stopPropagation(); if (activeId === pe.id) { openVideo(videoFila); } else { setActiveId(pe.id); } }} className="font-body" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left", display: "block", color: done ? "#33D6A6" : "#F4F1EA", fontWeight: 600, fontSize: 13 }}>
@@ -3399,6 +3609,10 @@ function sanearAlumno(a) {
       notasEjercicios: a.notasEjercicios && typeof a.notasEjercicios === "object" ? a.notasEjercicios : {},
       chat: Array.isArray(a.chat) ? a.chat : [],
       historialSesiones: Array.isArray(a.historialSesiones) ? a.historialSesiones : [],
+      // Qué entrenadores pueden ver/editar a este alumno. "null" = todos los entrenadores lo ven
+      // (así los alumnos que ya tenías cargados siguen visibles para todos, como antes). A partir
+      // de ahora, un alumno nuevo queda privado del entrenador que lo crea, salvo que lo comparta.
+      coachIds: Array.isArray(a.coachIds) ? a.coachIds : null,
     };
   } catch {
     return a;
@@ -3444,6 +3658,8 @@ export default function GymPlannerCoachApp() {
   const setNotificacionesActivas = (v) => { setNotificacionesActivasState(v); guardarPreferenciaNotificaciones(v); };
   const [modoPausa, setModoPausa] = useState(guardado.modoPausa || false);
   const [diasAvisoPlan, setDiasAvisoPlan] = useState(guardado.diasAvisoPlan || 7);
+  const [rolesPersonalizados, setRolesPersonalizados] = useState(guardado.rolesPersonalizados || []);
+  const agregarRolPersonalizado = (label, color) => setRolesPersonalizados((prev) => [...prev, { id: `custom_${uid()}`, label, color }]);
   const [alumnos, setAlumnos] = useState(sanearAlumnos(guardado.alumnos) || sanearAlumnos(ALUMNOS_INICIAL));
   const [templates, setTemplates] = useState(guardado.templates || TEMPLATES_INICIAL);
   const [selectedCoachAlumno, setSelectedCoachAlumno] = useState(null);
@@ -3479,6 +3695,7 @@ export default function GymPlannerCoachApp() {
           if (remoto.mensajeRecordatorio) setMensajeRecordatorio(remoto.mensajeRecordatorio);
           if (typeof remoto.modoPausa === "boolean") setModoPausa(remoto.modoPausa);
           if (typeof remoto.diasAvisoPlan === "number") setDiasAvisoPlan(remoto.diasAvisoPlan);
+          if (Array.isArray(remoto.rolesPersonalizados)) setRolesPersonalizados(remoto.rolesPersonalizados);
           if (remoto.coaches) setCoaches(remoto.coaches);
           if (remoto.alumnos) setAlumnos(sanearAlumnos(remoto.alumnos) || ALUMNOS_INICIAL);
           setTemplates(combinarPlantillas(remoto.templates));
@@ -3505,6 +3722,7 @@ export default function GymPlannerCoachApp() {
           if (remoto.mensajeRecordatorio) setMensajeRecordatorio(remoto.mensajeRecordatorio);
           if (typeof remoto.modoPausa === "boolean") setModoPausa(remoto.modoPausa);
           if (typeof remoto.diasAvisoPlan === "number") setDiasAvisoPlan(remoto.diasAvisoPlan);
+          if (Array.isArray(remoto.rolesPersonalizados)) setRolesPersonalizados(remoto.rolesPersonalizados);
           if (remoto.coaches) setCoaches(remoto.coaches);
           if (remoto.alumnos) setAlumnos(sanearAlumnos(remoto.alumnos) || ALUMNOS_INICIAL);
           setTemplates(combinarPlantillas(remoto.templates));
@@ -3516,7 +3734,7 @@ export default function GymPlannerCoachApp() {
 
   useEffect(() => {
     if (!remotoListo) return; // todavía no trajimos lo compartido: no guardamos para no pisarlo
-    const data = { coachNombre, coaches, alumnos, templates, mensajeRecordatorio, modoPausa, diasAvisoPlan, _uidMax: _uid };
+    const data = { coachNombre, coaches, alumnos, templates, mensajeRecordatorio, modoPausa, diasAvisoPlan, rolesPersonalizados, _uidMax: _uid };
     guardarTodo(data); // copia local rápida (funciona siempre, con o sin internet)
     if (remotoSincronizadoRef.current) {
       guardarTodoRemoto(data); // solo subimos a la nube si confirmamos que arrancamos con la versión real compartida
@@ -3525,7 +3743,7 @@ export default function GymPlannerCoachApp() {
     const t = setTimeout(() => setGuardadoOk(false), 1200);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coachNombre, coaches, alumnos, templates, mensajeRecordatorio, modoPausa, diasAvisoPlan, remotoListo]);
+  }, [coachNombre, coaches, alumnos, templates, mensajeRecordatorio, modoPausa, diasAvisoPlan, rolesPersonalizados, remotoListo]);
 
   // Le avisa al coach por notificación push apenas aparece una alerta nueva (ánimo bajo, cumplimiento
   // bajo, etc.). Guardamos cuáles ya se avisaron en este dispositivo (no solo en la memoria de esta
@@ -3634,8 +3852,24 @@ export default function GymPlannerCoachApp() {
     const iniciales = d.nombre.trim().split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase() || "??";
     const usuario = slugify(d.nombre.trim()) || `alumno${alumnos.length + 1}`;
     const password = Math.random().toString().slice(2, 6);
-    setAlumnos((prev) => [...prev, { id: uid(), nombre: d.nombre.trim(), usuario, password, edad: d.edad || "", peso: d.peso || "", altura: d.altura || "", objetivo: d.objetivo || "", deportes: d.deportes || "", nivel: d.nivel || "Intermedio", lesiones: "Ninguna", inicio: "", equipo: d.equipo || "", cumplimiento: 0, foto: iniciales, sesionesCompletadas: 0, plan: mkPlanVacio(), historialPeso: [], rmSentadilla: [], wellness: mkWellness(), historialPlanes: [], competencia: { nombre: "", fecha: "" }, notasEjercicios: {}, chat: [] }]);
+    setAlumnos((prev) => [...prev, { id: uid(), nombre: d.nombre.trim(), usuario, password, edad: d.edad || "", peso: d.peso || "", altura: d.altura || "", objetivo: d.objetivo || "", deportes: d.deportes || "", nivel: d.nivel || "Intermedio", lesiones: "Ninguna", inicio: "", equipo: d.equipo || "", cumplimiento: 0, foto: iniciales, sesionesCompletadas: 0, plan: mkPlanVacio(), historialPeso: [], rmSentadilla: [], wellness: mkWellness(), historialPlanes: [], competencia: { nombre: "", fecha: "" }, notasEjercicios: {}, chat: [], coachIds: session?.coachId ? [session.coachId] : null }]);
     return { usuario, password };
+  };
+  // Le da acceso a otro entrenador a un alumno puntual (los dos lo ven y lo pueden editar de ahí en
+  // más). No saca al entrenador original — se suma, no reemplaza.
+  const compartirAlumnoConCoach = (alumnoId, otroCoachId) => {
+    setAlumnos((prev) => prev.map((a) => {
+      if (a.id !== alumnoId) return a;
+      const actuales = a.coachIds === null ? coaches.map((c) => c.id) : a.coachIds;
+      return { ...a, coachIds: actuales.includes(otroCoachId) ? actuales : [...actuales, otroCoachId] };
+    }));
+  };
+  const dejarDeCompartirAlumno = (alumnoId, coachIdAQuitar) => {
+    setAlumnos((prev) => prev.map((a) => {
+      if (a.id !== alumnoId) return a;
+      const actuales = a.coachIds === null ? coaches.map((c) => c.id) : a.coachIds;
+      return { ...a, coachIds: actuales.filter((id) => id !== coachIdAQuitar) };
+    }));
   };
   const crearPlantilla = (tpl) => setTemplates((prev) => [...prev, tpl]);
   const sendMsg = (alumnoId, from, texto) => {
@@ -3661,11 +3895,14 @@ export default function GymPlannerCoachApp() {
   } else if (!session) {
     body = <AuthScreen onLogin={login} />;
   } else if (session.role === "coach") {
-    if (tab === "dashboard") body = <CoachDashboard alumnos={alumnos} goAlumnos={(id) => { setTab("alumnos"); setSelectedCoachAlumno(id); }} coachNombre={coachNombre} onUpdateCoach={setCoachNombre} coaches={coaches} onAddCoach={addCoach} onRemoveCoach={removeCoach} mensajeRecordatorio={mensajeRecordatorio} onUpdateMensajeRecordatorio={setMensajeRecordatorio} notificacionesActivas={notificacionesActivas} onToggleNotificaciones={setNotificacionesActivas} modoPausa={modoPausa} onToggleModoPausa={setModoPausa} diasAvisoPlan={diasAvisoPlan} onSetDiasAvisoPlan={setDiasAvisoPlan} coachId={session?.coachId} onCambiarPassword={cambiarPasswordCoach} />;
-    else if (tab === "alumnos") body = <CoachAlumnos alumnos={alumnos} selectedId={selectedCoachAlumno} setSelectedId={setSelectedCoachAlumno} templates={templates} onAsignarPlantilla={asignarPlantilla} onCopiarPlan={copiarPlan} onGuardarComoPlantilla={guardarComoPlantilla} onUpdatePlan={updatePlan} onUpdateAlumno={updateAlumno} onDeleteAlumno={deleteAlumno} onAddAlumno={addAlumno} onSendMsg={sendMsg} onGuardarVersion={guardarVersion} onRestaurarVersion={restaurarVersion} onGuardarHistorialRM={agregarHistorialRM} onAddToLibrary={addCustomExercise} version={libVersion} />;
-    else if (tab === "plantillas") body = <CoachPlantillas templates={templates} alumnos={alumnos} onAsignar={asignarPlantilla} onCrearPlantilla={crearPlantilla} onAddToLibrary={addCustomExercise} version={libVersion} />;
+    // Un alumno con coachIds = null es "de todos" (así quedan los que ya tenías antes de esta
+    // función). Uno con coachIds = [...] solo lo ven los entrenadores que estén en esa lista.
+    const alumnosVisibles = alumnos.filter((a) => a.coachIds === null || a.coachIds.includes(session.coachId));
+    if (tab === "dashboard") body = <CoachDashboard alumnos={alumnosVisibles} goAlumnos={(id) => { setTab("alumnos"); setSelectedCoachAlumno(id); }} coachNombre={coachNombre} onUpdateCoach={setCoachNombre} coaches={coaches} onAddCoach={addCoach} onRemoveCoach={removeCoach} mensajeRecordatorio={mensajeRecordatorio} onUpdateMensajeRecordatorio={setMensajeRecordatorio} notificacionesActivas={notificacionesActivas} onToggleNotificaciones={setNotificacionesActivas} modoPausa={modoPausa} onToggleModoPausa={setModoPausa} diasAvisoPlan={diasAvisoPlan} onSetDiasAvisoPlan={setDiasAvisoPlan} coachId={session?.coachId} onCambiarPassword={cambiarPasswordCoach} />;
+    else if (tab === "alumnos") body = <CoachAlumnos alumnos={alumnosVisibles} selectedId={selectedCoachAlumno} setSelectedId={setSelectedCoachAlumno} templates={templates} onAsignarPlantilla={asignarPlantilla} onCopiarPlan={copiarPlan} onGuardarComoPlantilla={guardarComoPlantilla} onUpdatePlan={updatePlan} onUpdateAlumno={updateAlumno} onDeleteAlumno={deleteAlumno} onAddAlumno={addAlumno} onSendMsg={sendMsg} onGuardarVersion={guardarVersion} onRestaurarVersion={restaurarVersion} onGuardarHistorialRM={agregarHistorialRM} onAddToLibrary={addCustomExercise} version={libVersion} coaches={coaches} coachIdActual={session.coachId} onCompartirAlumno={compartirAlumnoConCoach} onDejarDeCompartir={dejarDeCompartirAlumno} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={agregarRolPersonalizado} />;
+    else if (tab === "plantillas") body = <CoachPlantillas templates={templates} alumnos={alumnosVisibles} onAsignar={asignarPlantilla} onCrearPlantilla={crearPlantilla} onAddToLibrary={addCustomExercise} version={libVersion} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={agregarRolPersonalizado} />;
     else if (tab === "ejercicios") body = <CoachEjercicios onAddExercise={addCustomExercise} version={libVersion} onToggleFav={toggleFavorito} onEditVideo={editarVideoLibreria} />;
-    else body = <BuscarGlobal alumnos={alumnos} templates={templates} version={libVersion} onGoAlumno={(id) => { setTab("alumnos"); setSelectedCoachAlumno(id); }} onGoPlantillas={() => setTab("plantillas")} />;
+    else body = <BuscarGlobal alumnos={alumnosVisibles} templates={templates} version={libVersion} onGoAlumno={(id) => { setTab("alumnos"); setSelectedCoachAlumno(id); }} onGoPlantillas={() => setTab("plantillas")} />;
   } else if (!athlete) {
     body = <div className="font-body" style={{ color: "#8B8698", fontSize: 13, textAlign: "center", padding: "40px 20px" }}>Tu cuenta ya no está activa. Consultá con tu entrenador.</div>;
   } else if (athlete.wellness.encuestaPendiente && tab !== "entrenar") {
@@ -3677,7 +3914,7 @@ export default function GymPlannerCoachApp() {
     );
   } else {
     if (tab === "inicio") body = <AthleteInicio alumno={athlete} goEntrenar={() => setTab("entrenar")} onCheckin={registrarCheckin} />;
-    else if (tab === "entrenar") body = <AthleteEntrenar alumno={athlete} onFinalizar={(id) => { finalizarEntrenamiento(id); setTab("inicio"); }} onUpdateNota={(exId, exNombre, texto) => updateNota(athlete.id, exId, exNombre, texto)} />;
+    else if (tab === "entrenar") body = <AthleteEntrenar alumno={athlete} onFinalizar={(id) => { finalizarEntrenamiento(id); setTab("inicio"); }} onUpdateNota={(exId, exNombre, texto) => updateNota(athlete.id, exId, exNombre, texto)} rolesPersonalizados={rolesPersonalizados} />;
     else if (tab === "progreso") body = <AthleteProgreso alumno={athlete} onGuardarHistorialRM={(ejercicio, valor) => agregarHistorialRM(athlete.id, ejercicio, valor)} />;
     else if (tab === "nutricion") body = <CalculadoraScreen alumno={athlete} />;
     else body = <ChatScreen alumno={athlete} onSendMsg={sendMsg} />;
