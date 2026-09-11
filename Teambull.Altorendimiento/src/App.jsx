@@ -739,6 +739,17 @@ const mkDia = (nombre, bloques = [], diaSemana = "") => ({ id: uid(), nombre, bl
 const mkWarm = (nombre, series = "", reps = "", video = null) => ({ id: uid(), nombre, series, reps, video });
 const DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 const todayISO = () => new Date().toISOString().slice(0, 10);
+// Convierte una fecha ISO en "hace 5 min", "hace 2 h", "hace 3 días", etc.
+function tiempoRelativo(iso) {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const min = Math.floor(diffMs / 60000);
+  if (min < 1) return "recién";
+  if (min < 60) return `hace ${min} min`;
+  const horas = Math.floor(min / 60);
+  if (horas < 24) return `hace ${horas} h`;
+  const dias = Math.floor(horas / 24);
+  return `hace ${dias} día${dias === 1 ? "" : "s"}`;
+}
 // Filtra check-ins (u otros registros con fecha "YYYY-MM-DD") para quedarnos solo con los del
 // mes en curso — el gráfico "arranca de cero" visualmente cada mes, pero no se borra nada:
 // el historial completo sigue guardado, solo dejamos de mostrarlo en el gráfico principal.
@@ -1729,7 +1740,7 @@ function generarAlertas(a) {
   return alertas;
 }
 
-function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coaches, onAddCoach, onRemoveCoach, mensajeRecordatorio, onUpdateMensajeRecordatorio, notificacionesActivas, onToggleNotificaciones, modoPausa, onToggleModoPausa, diasAvisoPlan, onSetDiasAvisoPlan, coachId, onCambiarPassword }) {
+function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coaches, onAddCoach, onRemoveCoach, mensajeRecordatorio, onUpdateMensajeRecordatorio, notificacionesActivas, onToggleNotificaciones, modoPausa, onToggleModoPausa, diasAvisoPlan, onSetDiasAvisoPlan, coachId, onCambiarPassword, onSetRecoveryPin, onReclamarAlumnos, logActividad }) {
   const [editando, setEditando] = useState(false);
   const [agregandoCoach, setAgregandoCoach] = useState(false);
   const [nombreNuevoCoach, setNombreNuevoCoach] = useState("");
@@ -1743,8 +1754,17 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
     if (r.ok) { setPassMensaje({ ok: true, texto: "✓ Contraseña actualizada." }); setPassActual(""); setPassNueva(""); setTimeout(() => { setCambiandoPassword(false); setPassMensaje(null); }, 1500); }
     else setPassMensaje({ ok: false, texto: r.motivo });
   };
-  const promedio = Math.round(alumnos.reduce((a, x) => a + x.cumplimiento, 0) / (alumnos.length || 1));
-  const ranking = [...alumnos].sort((a, b) => b.cumplimiento - a.cumplimiento);
+  const [configurandoPin, setConfigurandoPin] = useState(false);
+  const [pinNuevo, setPinNuevo] = useState("");
+  const [pinMensaje, setPinMensaje] = useState(null);
+  const guardarPinNuevo = () => {
+    const r = onSetRecoveryPin(coachId, pinNuevo);
+    if (r.ok) { setPinMensaje({ ok: true, texto: "✓ PIN guardado." }); setPinNuevo(""); setTimeout(() => { setConfigurandoPin(false); setPinMensaje(null); }, 1500); }
+    else setPinMensaje({ ok: false, texto: r.motivo });
+  };
+  const alumnosActivos = alumnos.filter((a) => a.activo !== false);
+  const promedio = Math.round(alumnosActivos.reduce((a, x) => a + x.cumplimiento, 0) / (alumnosActivos.length || 1));
+  const ranking = [...alumnosActivos].sort((a, b) => b.cumplimiento - a.cumplimiento);
   return (
     <div>
       <TopBar title="Dashboard" subtitle={coachNombre ? `Entrenador: ${coachNombre}` : "Team Bull"}
@@ -1793,6 +1813,26 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
               </div>
             )}
           </div>
+
+          <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, padding: 12, marginTop: 8 }}>
+            <button onClick={() => { setConfigurandoPin(!configurandoPin); setPinMensaje(null); }} className="font-body" style={{ width: "100%", background: "none", border: "none", color: "#F4F1EA", fontWeight: 700, fontSize: 12, cursor: "pointer", textAlign: "left", padding: 0 }}>🆘 PIN de recuperación {configurandoPin ? "▲" : "▼"}</button>
+            {configurandoPin && (
+              <div style={{ marginTop: 10 }}>
+                <div className="font-body" style={{ color: "#6B6678", fontSize: 9, marginBottom: 8 }}>Si algún día te olvidás la contraseña, en la pantalla de login vas a poder verla de nuevo usando este PIN. Elegí algo que vayas a recordar, distinto de tu contraseña.</div>
+                <input value={pinNuevo} onChange={(e) => setPinNuevo(e.target.value)} placeholder="Tu PIN de recuperación" className="font-body" style={{ width: "100%", background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "8px 10px", fontSize: 12, boxSizing: "border-box", marginBottom: 8 }} />
+                {pinMensaje && <div className="font-body" style={{ color: pinMensaje.ok ? "#33D6A6" : "#E85D5D", fontSize: 11, marginBottom: 8 }}>{pinMensaje.texto}</div>}
+                <button onClick={guardarPinNuevo} className="font-body" style={{ width: "100%", background: "#7DD6C0", border: "none", borderRadius: 8, color: "#0B2A2E", fontWeight: 700, padding: 9, cursor: "pointer" }}>Guardar PIN</button>
+              </div>
+            )}
+          </div>
+
+          {coaches.length > 1 && alumnos.some((a) => a.coachIds === null) && (
+            <div style={{ background: "rgba(90,160,230,0.1)", border: "1px dashed #5AA0E6", borderRadius: 10, padding: 12, marginTop: 8 }}>
+              <div className="font-body" style={{ color: "#5AA0E6", fontSize: 12, fontWeight: 700, marginBottom: 4 }}>🔒 {alumnos.filter((a) => a.coachIds === null).length} alumno/a(s) "de todos"</div>
+              <div className="font-body" style={{ color: "#8B8698", fontSize: 10, marginBottom: 8 }}>Quedaron visibles para cualquier entrenador nuevo que crees. Tocá este botón para que pasen a ser solo tuyos — después le podés compartir puntualmente el que quieras a otro entrenador, desde la ficha de cada alumno/a.</div>
+              <button onClick={() => { if (window.confirm("¿Pasar todos estos alumnos a ser solo tuyos? Los demás entrenadores dejarán de verlos, salvo que se los compartas vos después.")) onReclamarAlumnos(coachId); }} className="font-body" style={{ width: "100%", background: "#5AA0E6", border: "none", borderRadius: 8, color: "#0B1A2E", fontWeight: 700, padding: 9, cursor: "pointer" }}>Hacer que sean solo míos</button>
+            </div>
+          )}
 
           <div className="font-body" style={{ fontSize: 11, color: "#7DD6C0", fontWeight: 700, marginTop: 16, marginBottom: 6 }}>MENSAJE DEL RECORDATORIO DIARIO</div>
           <div className="font-body" style={{ fontSize: 9, color: "#6B6678", marginBottom: 6 }}>Se manda solo, todas las mañanas, a quien tenga entrenamiento ese día y todavía no hizo el check-in. Podés usar <b>{"{nombre}"}</b> y se reemplaza por el nombre de cada una.</div>
@@ -1852,13 +1892,13 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
       )}
       <div style={{ padding: "0 20px" }}>
         <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
-          <StatMini label="Activos/as" value={alumnos.length} />
+          <StatMini label="Activos/as" value={alumnosActivos.length} />
           <StatMini label="Cumplimiento prom." value={`${promedio}%`} color="#7DD6C0" />
           <StatMini label="Próx. evaluación" value="3 días" />
         </div>
-        <button onClick={() => compartirTextoPorWhatsApp(generarInformeSemanal(alumnos))} className="font-body" style={{ width: "100%", background: "#25D366", border: "none", borderRadius: 10, color: "#0B2A2E", fontWeight: 700, fontSize: 11, padding: 10, cursor: "pointer", marginBottom: 6 }}>💬 Informe semanal por WhatsApp</button>
-        <button onClick={() => compartirTexto("Informe semanal Team Bull", generarInformeSemanal(alumnos))} className="font-body" style={{ width: "100%", background: "none", border: "none", color: "#FF6B35", fontWeight: 700, fontSize: 10, padding: "4px 0", cursor: "pointer", marginBottom: 8 }}>Más opciones para compartir</button>
-        <button onClick={() => descargarPlantelPDF(alumnos)} className="font-body" style={{ width: "100%", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, color: "#8B8698", fontWeight: 700, fontSize: 11, padding: 10, cursor: "pointer", marginBottom: 16 }}>📄 Descargar planes de todo el plantel (uno solo)</button>
+        <button onClick={() => compartirTextoPorWhatsApp(generarInformeSemanal(alumnosActivos))} className="font-body" style={{ width: "100%", background: "#25D366", border: "none", borderRadius: 10, color: "#0B2A2E", fontWeight: 700, fontSize: 11, padding: 10, cursor: "pointer", marginBottom: 6 }}>💬 Informe semanal por WhatsApp</button>
+        <button onClick={() => compartirTexto("Informe semanal Team Bull", generarInformeSemanal(alumnosActivos))} className="font-body" style={{ width: "100%", background: "none", border: "none", color: "#FF6B35", fontWeight: 700, fontSize: 10, padding: "4px 0", cursor: "pointer", marginBottom: 8 }}>Más opciones para compartir</button>
+        <button onClick={() => descargarPlantelPDF(alumnosActivos)} className="font-body" style={{ width: "100%", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, color: "#8B8698", fontWeight: 700, fontSize: 11, padding: 10, cursor: "pointer", marginBottom: 16 }}>📄 Descargar planes de todo el plantel (uno solo)</button>
         <div className="font-body" style={{ fontSize: 11, color: "#8B8698", fontWeight: 600, marginBottom: 8 }}>RANKING DE CUMPLIMIENTO</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
           {ranking.map((a, i) => (
@@ -1874,13 +1914,25 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
           ))}
         </div>
         <div className="font-body" style={{ fontSize: 11, color: "#8B8698", fontWeight: 600, marginBottom: 8 }}>ALERTAS</div>
-        {alumnos.flatMap((a) => generarAlertas(a)).length === 0 && <div className="font-body" style={{ color: "#8B8698", fontSize: 11, marginBottom: 8 }}>Todo tranquilo por ahora.</div>}
-        {alumnos.flatMap((a) => generarAlertas(a).map((al, i) => ({ ...al, key: `${a.id}-${i}` }))).map((al) => (
+        {alumnosActivos.flatMap((a) => generarAlertas(a)).length === 0 && <div className="font-body" style={{ color: "#8B8698", fontSize: 11, marginBottom: 8 }}>Todo tranquilo por ahora.</div>}
+        {alumnosActivos.flatMap((a) => generarAlertas(a).map((al, i) => ({ ...al, key: `${a.id}-${i}` }))).map((al) => (
           <div key={al.key} style={{ background: "rgba(232,93,93,0.1)", border: "1px solid #E85D5D", borderRadius: 12, padding: 12, marginBottom: 8 }}>
             <div className="font-body" style={{ color: "#F4F1EA", fontSize: 12, fontWeight: 600 }}>{al.titulo}</div>
             <div className="font-body" style={{ color: "#8B8698", fontSize: 11, marginTop: 2 }}>{al.detalle}</div>
           </div>
         ))}
+        {coaches.length > 1 && logActividad.length > 0 && (
+          <>
+            <div className="font-body" style={{ fontSize: 11, color: "#8B8698", fontWeight: 600, marginBottom: 8, marginTop: 8 }}>ACTIVIDAD RECIENTE</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
+              {logActividad.slice(0, 8).map((l) => (
+                <div key={l.id} className="font-body" style={{ color: "#8B8698", fontSize: 11, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: "8px 10px" }}>
+                  <span style={{ color: "#7DD6C0", fontWeight: 700 }}>{l.coach}</span> {l.texto} <span style={{ color: "#6B6678" }}>— {tiempoRelativo(l.fecha)}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -1912,11 +1964,19 @@ function NuevaAlumnaForm({ onCrear, onCancelar }) {
 function CoachAlumnos({ alumnos, selectedId, setSelectedId, templates, onAsignarPlantilla, onCopiarPlan, onGuardarComoPlantilla, onUpdatePlan, onUpdateAlumno, onDeleteAlumno, onAddAlumno, onSendMsg, onGuardarVersion, onRestaurarVersion, onGuardarHistorialRM, onAddToLibrary, version, coaches, coachIdActual, onCompartirAlumno, onDejarDeCompartir, rolesPersonalizados, onAgregarRolPersonalizado }) {
   const [creando, setCreando] = useState(false);
   const [credencialesNuevas, setCredencialesNuevas] = useState(null);
+  const [verBajas, setVerBajas] = useState(false);
   const alumno = alumnos.find((a) => a.id === selectedId);
   if (!alumno) {
+    const activos = [...alumnos.filter((a) => a.activo !== false)].sort((a, b) => {
+      if (a.ultimoAcceso && b.ultimoAcceso) return b.ultimoAcceso.localeCompare(a.ultimoAcceso);
+      if (a.ultimoAcceso) return -1; // los ya usados van arriba de los que nunca se tocaron
+      if (b.ultimoAcceso) return 1;
+      return 0; // entre los nunca tocados, se respeta el orden original
+    });
+    const bajas = alumnos.filter((a) => a.activo === false);
     return (
       <div>
-        <TopBar title="Alumnos/as" subtitle={`${alumnos.length} en tu plantel`} />
+        <TopBar title="Alumnos/as" subtitle={`${activos.length} en tu plantel`} />
         <div style={{ padding: "0 20px", display: "flex", flexDirection: "column", gap: 10 }}>
           {credencialesNuevas && (
             <div style={{ background: "rgba(51,214,166,0.1)", border: "1px solid #33D6A6", borderRadius: 12, padding: 12 }}>
@@ -1930,8 +1990,8 @@ function CoachAlumnos({ alumnos, selectedId, setSelectedId, templates, onAsignar
           ) : (
             <button onClick={() => { setCreando(true); setCredencialesNuevas(null); }} className="font-body" style={{ background: "rgba(255,107,53,0.1)", border: "1px dashed #FF6B35", borderRadius: 14, padding: 14, color: "#FF6B35", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>+ Agregar alumno/a</button>
           )}
-          {alumnos.map((a) => (
-            <button key={a.id} onClick={() => setSelectedId(a.id)} style={{ display: "flex", alignItems: "center", gap: 10, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 14, padding: 12, cursor: "pointer", width: "100%", textAlign: "left" }}>
+          {activos.map((a) => (
+            <button key={a.id} onClick={() => { onUpdateAlumno(a.id, { ultimoAcceso: new Date().toISOString() }); setSelectedId(a.id); }} style={{ display: "flex", alignItems: "center", gap: 10, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 14, padding: 12, cursor: "pointer", width: "100%", textAlign: "left" }}>
               <Avatar text={a.foto} size={38} />
               <div style={{ flex: 1 }}>
                 <div className="font-display" style={{ color: "#F4F1EA", fontSize: 14, fontWeight: 600 }}>{a.nombre}</div>
@@ -1940,6 +2000,21 @@ function CoachAlumnos({ alumnos, selectedId, setSelectedId, templates, onAsignar
               <span style={{ color: "#8B8698" }}>›</span>
             </button>
           ))}
+          {bajas.length > 0 && (
+            <>
+              <button onClick={() => setVerBajas(!verBajas)} className="font-body" style={{ background: "none", border: "none", color: "#8B8698", fontSize: 11, cursor: "pointer", padding: "6px 0", textAlign: "left" }}>{verBajas ? "▲" : "▼"} {bajas.length} de baja</button>
+              {verBajas && bajas.map((a) => (
+                <button key={a.id} onClick={() => setSelectedId(a.id)} style={{ display: "flex", alignItems: "center", gap: 10, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 14, padding: 12, cursor: "pointer", width: "100%", textAlign: "left", opacity: 0.55 }}>
+                  <Avatar text={a.foto} size={38} />
+                  <div style={{ flex: 1 }}>
+                    <div className="font-display" style={{ color: "#F4F1EA", fontSize: 14, fontWeight: 600 }}>{a.nombre}</div>
+                    <div className="font-body" style={{ color: "#8B8698", fontSize: 11 }}>De baja</div>
+                  </div>
+                  <span style={{ color: "#8B8698" }}>›</span>
+                </button>
+              ))}
+            </>
+          )}
         </div>
       </div>
     );
@@ -1950,6 +2025,8 @@ function CoachAlumnos({ alumnos, selectedId, setSelectedId, templates, onAsignar
 function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla, onCopiarPlan, onGuardarComoPlantilla, onUpdatePlan, onUpdateAlumno, onDeleteAlumno, onSendMsg, onGuardarVersion, onRestaurarVersion, onGuardarHistorialRM, onAddToLibrary, version, coaches, coachIdActual, onCompartirAlumno, onDejarDeCompartir, rolesPersonalizados, onAgregarRolPersonalizado }) {
   const [tab, setTab] = useState("plan");
   const [msg, setMsg] = useState("");
+  const [busquedaChat, setBusquedaChat] = useState("");
+  const mensajesFiltrados = busquedaChat.trim() ? alumno.chat.filter((m) => m.texto.toLowerCase().includes(busquedaChat.trim().toLowerCase())) : alumno.chat;
   const [confirmarBorrado, setConfirmarBorrado] = useState(false);
   const [nombreVersion, setNombreVersion] = useState("");
   const [guardandoVersion, setGuardandoVersion] = useState(false);
@@ -2207,7 +2284,12 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
               </div>
             </div>
           ) : (
-            <button onClick={() => setConfirmarBorrado(true)} className="font-body" style={{ width: "100%", background: "transparent", border: "1px solid #322E3D", borderRadius: 10, color: "#E85D5D", fontWeight: 700, fontSize: 12, padding: 10, cursor: "pointer" }}>Eliminar</button>
+            <>
+              <button onClick={() => onUpdateAlumno(alumno.id, { activo: !alumno.activo })} className="font-body" style={{ width: "100%", background: alumno.activo ? "transparent" : "rgba(51,214,166,0.1)", border: `1px solid ${alumno.activo ? "#322E3D" : "#33D6A6"}`, borderRadius: 10, color: alumno.activo ? "#8B8698" : "#33D6A6", fontWeight: 700, fontSize: 12, padding: 10, cursor: "pointer", marginBottom: 8 }}>
+                {alumno.activo ? "📥 Dar de baja (mantiene todo su historial)" : "✓ Reactivar"}
+              </button>
+              <button onClick={() => setConfirmarBorrado(true)} className="font-body" style={{ width: "100%", background: "transparent", border: "1px solid #322E3D", borderRadius: 10, color: "#E85D5D", fontWeight: 700, fontSize: 12, padding: 10, cursor: "pointer" }}>Eliminar</button>
+            </>
           )}
         </div>
       )}
@@ -2235,8 +2317,12 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
             </div>
           )}
           <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
+            {alumno.chat.length > 3 && (
+              <input value={busquedaChat} onChange={(e) => setBusquedaChat(e.target.value)} placeholder="🔍 Buscar en este chat..." className="font-body" style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, color: "#F4F1EA", padding: "8px 12px", fontSize: 12, boxSizing: "border-box", marginBottom: 4 }} />
+            )}
             {alumno.chat.length === 0 && <div className="font-body" style={{ color: "#8B8698", fontSize: 12, textAlign: "center", marginTop: 20 }}>Todavía no hay mensajes.</div>}
-            {alumno.chat.map((m, i) => (
+            {mensajesFiltrados.length === 0 && alumno.chat.length > 0 && <div className="font-body" style={{ color: "#8B8698", fontSize: 12, textAlign: "center", marginTop: 20 }}>Ningún mensaje contiene "{busquedaChat}".</div>}
+            {mensajesFiltrados.map((m, i) => (
               <div key={i} style={{ alignSelf: m.from === "coach" ? "flex-end" : "flex-start", maxWidth: "78%", background: m.from === "coach" ? "#FF6B35" : "#1C1A24", border: m.from === "coach" ? "none" : "1px solid #322E3D", borderRadius: 12, padding: "8px 12px" }}>
                 <div className="font-body" style={{ color: m.from === "coach" ? "#121017" : "#F4F1EA", fontSize: 12 }}>{m.texto}</div>
                 <div className="font-body" style={{ color: m.from === "coach" ? "#5c2c10" : "#8B8698", fontSize: 9, marginTop: 3 }}>{m.hora}</div>
@@ -3411,12 +3497,17 @@ function cargarLoginRecordado() {
   }
 }
 
-function AuthScreen({ onLogin }) {
+function AuthScreen({ onLogin, coaches }) {
   const recordado = useRef(cargarLoginRecordado());
   const [usuario, setUsuario] = useState(recordado.current?.usuario || "");
   const [password, setPassword] = useState(recordado.current?.password || "");
   const [recordar, setRecordar] = useState(!!recordado.current);
   const [error, setError] = useState("");
+  const [verPassword, setVerPassword] = useState(false);
+  const [recuperando, setRecuperando] = useState(false);
+  const [usuarioRecuperar, setUsuarioRecuperar] = useState("");
+  const [pinRecuperar, setPinRecuperar] = useState("");
+  const [resultadoRecuperar, setResultadoRecuperar] = useState(null);
   const intentar = (e) => {
     if (e && e.preventDefault) e.preventDefault();
     try {
@@ -3444,8 +3535,27 @@ function AuthScreen({ onLogin }) {
       </div>
       <div style={{ marginBottom: 10 }}>
         <div className="font-body" style={{ fontSize: 11, color: "#8B8698", marginBottom: 5 }}>Contraseña</div>
-        <input value={password} onChange={(e) => { setPassword(e.target.value); setError(""); }} type="password" placeholder="••••••" name="current-password" autoComplete="current-password" className="font-body" style={{ width: "100%", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, color: "#F4F1EA", padding: "11px 12px", fontSize: 13, boxSizing: "border-box" }} />
+        <div style={{ position: "relative" }}>
+          <input value={password} onChange={(e) => { setPassword(e.target.value); setError(""); }} type={verPassword ? "text" : "password"} placeholder="••••••" name="current-password" autoComplete="current-password" className="font-body" style={{ width: "100%", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, color: "#F4F1EA", padding: "11px 40px 11px 12px", fontSize: 13, boxSizing: "border-box" }} />
+          <button type="button" onClick={() => setVerPassword(!verPassword)} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#8B8698", cursor: "pointer", fontSize: 15, padding: 4 }}>{verPassword ? "🙈" : "👁"}</button>
+        </div>
       </div>
+      <button type="button" onClick={() => setRecuperando(!recuperando)} className="font-body" style={{ background: "none", border: "none", color: "#7DD6C0", fontSize: 11, cursor: "pointer", textAlign: "left", padding: 0, marginBottom: 10 }}>¿Olvidaste tu contraseña?</button>
+      {recuperando && (
+        <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, padding: 12, marginBottom: 12 }}>
+          <div className="font-body" style={{ color: "#8B8698", fontSize: 10, marginBottom: 8 }}>Ingresá tu usuario y tu PIN de recuperación (el que configuraste en Ajustes). Si nunca lo configuraste, pedile a otro entrenador que te lo comparta, o escribile a tu coach.</div>
+          <input value={usuarioRecuperar} onChange={(e) => setUsuarioRecuperar(e.target.value)} placeholder="Usuario" className="font-body" style={{ width: "100%", background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, color: "#F4F1EA", padding: "8px 10px", fontSize: 12, boxSizing: "border-box", marginBottom: 6 }} />
+          <input value={pinRecuperar} onChange={(e) => setPinRecuperar(e.target.value)} placeholder="PIN de recuperación" className="font-body" style={{ width: "100%", background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, color: "#F4F1EA", padding: "8px 10px", fontSize: 12, boxSizing: "border-box", marginBottom: 8 }} />
+          <button type="button" onClick={() => {
+            const c = (coaches || []).find((co) => co.usuario === usuarioRecuperar.trim());
+            if (!c) { setResultadoRecuperar({ ok: false, texto: "No existe ese usuario." }); return; }
+            if (!c.recoveryPin) { setResultadoRecuperar({ ok: false, texto: "Ese usuario todavía no configuró un PIN de recuperación." }); return; }
+            if (c.recoveryPin !== pinRecuperar.trim()) { setResultadoRecuperar({ ok: false, texto: "El PIN no coincide." }); return; }
+            setResultadoRecuperar({ ok: true, texto: `Tu contraseña es: ${c.password}` });
+          }} className="font-body" style={{ width: "100%", background: "#7DD6C0", border: "none", borderRadius: 8, color: "#0B2A2E", fontWeight: 700, padding: 9, cursor: "pointer" }}>Ver mi contraseña</button>
+          {resultadoRecuperar && <div className="font-body" style={{ color: resultadoRecuperar.ok ? "#33D6A6" : "#E85D5D", fontSize: 12, fontWeight: 700, marginTop: 8 }}>{resultadoRecuperar.texto}</div>}
+        </div>
+      )}
       <label className="font-body" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer", userSelect: "none" }}>
         <input type="checkbox" checked={recordar} onChange={(e) => setRecordar(e.target.checked)} style={{ width: 16, height: 16, accentColor: "#FF6B35", cursor: "pointer" }} />
         <span style={{ fontSize: 12, color: "#8B8698" }}>Recordar contraseña en este dispositivo</span>
@@ -3613,6 +3723,12 @@ function sanearAlumno(a) {
       // (así los alumnos que ya tenías cargados siguen visibles para todos, como antes). A partir
       // de ahora, un alumno nuevo queda privado del entrenador que lo crea, salvo que lo comparta.
       coachIds: Array.isArray(a.coachIds) ? a.coachIds : null,
+      // Un alumno "de baja" no aparece en la lista normal, pero no se borra — conserva todo su
+      // historial por si vuelve más adelante.
+      activo: typeof a.activo === "boolean" ? a.activo : true,
+      // Cuándo fue la última vez que el coach entró a este alumno — para que la lista se
+      // reordene sola, poniendo arriba a quien estés usando más seguido.
+      ultimoAcceso: typeof a.ultimoAcceso === "string" ? a.ultimoAcceso : null,
     };
   } catch {
     return a;
@@ -3659,6 +3775,13 @@ export default function GymPlannerCoachApp() {
   const [modoPausa, setModoPausa] = useState(guardado.modoPausa || false);
   const [diasAvisoPlan, setDiasAvisoPlan] = useState(guardado.diasAvisoPlan || 7);
   const [rolesPersonalizados, setRolesPersonalizados] = useState(guardado.rolesPersonalizados || []);
+  const [logActividad, setLogActividad] = useState(guardado.logActividad || []);
+  // Guarda hasta 50 movimientos recientes, con quién los hizo — así, si trabajan 2 o 3 entrenadores
+  // en la misma cuenta, se puede ver rápido quién tocó qué sin tener que preguntar.
+  const registrarActividad = (texto) => {
+    const nombreCoach = coaches.find((c) => c.id === session?.coachId)?.nombre || "Alguien";
+    setLogActividad((prev) => [{ id: uid(), texto, coach: nombreCoach, fecha: new Date().toISOString() }, ...prev].slice(0, 50));
+  };
   const agregarRolPersonalizado = (label, color) => setRolesPersonalizados((prev) => [...prev, { id: `custom_${uid()}`, label, color }]);
   const [alumnos, setAlumnos] = useState(sanearAlumnos(guardado.alumnos) || sanearAlumnos(ALUMNOS_INICIAL));
   const [templates, setTemplates] = useState(guardado.templates || TEMPLATES_INICIAL);
@@ -3696,6 +3819,7 @@ export default function GymPlannerCoachApp() {
           if (typeof remoto.modoPausa === "boolean") setModoPausa(remoto.modoPausa);
           if (typeof remoto.diasAvisoPlan === "number") setDiasAvisoPlan(remoto.diasAvisoPlan);
           if (Array.isArray(remoto.rolesPersonalizados)) setRolesPersonalizados(remoto.rolesPersonalizados);
+          if (Array.isArray(remoto.logActividad)) setLogActividad(remoto.logActividad);
           if (remoto.coaches) setCoaches(remoto.coaches);
           if (remoto.alumnos) setAlumnos(sanearAlumnos(remoto.alumnos) || ALUMNOS_INICIAL);
           setTemplates(combinarPlantillas(remoto.templates));
@@ -3723,6 +3847,7 @@ export default function GymPlannerCoachApp() {
           if (typeof remoto.modoPausa === "boolean") setModoPausa(remoto.modoPausa);
           if (typeof remoto.diasAvisoPlan === "number") setDiasAvisoPlan(remoto.diasAvisoPlan);
           if (Array.isArray(remoto.rolesPersonalizados)) setRolesPersonalizados(remoto.rolesPersonalizados);
+          if (Array.isArray(remoto.logActividad)) setLogActividad(remoto.logActividad);
           if (remoto.coaches) setCoaches(remoto.coaches);
           if (remoto.alumnos) setAlumnos(sanearAlumnos(remoto.alumnos) || ALUMNOS_INICIAL);
           setTemplates(combinarPlantillas(remoto.templates));
@@ -3734,7 +3859,7 @@ export default function GymPlannerCoachApp() {
 
   useEffect(() => {
     if (!remotoListo) return; // todavía no trajimos lo compartido: no guardamos para no pisarlo
-    const data = { coachNombre, coaches, alumnos, templates, mensajeRecordatorio, modoPausa, diasAvisoPlan, rolesPersonalizados, _uidMax: _uid };
+    const data = { coachNombre, coaches, alumnos, templates, mensajeRecordatorio, modoPausa, diasAvisoPlan, rolesPersonalizados, logActividad, _uidMax: _uid };
     guardarTodo(data); // copia local rápida (funciona siempre, con o sin internet)
     if (remotoSincronizadoRef.current) {
       guardarTodoRemoto(data); // solo subimos a la nube si confirmamos que arrancamos con la versión real compartida
@@ -3743,7 +3868,7 @@ export default function GymPlannerCoachApp() {
     const t = setTimeout(() => setGuardadoOk(false), 1200);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coachNombre, coaches, alumnos, templates, mensajeRecordatorio, modoPausa, diasAvisoPlan, rolesPersonalizados, remotoListo]);
+  }, [coachNombre, coaches, alumnos, templates, mensajeRecordatorio, modoPausa, diasAvisoPlan, rolesPersonalizados, logActividad, remotoListo]);
 
   // Le avisa al coach por notificación push apenas aparece una alerta nueva (ánimo bajo, cumplimiento
   // bajo, etc.). Guardamos cuáles ya se avisaron en este dispositivo (no solo en la memoria de esta
@@ -3805,6 +3930,13 @@ export default function GymPlannerCoachApp() {
     setCoaches((prev) => prev.map((co) => (co.id === coachId ? { ...co, password: nueva } : co)));
     return { ok: true };
   };
+  // El PIN de recuperación permite ver la contraseña propia desde la pantalla de login, sin
+  // depender de otro entrenador ni de un mail — cada coach lo configura una vez, de antemano.
+  const setRecoveryPin = (coachId, pin) => {
+    if (!pin || pin.trim().length < 4) return { ok: false, motivo: "El PIN necesita al menos 4 caracteres." };
+    setCoaches((prev) => prev.map((co) => (co.id === coachId ? { ...co, recoveryPin: pin.trim() } : co)));
+    return { ok: true };
+  };
 
   const asignarPlantilla = (alumnoId, templateId) => {
     const tpl = templates.find((t) => t.id === templateId);
@@ -3822,9 +3954,21 @@ export default function GymPlannerCoachApp() {
     if (!origen) return;
     crearPlantilla({ id: uid(), nombre, categoria: "Personalizada", plan: clonarPlan(origen.plan) });
   };
-  const updatePlan = (alumnoId, newPlan) => setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...a, plan: newPlan } : a)));
+  const ultimoLogPorAlumnoRef = useRef({});
+  const updatePlan = (alumnoId, newPlan) => {
+    setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...a, plan: newPlan } : a)));
+    // El plan se guarda en cada letra que escribís — para no llenar el registro de actividad con
+    // basura, solo anotamos un cambio real cada 3 minutos por alumno como máximo.
+    const ahora = Date.now();
+    const ultimo = ultimoLogPorAlumnoRef.current[alumnoId] || 0;
+    if (ahora - ultimo > 3 * 60 * 1000) {
+      ultimoLogPorAlumnoRef.current[alumnoId] = ahora;
+      const a = alumnos.find((x) => x.id === alumnoId);
+      if (a) registrarActividad(`editó el plan de ${a.nombre}`);
+    }
+  };
   const updateAlumno = (alumnoId, patch) => setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...a, ...patch } : a)));
-  const deleteAlumno = (alumnoId) => setAlumnos((prev) => prev.filter((a) => a.id !== alumnoId));
+  const deleteAlumno = (alumnoId) => { const a = alumnos.find((x) => x.id === alumnoId); setAlumnos((prev) => prev.filter((a) => a.id !== alumnoId)); if (a) registrarActividad(`eliminó a ${a.nombre}`); };
   const guardarVersion = (alumnoId, nombre) => setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...a, historialPlanes: [{ id: uid(), nombre, fecha: todayISO(), plan: clonarPlan(a.plan) }, ...a.historialPlanes] } : a)));
   const restaurarVersion = (alumnoId, versionId) => setAlumnos((prev) => prev.map((a) => {
     if (a.id !== alumnoId) return a;
@@ -3853,6 +3997,7 @@ export default function GymPlannerCoachApp() {
     const usuario = slugify(d.nombre.trim()) || `alumno${alumnos.length + 1}`;
     const password = Math.random().toString().slice(2, 6);
     setAlumnos((prev) => [...prev, { id: uid(), nombre: d.nombre.trim(), usuario, password, edad: d.edad || "", peso: d.peso || "", altura: d.altura || "", objetivo: d.objetivo || "", deportes: d.deportes || "", nivel: d.nivel || "Intermedio", lesiones: "Ninguna", inicio: "", equipo: d.equipo || "", cumplimiento: 0, foto: iniciales, sesionesCompletadas: 0, plan: mkPlanVacio(), historialPeso: [], rmSentadilla: [], wellness: mkWellness(), historialPlanes: [], competencia: { nombre: "", fecha: "" }, notasEjercicios: {}, chat: [], coachIds: session?.coachId ? [session.coachId] : null }]);
+    registrarActividad(`agregó a ${d.nombre.trim()}`);
     return { usuario, password };
   };
   // Le da acceso a otro entrenador a un alumno puntual (los dos lo ven y lo pueden editar de ahí en
@@ -3870,6 +4015,13 @@ export default function GymPlannerCoachApp() {
       const actuales = a.coachIds === null ? coaches.map((c) => c.id) : a.coachIds;
       return { ...a, coachIds: actuales.filter((id) => id !== coachIdAQuitar) };
     }));
+  };
+  // Los alumnos con coachIds=null quedan "de todos" (así arrancaron los que ya tenías cargados
+  // antes de que existiera esta función, para no esconderte a nadie sin avisarte). Este botón te
+  // deja pasarlos a ser tuyos en particular, de una sola vez — así un entrenador nuevo arranca
+  // realmente vacío, sin ver a nadie que no le compartiste vos a propósito.
+  const reclamarAlumnosSinDueño = (coachIdQueReclama) => {
+    setAlumnos((prev) => prev.map((a) => (a.coachIds === null ? { ...a, coachIds: [coachIdQueReclama] } : a)));
   };
   const crearPlantilla = (tpl) => setTemplates((prev) => [...prev, tpl]);
   const sendMsg = (alumnoId, from, texto) => {
@@ -3893,12 +4045,12 @@ export default function GymPlannerCoachApp() {
       </div>
     );
   } else if (!session) {
-    body = <AuthScreen onLogin={login} />;
+    body = <AuthScreen onLogin={login} coaches={coaches} />;
   } else if (session.role === "coach") {
     // Un alumno con coachIds = null es "de todos" (así quedan los que ya tenías antes de esta
     // función). Uno con coachIds = [...] solo lo ven los entrenadores que estén en esa lista.
     const alumnosVisibles = alumnos.filter((a) => a.coachIds === null || a.coachIds.includes(session.coachId));
-    if (tab === "dashboard") body = <CoachDashboard alumnos={alumnosVisibles} goAlumnos={(id) => { setTab("alumnos"); setSelectedCoachAlumno(id); }} coachNombre={coachNombre} onUpdateCoach={setCoachNombre} coaches={coaches} onAddCoach={addCoach} onRemoveCoach={removeCoach} mensajeRecordatorio={mensajeRecordatorio} onUpdateMensajeRecordatorio={setMensajeRecordatorio} notificacionesActivas={notificacionesActivas} onToggleNotificaciones={setNotificacionesActivas} modoPausa={modoPausa} onToggleModoPausa={setModoPausa} diasAvisoPlan={diasAvisoPlan} onSetDiasAvisoPlan={setDiasAvisoPlan} coachId={session?.coachId} onCambiarPassword={cambiarPasswordCoach} />;
+    if (tab === "dashboard") body = <CoachDashboard alumnos={alumnosVisibles} goAlumnos={(id) => { setTab("alumnos"); setSelectedCoachAlumno(id); }} coachNombre={coachNombre} onUpdateCoach={setCoachNombre} coaches={coaches} onAddCoach={addCoach} onRemoveCoach={removeCoach} mensajeRecordatorio={mensajeRecordatorio} onUpdateMensajeRecordatorio={setMensajeRecordatorio} notificacionesActivas={notificacionesActivas} onToggleNotificaciones={setNotificacionesActivas} modoPausa={modoPausa} onToggleModoPausa={setModoPausa} diasAvisoPlan={diasAvisoPlan} onSetDiasAvisoPlan={setDiasAvisoPlan} coachId={session?.coachId} onCambiarPassword={cambiarPasswordCoach} onSetRecoveryPin={setRecoveryPin} onReclamarAlumnos={reclamarAlumnosSinDueño} logActividad={logActividad} />;
     else if (tab === "alumnos") body = <CoachAlumnos alumnos={alumnosVisibles} selectedId={selectedCoachAlumno} setSelectedId={setSelectedCoachAlumno} templates={templates} onAsignarPlantilla={asignarPlantilla} onCopiarPlan={copiarPlan} onGuardarComoPlantilla={guardarComoPlantilla} onUpdatePlan={updatePlan} onUpdateAlumno={updateAlumno} onDeleteAlumno={deleteAlumno} onAddAlumno={addAlumno} onSendMsg={sendMsg} onGuardarVersion={guardarVersion} onRestaurarVersion={restaurarVersion} onGuardarHistorialRM={agregarHistorialRM} onAddToLibrary={addCustomExercise} version={libVersion} coaches={coaches} coachIdActual={session.coachId} onCompartirAlumno={compartirAlumnoConCoach} onDejarDeCompartir={dejarDeCompartirAlumno} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={agregarRolPersonalizado} />;
     else if (tab === "plantillas") body = <CoachPlantillas templates={templates} alumnos={alumnosVisibles} onAsignar={asignarPlantilla} onCrearPlantilla={crearPlantilla} onAddToLibrary={addCustomExercise} version={libVersion} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={agregarRolPersonalizado} />;
     else if (tab === "ejercicios") body = <CoachEjercicios onAddExercise={addCustomExercise} version={libVersion} onToggleFav={toggleFavorito} onEditVideo={editarVideoLibreria} />;
