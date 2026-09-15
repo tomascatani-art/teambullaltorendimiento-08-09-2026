@@ -658,16 +658,6 @@ function VideoModal() {
   }, []);
   if (!url) return null;
   const videoId = extraerYoutubeId(url);
-  const abrirEnYoutube = () => {
-    const a = document.createElement("a");
-    a.href = url;
-    a.target = "_blank";
-    a.rel = "noopener noreferrer";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setUrl(null);
-  };
   return (
     <div onClick={() => setUrl(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", zIndex: 9999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 480, background: "#121017", borderRadius: 16, overflow: "hidden", position: "relative" }}>
@@ -684,8 +674,8 @@ function VideoModal() {
           </div>
         ) : (
           <div style={{ padding: 30, textAlign: "center" }}>
-            <div className="font-body" style={{ color: "#F4F1EA", fontSize: 13, marginBottom: 16 }}>Todavía no hay un video puntual cargado para este ejercicio — esto es una búsqueda con varios resultados.</div>
-            <button onClick={abrirEnYoutube} className="font-body" style={{ background: "#7DD6C0", border: "none", borderRadius: 10, color: "#0B2A2E", fontWeight: 700, padding: "10px 22px", cursor: "pointer", fontSize: 12 }}>Abrir búsqueda en YouTube</button>
+            <div style={{ fontSize: 28, marginBottom: 8 }}>🎬</div>
+            <div className="font-body" style={{ color: "#F4F1EA", fontSize: 14, fontWeight: 700 }}>Este ejercicio no tiene video cargado</div>
           </div>
         )}
       </div>
@@ -695,6 +685,13 @@ function VideoModal() {
 
 const slugify = (s) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
 const FAVORITOS_SET = new Set();
+// El link que le pones a un ejercicio de la biblioteca se guarda de forma simple y compartida
+// (como pediste, como estaba antes) — lo ve cualquier entrenador que use la app, y esta vez sí
+// queda guardado de verdad entre sesiones (antes se perdía al cerrar la app).
+let VIDEOS_GUARDADOS = {}; // { [exerciseId]: video }
+function videoEfectivo(ex) {
+  return VIDEOS_GUARDADOS[ex.id] || ex.video;
+}
 
 // Videos reales y verificados por tipo de movimiento — se usan como respaldo cuando el coach
 // todavía no cargó un link específico para ese ejercicio, en vez de una búsqueda con varios resultados.
@@ -897,6 +894,18 @@ async function compartirPlan(alumno) {
 }
 
 // Compartir texto genérico por WhatsApp directo (usado por el informe semanal)
+// Arma un texto con las notas de ejercicios del alumno, agrupadas por día — para compartir
+// por WhatsApp o donde el coach quiera guardarlas (mail, notas, etc.)
+function generarTextoNotas(alumno) {
+  const porDia = Object.values(alumno.notasEjercicios || {}).filter((n) => n.texto && n.texto.trim()).reduce((acc, n) => { (acc[n.fecha] = acc[n.fecha] || []).push(n); return acc; }, {});
+  let t = `📝 Notas de entrenamiento — ${alumno.nombre}\n\n`;
+  Object.entries(porDia).sort((a, b) => (a[0] < b[0] ? 1 : -1)).forEach(([fecha, notas]) => {
+    t += `📅 ${mostrarFecha(fecha)}\n`;
+    notas.forEach((n) => { t += `• ${n.exNombre}: ${n.texto}\n`; });
+    t += `\n`;
+  });
+  return t.trim();
+}
 function compartirTextoPorWhatsApp(texto) {
   const url = `https://wa.me/?text=${encodeURIComponent(texto)}`;
   window.open(url, "_blank", "noopener,noreferrer");
@@ -923,6 +932,299 @@ async function compartirTexto(titulo, texto) {
 }
 
 // Informe semanal consolidado: encuestas, check-ins y notas de ejercicios de los últimos 7 días, para todos los alumnos
+// Informe individual en PDF — versión prolija y profesional, pensada para mandar a la alumna,
+// a un club, o guardar como registro (no como texto plano de WhatsApp, que se ve desordenado).
+// Gráfico de línea en SVG puro (no depende de React) — para poder incluirlo en el PDF impreso,
+// no solo en la pantalla. Mismo estilo visual que los gráficos de la app.
+// Gráfico circular (dona) en SVG puro — para porcentajes tipo cumplimiento o ánimo promedio.
+function svgDonutChart(valorActual, valorMax, color, textoCentro, label) {
+  const pct = Math.max(0, Math.min(1, valorActual / valorMax));
+  const r = 40, cx = 52, cy = 52, grosor = 10;
+  const circun = 2 * Math.PI * r;
+  const lleno = circun * pct;
+  return `
+    <div style="display:flex;flex-direction:column;align-items:center;background:#F8F6F1;border-radius:12px;padding:14px 18px;">
+      <div style="font-size:10px;color:#8B8698;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">${label}</div>
+      <div style="font-size:24px;font-weight:800;color:#121017;margin-bottom:6px;">${textoCentro}</div>
+      <svg width="100" height="100" viewBox="0 0 104 104">
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#E8E3D8" stroke-width="${grosor}"/>
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="${grosor}" stroke-linecap="round" stroke-dasharray="${lleno} ${circun}" transform="rotate(-90 ${cx} ${cy})"/>
+      </svg>
+    </div>`;
+}
+// Gráfico de barras en SVG puro — para comparar valores entre semanas, meses, etc.
+function svgBarChart(labels, valores, color, unidad = "") {
+  if (!valores.length) return `<div style="color:#8B8698;font-size:12px;">Sin datos.</div>`;
+  const w = 640, h = 140, pad = 24, padSup = 20;
+  const max = Math.max(...valores, 1);
+  const anchoBarra = (w - pad * 2) / valores.length;
+  const barras = valores.map((v, i) => {
+    const alto = ((h - padSup - pad) * v) / max;
+    const x = pad + i * anchoBarra + anchoBarra * 0.18;
+    const y = h - pad - alto;
+    const anchoReal = anchoBarra * 0.64;
+    return `<rect x="${x}" y="${y}" width="${anchoReal}" height="${alto}" rx="4" fill="${color}"/>
+      <text x="${x + anchoReal / 2}" y="${y - 6}" text-anchor="middle" font-size="11" font-weight="700" fill="#121017" font-family="-apple-system,sans-serif">${v}${unidad}</text>
+      <text x="${x + anchoReal / 2}" y="${h - 6}" text-anchor="middle" font-size="9" fill="#8B8698" font-family="-apple-system,sans-serif">${labels[i]}</text>`;
+  }).join("");
+  return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;display:block;"><line x1="${pad}" y1="${h - pad}" x2="${w - pad}" y2="${h - pad}" stroke="#E8E3D8" stroke-width="1"/>${barras}</svg>`;
+}
+function svgLineChart(data, color = "#FF6B35", unidad = "") {
+  if (!Array.isArray(data) || data.length === 0) return `<div style="color:#8B8698;font-size:12px;padding:14px 0;">Sin datos todavía.</div>`;
+  if (data.length === 1) return `<div style="font-size:22px;font-weight:800;padding:10px 0;">${data[0]}${unidad}</div>`;
+  const max = Math.max(...data), min = Math.min(...data);
+  const actual = data[data.length - 1], inicial = data[0];
+  const delta = actual - inicial;
+  const fmt = (n) => (Number.isInteger(n) ? n : n.toFixed(1));
+  const w = 640, h = 100, pad = 10;
+  const pt = (v, i) => [pad + (i * (w - pad * 2)) / (data.length - 1), h - pad - ((v - min) / (max - min || 1)) * (h - pad * 2)];
+  const points = data.map((v, i) => pt(v, i));
+  const linea = points.map((p, i) => (i === 0 ? "M" : "L") + p[0] + "," + p[1]).join(" ");
+  const area = linea + ` L ${points[points.length - 1][0]},${h - pad} L ${points[0][0]},${h - pad} Z`;
+  const gid = "g" + Math.random().toString(36).slice(2);
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
+      <div><span style="font-size:22px;font-weight:800;">${fmt(actual)}${unidad}</span> <span style="font-size:11px;color:#8B8698;">actual</span></div>
+      <div style="font-size:12px;font-weight:700;color:${delta >= 0 ? "#1a9c6e" : "#c94a3a"};">${delta >= 0 ? "▲" : "▼"} ${fmt(Math.abs(delta))}${unidad} desde el inicio</div>
+    </div>
+    <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;display:block;">
+      <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="${color}" stop-opacity="0.35"/>
+        <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
+      </linearGradient></defs>
+      <path d="${area}" fill="url(#${gid})"/>
+      <path d="${linea}" fill="none" stroke="${color}" stroke-width="2.5"/>
+      ${points.map((p) => `<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="${color}"/>`).join("")}
+    </svg>
+    <div style="display:flex;justify-content:space-between;font-size:10px;color:#8B8698;">
+      <span>Mín: ${fmt(min)}${unidad}</span><span>Máx: ${fmt(max)}${unidad}</span>
+    </div>`;
+}
+function generarHTMLInforme(alumno, mesFiltro) {
+  // mesFiltro opcional, formato "YYYY-MM" — si viene, el informe muestra solo ese mes
+  // (check-ins, encuestas, notas); si no viene, muestra todo el historial.
+  const enMes = (fechaStr) => !mesFiltro || (typeof fechaStr === "string" && fechaStr.startsWith(mesFiltro));
+  const ejerciciosRM = Object.keys(alumno.historialRM || {}).filter((k) => (alumno.historialRM[k] || []).length > 0);
+  const checkinsTodos = alumno.wellness?.checkins || [];
+  const checkins = checkinsTodos.filter((c) => enMes(c.fecha));
+  const promAnimo = checkins.length ? (checkins.reduce((s, c) => s + c.valor, 0) / checkins.length).toFixed(1) : null;
+  const encuestas = (alumno.wellness?.encuestas || []).filter((e) => enMes(e.fecha));
+  const notasPorDia = Object.values(alumno.notasEjercicios || {}).filter((n) => n.texto && n.texto.trim() && enMes(n.fecha)).reduce((acc, n) => { (acc[n.fecha] = acc[n.fecha] || []).push(n); return acc; }, {});
+  const diasConNotas = Object.entries(notasPorDia).sort((a, b) => (a[0] < b[0] ? 1 : -1));
+  const tituloMes = mesFiltro ? new Date(mesFiltro + "-02T00:00:00").toLocaleDateString("es-AR", { month: "long", year: "numeric" }) : null;
+
+  // Check-ins agrupados por semana (Sem.1, Sem.2...) del mes, para el gráfico de barras de constancia
+  const checkinsPorSemana = {};
+  checkins.forEach((c) => {
+    const dia = parseInt(c.fecha.slice(8, 10), 10);
+    const semana = Math.ceil(dia / 7);
+    checkinsPorSemana[semana] = (checkinsPorSemana[semana] || 0) + 1;
+  });
+  const semanasLabels = Object.keys(checkinsPorSemana).sort((a, b) => a - b).map((s) => `Sem.${s}`);
+  const semanasValores = Object.keys(checkinsPorSemana).sort((a, b) => a - b).map((s) => checkinsPorSemana[s]);
+
+  // Asistencia real del mes (días efectivamente entrenados, según el calendario de sesiones)
+  const sesionesDelMes = (alumno.historialSesiones || []).filter((f) => enMes(f)).sort();
+
+  // Resumen del plan actual (mesociclo, objetivo, días de entrenamiento programados)
+  const metaPlan = alumno.plan?.meta || {};
+  const diasPlan = alumno.plan?.dias || [];
+
+  // Próxima competencia (si está cargada)
+  const competencia = alumno.competencia;
+
+  // Análisis final — un resumen corto en texto, no solo números, cruzando cumplimiento/ánimo/RM
+  const analisis = [];
+  if (alumno.cumplimiento >= 85) analisis.push(`El cumplimiento (${alumno.cumplimiento}%) está en un nivel muy bueno.`);
+  else if (alumno.cumplimiento >= 70) analisis.push(`El cumplimiento (${alumno.cumplimiento}%) es aceptable, con margen para mejorar la constancia.`);
+  else analisis.push(`El cumplimiento (${alumno.cumplimiento}%) está bajo — conviene revisar qué está frenando la asistencia.`);
+  if (promAnimo) {
+    if (parseFloat(promAnimo) >= 7) analisis.push(`El ánimo se mantuvo alto en general (${promAnimo}/10).`);
+    else if (parseFloat(promAnimo) >= 5) analisis.push(`El ánimo estuvo en un nivel medio (${promAnimo}/10), para tener en cuenta.`);
+    else analisis.push(`El ánimo promedio fue bajo (${promAnimo}/10) — vale la pena conversarlo con el/la deportista.`);
+  }
+  if (ejerciciosRM.length) {
+    const subieron = ejerciciosRM.filter((ej) => { const v = alumno.historialRM[ej]; return v[v.length - 1] >= v[0]; }).length;
+    analisis.push(`De ${ejerciciosRM.length} ejercicio${ejerciciosRM.length === 1 ? "" : "s"} con RM registrado, ${subieron} mostró${subieron === 1 ? "" : "aron"} mejora respecto al valor inicial.`);
+  }
+  if (sesionesDelMes.length) analisis.push(`Entrenó ${sesionesDelMes.length} día${sesionesDelMes.length === 1 ? "" : "s"} ${tituloMes ? `durante ${tituloMes}` : "en el período mostrado"}.`);
+
+  return `<html><head><meta charset="utf-8"><title>Informe — ${alumno.nombre}</title><style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; margin: 0; color: #1C1A24; background: #F4F1EA; }
+    .hoja { max-width: 760px; margin: 0 auto; background: #fff; }
+    .header { background: #121017; color: #fff; padding: 32px 36px; }
+    .header .marca { color: #FF6B35; font-weight: 800; font-size: 13px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
+    .header h1 { margin: 0; font-size: 28px; }
+    .header .sub { color: #8B8698; font-size: 13px; margin-top: 4px; }
+    .cuerpo { padding: 28px 36px 40px; }
+    .stats { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+    .donuts { display: flex; gap: 24px; margin-bottom: 16px; justify-content: flex-start; }
+    .stat { flex: 1; min-width: 130px; background: #F8F6F1; border: 1px solid #E8E3D8; border-radius: 12px; padding: 14px 16px; }
+    .stat .num { font-size: 24px; font-weight: 800; color: #121017; }
+    .stat .label { font-size: 11px; color: #8B8698; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+    h2.seccion { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #fff; background: #121017; padding: 9px 14px; border-radius: 8px; margin: 26px 0 14px; }
+    .perfil-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 20px; }
+    .destacado { background: #FFF3E0; border: 1px solid #FF6B35; border-radius: 10px; padding: 12px 16px; font-size: 13px; margin-bottom: 20px; }
+    .analisis { background: #121017; color: #fff; border-radius: 12px; padding: 18px 20px; margin-top: 20px; }
+    .analisis h3 { color: #FF6B35; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 10px; }
+    .analisis p { font-size: 13px; line-height: 1.6; margin: 0 0 6px; color: #E8E3D8; }
+    .dias-plan { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+    .dia-chip { background: #F8F6F1; border: 1px solid #E8E3D8; border-radius: 8px; padding: 8px 12px; font-size: 12px; min-width: 100px; }
+    .dia-chip b { display: block; font-size: 11px; color: #FF6B35; margin-bottom: 2px; }
+    .asistencia-dias { display: flex; flex-wrap: wrap; gap: 6px; }
+    .asistencia-dia { background: #E9F7F1; color: #1a9c6e; border-radius: 6px; padding: 4px 9px; font-size: 11px; font-weight: 700; }
+    .perfil-item { font-size: 13px; padding: 6px 0; border-bottom: 1px solid #EEE; }
+    .perfil-item b { color: #8B8698; font-weight: 600; font-size: 10px; text-transform: uppercase; display: block; margin-bottom: 2px; }
+    .rm-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #EEE; }
+    .rm-nombre { font-weight: 600; font-size: 13px; }
+    .rm-valor { font-weight: 800; font-size: 14px; }
+    .rm-valor.up { color: #1a9c6e; } .rm-valor.down { color: #c94a3a; }
+    .chart-box { background: #F8F6F1; border-radius: 12px; padding: 12px 16px; margin-bottom: 10px; page-break-inside: avoid; }
+    .chart-box .titulo { font-size: 12px; font-weight: 700; margin-bottom: 8px; }
+    .card { background: #F8F6F1; border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; }
+    .card .fecha { font-size: 10px; font-weight: 700; color: #8B8698; text-transform: uppercase; margin-bottom: 4px; }
+    .card .ej { font-size: 11px; font-weight: 700; color: #7DD6C0; margin-top: 6px; }
+    .card .txt { font-size: 13px; }
+    .footer { text-align: center; padding: 20px; color: #8B8698; font-size: 11px; }
+    .btn-imprimir { display: inline-block; background: #FF6B35; color: #fff; border: none; border-radius: 8px; padding: 10px 18px; font-size: 14px; font-weight: 700; cursor: pointer; margin: 16px 0 0 36px; }
+    @media print { .btn-imprimir { display: none; } body { background: #fff; } .hoja { max-width: none; } }
+  </style></head><body>
+    <button class="btn-imprimir" onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button>
+    <div class="hoja">
+      <div class="header">
+        <div class="marca">🐂 Team Bull · Alto rendimiento</div>
+        <h1>${alumno.nombre}</h1>
+        <div class="sub">${tituloMes ? `Informe mensual — ${tituloMes}` : `Informe individual — ${fechaLegible(todayISO())}`}</div>
+      </div>
+      <div class="cuerpo">
+        ${competencia && competencia.nombre ? `<div class="destacado">🏆 Próxima competencia: <b>${competencia.nombre}</b>${competencia.fecha ? ` — ${competencia.fecha}` : ""}</div>` : ""}
+        <h2 class="seccion">👤 Perfil</h2>
+        <div class="perfil-grid">
+          <div class="perfil-item"><b>Edad</b>${alumno.edad || "—"}</div>
+          <div class="perfil-item"><b>Altura</b>${alumno.altura ? alumno.altura + " cm" : "—"}</div>
+          <div class="perfil-item"><b>Peso</b>${alumno.peso ? alumno.peso + " kg" : "—"}</div>
+          <div class="perfil-item"><b>Deporte</b>${alumno.deportes || "—"}</div>
+          <div class="perfil-item"><b>Objetivo</b>${alumno.objetivo || "—"}</div>
+          <div class="perfil-item"><b>Nivel</b>${alumno.nivel || "—"}</div>
+          <div class="perfil-item"><b>Equipo</b>${alumno.equipo || "—"}</div>
+          <div class="perfil-item"><b>Lesiones</b>${alumno.lesiones || "Ninguna"}</div>
+        </div>
+
+        ${diasPlan.length ? `<h2 class="seccion">🗓️ Plan actual</h2>
+        <div class="perfil-grid" style="margin-bottom:12px;">
+          <div class="perfil-item"><b>Objetivo del mesociclo</b>${metaPlan.objetivo || "—"}</div>
+          <div class="perfil-item"><b>Actividad</b>${metaPlan.actividad || "—"}</div>
+          <div class="perfil-item"><b>Macrociclo / Mesociclo</b>${metaPlan.macrociclo || "—"} / ${metaPlan.mesociclo || "—"}</div>
+          <div class="perfil-item"><b>Descanso entre series</b>${metaPlan.descanso || "—"}</div>
+        </div>
+        <div class="dias-plan">
+          ${diasPlan.map((d) => `<div class="dia-chip"><b>${d.nombre}</b>${(d.bloques || []).reduce((n, b) => n + (b.ejercicios || []).length, 0)} ejercicios</div>`).join("")}
+        </div>` : ""}
+
+        <h2 class="seccion">📊 Resumen</h2>
+        <div class="donuts">
+          ${svgDonutChart(alumno.cumplimiento, 100, "#FF6B35", alumno.cumplimiento + "%", "Cumplimiento")}
+          ${promAnimo ? svgDonutChart(parseFloat(promAnimo), 10, "#33D6A6", promAnimo + "/10", "Ánimo promedio") : ""}
+        </div>
+        <div class="stats">
+          <div class="stat"><div class="num">${alumno.sesionesCompletadas || 0}</div><div class="label">Sesiones</div></div>
+          ${alumno.historialPeso && alumno.historialPeso.length ? `<div class="stat"><div class="num">${alumno.historialPeso[alumno.historialPeso.length - 1]}kg</div><div class="label">Peso actual</div></div>` : ""}
+        </div>
+
+        ${semanasValores.length > 1 ? `<h2 class="seccion">📅 Constancia — check-ins por semana</h2><div class="chart-box">${svgBarChart(semanasLabels, semanasValores, "#5AA0E6", "")}</div>` : ""}
+
+        ${sesionesDelMes.length ? `<h2 class="seccion">✅ Asistencia${tituloMes ? ` — ${sesionesDelMes.length} sesiones` : ""}</h2><div class="asistencia-dias">${sesionesDelMes.map((f) => `<span class="asistencia-dia">${mostrarFecha(f)}</span>`).join("")}</div>` : ""}
+
+        ${alumno.historialPeso && alumno.historialPeso.length > 1 ? `<h2 class="seccion">⚖️ Evolución de peso corporal</h2><div class="chart-box">${svgLineChart(alumno.historialPeso, "#7DD6C0", "kg")}</div>` : ""}
+
+        ${ejerciciosRM.length ? `<h2 class="seccion">💪 RM por ejercicio</h2>` + ejerciciosRM.map((ej) => {
+          const vals = alumno.historialRM[ej];
+          return `<div class="chart-box"><div class="titulo">${ej}</div>${svgLineChart(vals, "#FF6B35", "kg")}</div>`;
+        }).join("") : ""}
+
+        ${encuestas.length ? `<h2 class="seccion">📋 Encuestas post-entreno</h2>` + encuestas.slice(0, 15).map((e) => `<div class="card"><div class="fecha">${mostrarFecha(e.fecha)}</div><div class="txt">Fatiga ${e.fatiga} · Sueño ${e.sueno} · Dolor ${e.dolorMuscular} · Motivación ${e.motivacion}${e.comentario ? `<br><i>"${e.comentario}"</i>` : ""}</div></div>`).join("") : ""}
+
+        ${diasConNotas.length ? `<h2 class="seccion">📝 Notas de ejercicios</h2>` + diasConNotas.map(([fecha, notas]) => `<div class="card"><div class="fecha">${mostrarFecha(fecha)}</div>${notas.map((n) => `<div class="ej">${n.exNombre}</div><div class="txt">${n.texto}</div>`).join("")}</div>`).join("") : ""}
+
+        ${mesFiltro && !checkins.length && !encuestas.length && !diasConNotas.length ? `<div style="color:#8B8698;font-size:13px;padding:20px 0;text-align:center;">Sin actividad registrada este mes.</div>` : ""}
+
+        <div class="analisis">
+          <h3>🔎 Análisis final</h3>
+          ${analisis.map((p) => `<p>${p}</p>`).join("")}
+        </div>
+      </div>
+      <div class="footer">Generado por Team Bull${tituloMes ? ` — archivo automático de ${tituloMes}` : ""}</div>
+    </div>
+  </body></html>`;
+}
+function descargarInformePDF(alumno, mesFiltro) {
+  const html = generarHTMLInforme(alumno, mesFiltro);
+  const blob = new Blob([html], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `Informe-${slugify(alumno.nombre)}${mesFiltro ? `-${mesFiltro}` : ""}.html`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+// Informe completo de UN alumno — combina cumplimiento, peso, RM por ejercicio, bienestar,
+// encuestas y notas de ejercicios, todo agrupado prolijo para compartir por WhatsApp, mail, etc.
+function generarInformeCompleto(alumno) {
+  let t = `🐂 TEAM BULL — Informe individual\n${alumno.nombre}\n${fechaLegible(todayISO())}\n\n`;
+  t += `━━━━━━━━━━━━━━\n`;
+  t += `📊 GENERAL\n`;
+  t += `Cumplimiento: ${alumno.cumplimiento}%\n`;
+  t += `Sesiones completadas: ${alumno.sesionesCompletadas || 0}\n`;
+  if (alumno.historialPeso && alumno.historialPeso.length) {
+    t += `Peso corporal: ${alumno.historialPeso[alumno.historialPeso.length - 1]}kg actual (arrancó en ${alumno.historialPeso[0]}kg)\n`;
+  }
+  t += `\n`;
+
+  const ejerciciosRM = Object.keys(alumno.historialRM || {}).filter((k) => (alumno.historialRM[k] || []).length > 0);
+  if (ejerciciosRM.length) {
+    t += `━━━━━━━━━━━━━━\n💪 RM POR EJERCICIO\n`;
+    ejerciciosRM.forEach((ej) => {
+      const vals = alumno.historialRM[ej];
+      const actual = vals[vals.length - 1];
+      const inicial = vals[0];
+      const signo = actual >= inicial ? "▲" : "▼";
+      t += `${ej}: ${actual}kg actual (${signo} desde ${inicial}kg)\n`;
+    });
+    t += `\n`;
+  }
+
+  const checkins = alumno.wellness?.checkins || [];
+  if (checkins.length) {
+    const prom = (checkins.reduce((s, c) => s + c.valor, 0) / checkins.length).toFixed(1);
+    t += `━━━━━━━━━━━━━━\n🙂 BIENESTAR\n`;
+    t += `Ánimo promedio (check-ins): ${prom}/10 · ${checkins.length} registros en total\n\n`;
+  }
+
+  const encuestas = alumno.wellness?.encuestas || [];
+  if (encuestas.length) {
+    t += `━━━━━━━━━━━━━━\n📋 ENCUESTAS POST-ENTRENO\n`;
+    encuestas.slice(0, 10).forEach((e) => {
+      t += `${mostrarFecha(e.fecha)}: Fatiga ${e.fatiga} · Sueño ${e.sueno} · Dolor ${e.dolorMuscular} · Motivación ${e.motivacion}${e.comentario ? ` — "${e.comentario}"` : ""}\n`;
+    });
+    t += `\n`;
+  }
+
+  const notasPorDia = Object.values(alumno.notasEjercicios || {}).filter((n) => n.texto && n.texto.trim()).reduce((acc, n) => { (acc[n.fecha] = acc[n.fecha] || []).push(n); return acc; }, {});
+  const diasConNotas = Object.entries(notasPorDia).sort((a, b) => (a[0] < b[0] ? 1 : -1));
+  if (diasConNotas.length) {
+    t += `━━━━━━━━━━━━━━\n📝 NOTAS DE EJERCICIOS\n`;
+    diasConNotas.forEach(([fecha, notas]) => {
+      t += `${mostrarFecha(fecha)}:\n`;
+      notas.forEach((n) => { t += `  • ${n.exNombre}: ${n.texto}\n`; });
+    });
+  }
+
+  return t.trim();
+}
 function generarInformeSemanal(alumnos) {
   const hoy = new Date(todayISO() + "T00:00:00");
   const haceUnaSemana = new Date(hoy.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -1506,7 +1808,7 @@ function FilaEjercicio({ fila, onChange, onRemove, onAddToLibrary, rolesPersonal
             <button onClick={copiarSemanas} className="font-body" title="Copiar las semanas de este ejercicio" style={{ background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#7DD6C0", fontSize: 9, fontWeight: 700, padding: "4px 8px", cursor: "pointer" }}>📋 Copiar semanas</button>
             <button onClick={pegarSemanas} disabled={!semanasCopiadas} className="font-body" title="Pegar las semanas copiadas de otro ejercicio" style={{ background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: semanasCopiadas ? "#FF6B35" : "#3A3646", fontSize: 9, fontWeight: 700, padding: "4px 8px", cursor: semanasCopiadas ? "pointer" : "default" }}>📥 Pegar</button>
           </div>
-          <div style={{ display: "flex", gap: 4, overflowX: "auto", overflowY: "visible", paddingTop: 8, paddingBottom: 2, marginBottom: 4 }}>
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", paddingTop: 8, paddingBottom: 2, marginBottom: 4 }}>
             <MiniInput label="Nota" value={fila.nota} onChange={set("nota")} wide />
             {fila.semanas.map((s, i) => (
               <div key={i} style={{ position: "relative" }}>
@@ -1529,7 +1831,7 @@ function BloqueEditor({ bloque, onChange, onRemove, version, onAddToLibrary, rol
   const [custom, setCustom] = useState("");
   const setFila = (f) => onChange({ ...bloque, ejercicios: bloque.ejercicios.map((x) => (x.id === f.id ? f : x)) });
   const removeFila = (id) => onChange({ ...bloque, ejercicios: bloque.ejercicios.filter((x) => x.id !== id) });
-  const addFromLibrary = (ex) => { onChange({ ...bloque, ejercicios: [...bloque.ejercicios, mkRow(ex.nombre, { video: ex.video, emoji: ex.emoji })] }); setPicking(false); };
+  const addFromLibrary = (ex) => { onChange({ ...bloque, ejercicios: [...bloque.ejercicios, mkRow(ex.nombre, { video: videoEfectivo(ex), emoji: ex.emoji })] }); setPicking(false); };
   const addCustom = () => { if (!custom.trim()) return; onChange({ ...bloque, ejercicios: [...bloque.ejercicios, mkRow(custom.trim())] }); setCustom(""); };
   // Mueve un ejercicio una posición hacia arriba o abajo dentro del bloque, sin borrar ni perder nada.
   const moverFila = (index, direccion) => {
@@ -1662,7 +1964,7 @@ function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibr
         </div>
       ))}
       {warmPicking ? (
-        <ExercisePicker onPick={(ex) => { addWarm(ex.nombre, ex.video); setWarmPicking(false); }} onClose={() => setWarmPicking(false)} version={version} />
+        <ExercisePicker onPick={(ex) => { addWarm(ex.nombre, videoEfectivo(ex)); setWarmPicking(false); }} onClose={() => setWarmPicking(false)} version={version} />
       ) : (
         <div style={{ display: "flex", gap: 6, marginBottom: 20 }}>
           <button onClick={() => setWarmPicking(true)} className="font-body" style={{ flex: 1, background: "rgba(125,214,192,0.1)", border: "1px dashed #7DD6C0", borderRadius: 8, color: "#7DD6C0", fontWeight: 700, fontSize: 10, padding: 8, cursor: "pointer" }}>+ Buscar en la biblioteca (con video)</button>
@@ -1671,13 +1973,13 @@ function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibr
       )}
 
       <div className="font-body" style={{ fontSize: 11, color: "#FF6B35", fontWeight: 700, marginBottom: 4 }}>DÍAS DE ENTRENAMIENTO</div>
-      <div className="font-body" style={{ fontSize: 9, color: "#6B6678", marginBottom: 10 }}>Arrastrá el ⠿ para reordenar. Asigná un día de la semana si querés armar un calendario fijo.</div>
+      <div className="font-body" style={{ fontSize: 9, color: "#6B6678", marginBottom: 10 }}>Arrastrá el ⠿ para reordenar. Elegí un día de la semana para que el nombre pase a ser ese (ej: "Martes" en vez de "DÍA 1") — o tocá el nombre directamente para escribir el que quieras.</div>
       {plan.dias.map((d, idx) => (
         <div key={d.id} draggable onDragStart={() => setDragIdx(idx)} onDragOver={(e) => e.preventDefault()} onDrop={() => { moverDia(dragIdx, idx); setDragIdx(null); }}
           style={{ border: dragIdx === idx ? "1px dashed #FF6B35" : "1px solid transparent", borderRadius: 10, opacity: dragIdx !== null && dragIdx !== idx ? 0.85 : 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
             <span style={{ cursor: "grab", color: "#8B8698", fontSize: 15 }}>⠿</span>
-            <select value={d.diaSemana || ""} onChange={(e) => updateDia(d.id, { ...d, diaSemana: e.target.value })} className="font-body" style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 6, color: "#7DD6C0", fontSize: 10, padding: "4px 6px" }}>
+            <select value={d.diaSemana || ""} onChange={(e) => { const nuevoDia = e.target.value; updateDia(d.id, { ...d, diaSemana: nuevoDia, nombre: nuevoDia || d.nombre }); }} className="font-body" style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 6, color: "#7DD6C0", fontSize: 10, padding: "4px 6px" }}>
               <option value="">Sin día fijo</option>
               {DIAS_SEMANA.map((ds) => <option key={ds} value={ds}>{ds}</option>)}
             </select>
@@ -1740,7 +2042,7 @@ function generarAlertas(a) {
   return alertas;
 }
 
-function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coaches, onAddCoach, onRemoveCoach, mensajeRecordatorio, onUpdateMensajeRecordatorio, notificacionesActivas, onToggleNotificaciones, modoPausa, onToggleModoPausa, diasAvisoPlan, onSetDiasAvisoPlan, coachId, onCambiarPassword, onSetRecoveryPin, onReclamarAlumnos, logActividad }) {
+function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coaches, onAddCoach, onRemoveCoach, mensajeRecordatorio, onUpdateMensajeRecordatorio, notificacionesActivas, onToggleNotificaciones, modoPausa, onToggleModoPausa, diasAvisoPlan, onSetDiasAvisoPlan, coachId, onCambiarPassword, onSetRecoveryPin, onReclamarAlumnos, logActividad, grupos, onCrearGrupo, onEliminarGrupo }) {
   const [editando, setEditando] = useState(false);
   const [agregandoCoach, setAgregandoCoach] = useState(false);
   const [nombreNuevoCoach, setNombreNuevoCoach] = useState("");
@@ -1755,6 +2057,10 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
     else setPassMensaje({ ok: false, texto: r.motivo });
   };
   const [configurandoPin, setConfigurandoPin] = useState(false);
+  const [gestionandoGrupos, setGestionandoGrupos] = useState(false);
+  const [creandoGrupo, setCreandoGrupo] = useState(false);
+  const [nombreGrupoNuevo, setNombreGrupoNuevo] = useState("");
+  const [integrantesGrupoNuevo, setIntegrantesGrupoNuevo] = useState([]);
   const [pinNuevo, setPinNuevo] = useState("");
   const [pinMensaje, setPinMensaje] = useState(null);
   const guardarPinNuevo = () => {
@@ -1831,6 +2137,41 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
               <div className="font-body" style={{ color: "#5AA0E6", fontSize: 12, fontWeight: 700, marginBottom: 4 }}>🔒 {alumnos.filter((a) => a.coachIds === null).length} alumno/a(s) "de todos"</div>
               <div className="font-body" style={{ color: "#8B8698", fontSize: 10, marginBottom: 8 }}>Quedaron visibles para cualquier entrenador nuevo que crees. Tocá este botón para que pasen a ser solo tuyos — después le podés compartir puntualmente el que quieras a otro entrenador, desde la ficha de cada alumno/a.</div>
               <button onClick={() => { if (window.confirm("¿Pasar todos estos alumnos a ser solo tuyos? Los demás entrenadores dejarán de verlos, salvo que se los compartas vos después.")) onReclamarAlumnos(coachId); }} className="font-body" style={{ width: "100%", background: "#5AA0E6", border: "none", borderRadius: 8, color: "#0B1A2E", fontWeight: 700, padding: 9, cursor: "pointer" }}>Hacer que sean solo míos</button>
+            </div>
+          )}
+
+          {coaches.length > 1 && (
+            <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, padding: 12, marginTop: 8 }}>
+              <button onClick={() => setGestionandoGrupos(!gestionandoGrupos)} className="font-body" style={{ width: "100%", background: "none", border: "none", color: "#F4F1EA", fontWeight: 700, fontSize: 12, cursor: "pointer", textAlign: "left", padding: 0 }}>👥 Grupos de entrenadores {gestionandoGrupos ? "▲" : "▼"}</button>
+              {gestionandoGrupos && (
+                <div style={{ marginTop: 10 }}>
+                  <div className="font-body" style={{ color: "#6B6678", fontSize: 9, marginBottom: 8 }}>Armá equipos (ej: "Mis ayudantes") para compartirles varios alumnos de una sola vez, en vez de uno por uno. Un entrenador que no esté en ningún grupo tuyo (ej: le vendiste la app a otra persona) sigue sin ver nada tuyo.</div>
+                  {grupos.map((g) => (
+                    <div key={g.id} style={{ background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, padding: 10, marginBottom: 6 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                        <span className="font-body" style={{ color: "#F4F1EA", fontSize: 12, fontWeight: 700 }}>{g.nombre}</span>
+                        <button onClick={() => onEliminarGrupo(g.id)} className="font-body" style={{ background: "none", border: "none", color: "#E85D5D", fontSize: 10, cursor: "pointer" }}>Eliminar</button>
+                      </div>
+                      <div className="font-body" style={{ color: "#8B8698", fontSize: 10 }}>{g.coachIds.map((id) => coaches.find((c) => c.id === id)?.nombre).filter(Boolean).join(", ") || "Sin integrantes"}</div>
+                    </div>
+                  ))}
+                  {creandoGrupo ? (
+                    <div style={{ background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, padding: 10 }}>
+                      <input value={nombreGrupoNuevo} onChange={(e) => setNombreGrupoNuevo(e.target.value)} placeholder="Nombre del grupo (ej: Mis ayudantes)" className="font-body" style={{ width: "100%", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "8px 10px", fontSize: 12, boxSizing: "border-box", marginBottom: 8 }} />
+                      <div className="font-body" style={{ color: "#8B8698", fontSize: 9, marginBottom: 4 }}>¿Quiénes integran el grupo?</div>
+                      {coaches.filter((c) => c.id !== coachId).map((c) => (
+                        <button key={c.id} onClick={() => setIntegrantesGrupoNuevo((prev) => prev.includes(c.id) ? prev.filter((id) => id !== c.id) : [...prev, c.id])} className="font-body" style={{ display: "block", width: "100%", textAlign: "left", background: integrantesGrupoNuevo.includes(c.id) ? "rgba(125,214,192,0.15)" : "#1C1A24", border: `1px solid ${integrantesGrupoNuevo.includes(c.id) ? "#7DD6C0" : "#322E3D"}`, borderRadius: 6, color: integrantesGrupoNuevo.includes(c.id) ? "#7DD6C0" : "#8B8698", fontSize: 11, padding: "6px 10px", cursor: "pointer", marginBottom: 4 }}>{integrantesGrupoNuevo.includes(c.id) ? "✓ " : ""}{c.nombre}</button>
+                      ))}
+                      <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                        <button onClick={() => { setCreandoGrupo(false); setNombreGrupoNuevo(""); setIntegrantesGrupoNuevo([]); }} className="font-body" style={{ flex: 1, background: "transparent", border: "1px solid #322E3D", borderRadius: 6, color: "#8B8698", fontSize: 11, padding: 8, cursor: "pointer" }}>Cancelar</button>
+                        <button onClick={() => { if (!nombreGrupoNuevo.trim() || integrantesGrupoNuevo.length === 0) return; onCrearGrupo(nombreGrupoNuevo.trim(), [coachId, ...integrantesGrupoNuevo]); setCreandoGrupo(false); setNombreGrupoNuevo(""); setIntegrantesGrupoNuevo([]); }} className="font-body" style={{ flex: 1, background: "#7DD6C0", border: "none", borderRadius: 6, color: "#0B2A2E", fontWeight: 700, fontSize: 11, padding: 8, cursor: "pointer" }}>Crear grupo</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={() => setCreandoGrupo(true)} className="font-body" style={{ width: "100%", background: "rgba(125,214,192,0.1)", border: "1px dashed #7DD6C0", borderRadius: 8, color: "#7DD6C0", fontWeight: 700, fontSize: 11, padding: 9, cursor: "pointer" }}>+ Crear grupo</button>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -1921,18 +2262,26 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
             <div className="font-body" style={{ color: "#8B8698", fontSize: 11, marginTop: 2 }}>{al.detalle}</div>
           </div>
         ))}
-        {coaches.length > 1 && logActividad.length > 0 && (
-          <>
-            <div className="font-body" style={{ fontSize: 11, color: "#8B8698", fontWeight: 600, marginBottom: 8, marginTop: 8 }}>ACTIVIDAD RECIENTE</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
-              {logActividad.slice(0, 8).map((l) => (
-                <div key={l.id} className="font-body" style={{ color: "#8B8698", fontSize: 11, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: "8px 10px" }}>
-                  <span style={{ color: "#7DD6C0", fontWeight: 700 }}>{l.coach}</span> {l.texto} <span style={{ color: "#6B6678" }}>— {tiempoRelativo(l.fecha)}</span>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
+        {coaches.length > 1 && logActividad.length > 0 && (() => {
+          // Solo mostramos actividad de entrenadores que comparten un grupo con vos (o la tuya
+          // propia) — un entrenador fuera de tu grupo (ej: le vendiste la app a otra persona) no
+          // aparece acá, ni tampoco ve lo que hacés vos.
+          const misCompaneros = new Set([coachId, ...grupos.filter((g) => g.coachIds.includes(coachId)).flatMap((g) => g.coachIds)]);
+          const logFiltrado = logActividad.filter((l) => l.coachId && misCompaneros.has(l.coachId));
+          if (logFiltrado.length === 0) return null;
+          return (
+            <>
+              <div className="font-body" style={{ fontSize: 11, color: "#8B8698", fontWeight: 600, marginBottom: 8, marginTop: 8 }}>ACTIVIDAD RECIENTE (tu grupo)</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
+                {logFiltrado.slice(0, 8).map((l) => (
+                  <div key={l.id} className="font-body" style={{ color: "#8B8698", fontSize: 11, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: "8px 10px" }}>
+                    <span style={{ color: "#7DD6C0", fontWeight: 700 }}>{l.coach}</span> {l.texto} <span style={{ color: "#6B6678" }}>— {tiempoRelativo(l.fecha)}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          );
+        })()}
       </div>
     </div>
   );
@@ -1961,7 +2310,7 @@ function NuevaAlumnaForm({ onCrear, onCancelar }) {
   );
 }
 
-function CoachAlumnos({ alumnos, selectedId, setSelectedId, templates, onAsignarPlantilla, onCopiarPlan, onGuardarComoPlantilla, onUpdatePlan, onUpdateAlumno, onDeleteAlumno, onAddAlumno, onSendMsg, onGuardarVersion, onRestaurarVersion, onGuardarHistorialRM, onAddToLibrary, version, coaches, coachIdActual, onCompartirAlumno, onDejarDeCompartir, rolesPersonalizados, onAgregarRolPersonalizado }) {
+function CoachAlumnos({ alumnos, selectedId, setSelectedId, templates, onAsignarPlantilla, onCopiarPlan, onCopiarVersionAOtro, onGuardarComoPlantilla, onUpdatePlan, onUpdateAlumno, onDeleteAlumno, onAddAlumno, onSendMsg, onGuardarVersion, onRestaurarVersion, onGuardarHistorialRM, onAddToLibrary, version, coaches, coachIdActual, onCompartirAlumno, onDejarDeCompartir, rolesPersonalizados, onAgregarRolPersonalizado, grupos, onCompartirGrupo, onAgregarPlanSecundario, onQuitarPlanSecundario }) {
   const [creando, setCreando] = useState(false);
   const [credencialesNuevas, setCredencialesNuevas] = useState(null);
   const [verBajas, setVerBajas] = useState(false);
@@ -2019,16 +2368,20 @@ function CoachAlumnos({ alumnos, selectedId, setSelectedId, templates, onAsignar
       </div>
     );
   }
-  return <AlumnoDetalle alumno={alumno} alumnos={alumnos} templates={templates} onBack={() => setSelectedId(null)} onAsignarPlantilla={onAsignarPlantilla} onCopiarPlan={onCopiarPlan} onGuardarComoPlantilla={onGuardarComoPlantilla} onUpdatePlan={onUpdatePlan} onUpdateAlumno={onUpdateAlumno} onDeleteAlumno={() => { onDeleteAlumno(alumno.id); setSelectedId(null); }} onSendMsg={onSendMsg} onGuardarVersion={onGuardarVersion} onRestaurarVersion={onRestaurarVersion} onGuardarHistorialRM={onGuardarHistorialRM} onAddToLibrary={onAddToLibrary} version={version} coaches={coaches} coachIdActual={coachIdActual} onCompartirAlumno={onCompartirAlumno} onDejarDeCompartir={onDejarDeCompartir} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={onAgregarRolPersonalizado} />;
+  return <AlumnoDetalle alumno={alumno} alumnos={alumnos} templates={templates} onBack={() => setSelectedId(null)} onAsignarPlantilla={onAsignarPlantilla} onCopiarPlan={onCopiarPlan} onCopiarVersionAOtro={onCopiarVersionAOtro} onGuardarComoPlantilla={onGuardarComoPlantilla} onUpdatePlan={onUpdatePlan} onUpdateAlumno={onUpdateAlumno} onDeleteAlumno={() => { onDeleteAlumno(alumno.id); setSelectedId(null); }} onSendMsg={onSendMsg} onGuardarVersion={onGuardarVersion} onRestaurarVersion={onRestaurarVersion} onGuardarHistorialRM={onGuardarHistorialRM} onAddToLibrary={onAddToLibrary} version={version} coaches={coaches} coachIdActual={coachIdActual} onCompartirAlumno={onCompartirAlumno} onDejarDeCompartir={onDejarDeCompartir} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={onAgregarRolPersonalizado} grupos={grupos} onCompartirGrupo={onCompartirGrupo} onAgregarPlanSecundario={onAgregarPlanSecundario} onQuitarPlanSecundario={onQuitarPlanSecundario} />;
 }
 
-function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla, onCopiarPlan, onGuardarComoPlantilla, onUpdatePlan, onUpdateAlumno, onDeleteAlumno, onSendMsg, onGuardarVersion, onRestaurarVersion, onGuardarHistorialRM, onAddToLibrary, version, coaches, coachIdActual, onCompartirAlumno, onDejarDeCompartir, rolesPersonalizados, onAgregarRolPersonalizado }) {
+function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla, onCopiarPlan, onCopiarVersionAOtro, onGuardarComoPlantilla, onUpdatePlan, onUpdateAlumno, onDeleteAlumno, onSendMsg, onGuardarVersion, onRestaurarVersion, onGuardarHistorialRM, onAddToLibrary, version, coaches, coachIdActual, onCompartirAlumno, onDejarDeCompartir, rolesPersonalizados, onAgregarRolPersonalizado, grupos, onCompartirGrupo, onAgregarPlanSecundario, onQuitarPlanSecundario }) {
   const [tab, setTab] = useState("plan");
   const [msg, setMsg] = useState("");
   const [busquedaChat, setBusquedaChat] = useState("");
   const mensajesFiltrados = busquedaChat.trim() ? alumno.chat.filter((m) => m.texto.toLowerCase().includes(busquedaChat.trim().toLowerCase())) : alumno.chat;
   const [confirmarBorrado, setConfirmarBorrado] = useState(false);
   const [nombreVersion, setNombreVersion] = useState("");
+  const [empezandoNueva, setEmpezandoNueva] = useState(false);
+  const [nombreNuevaPlanificacion, setNombreNuevaPlanificacion] = useState("");
+  const [diaNotasAbierto, setDiaNotasAbierto] = useState(null);
+  const [verInformesMensuales, setVerInformesMensuales] = useState(false);
   const [guardandoVersion, setGuardandoVersion] = useState(false);
   // Historial de "Deshacer": guarda una copia del plan justo antes de cada cambio, para poder
   // volver atrás con un toque si borrás un día, un bloque, o cualquier otra cosa por error.
@@ -2055,6 +2408,10 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
   const [guardandoPlantilla, setGuardandoPlantilla] = useState(false);
   const [nombrePlantillaNueva, setNombrePlantillaNueva] = useState("");
   const [viendoVersion, setViendoVersion] = useState(null);
+  const [pasandoVersion, setPasandoVersion] = useState(null);
+  const [agregandoSecundaria, setAgregandoSecundaria] = useState(false);
+  const [nombreSecundaria, setNombreSecundaria] = useState("");
+  const [plantillaSecundaria, setPlantillaSecundaria] = useState("");
   const [notifState, setNotifState] = useState(() => (typeof Notification !== "undefined" ? Notification.permission : "default"));
   const [activandoNotif, setActivandoNotif] = useState(false);
   const activarNotifCoach = async () => {
@@ -2107,6 +2464,24 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
             <button onClick={() => setCopiandoPlan(!copiandoPlan)} className="font-body" style={{ flex: 1, background: "rgba(255,107,53,0.1)", border: "1px dashed #FF6B35", borderRadius: 8, color: "#FF6B35", fontWeight: 700, fontSize: 10, padding: 9, cursor: "pointer" }}>📄 Copiar a otro/a</button>
           </div>
           <div style={{ marginBottom: 6 }}>
+            <button onClick={() => { setEmpezandoNueva(!empezandoNueva); setNombreNuevaPlanificacion(""); }} className="font-body" style={{ width: "100%", background: "rgba(255,201,74,0.1)", border: "1px dashed #FFC94A", borderRadius: 8, color: "#FFC94A", fontWeight: 700, fontSize: 10, padding: 9, cursor: "pointer" }}>🆕 Empezar planificación nueva</button>
+          </div>
+          {empezandoNueva && (
+            <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 10 }}>
+              <div className="font-body" style={{ color: "#8B8698", fontSize: 10, marginBottom: 6 }}>Antes de vaciar el plan actual de {alumno.nombre}, lo guardamos con el nombre que le pongas acá (después lo encontrás en "📦 Guardar versión" → historial).</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <input value={nombreNuevaPlanificacion} onChange={(e) => setNombreNuevaPlanificacion(e.target.value)} placeholder="Ej: Pretemporada 2026, Marzo..." className="font-body" style={{ flex: 1, background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, color: "#F4F1EA", padding: "8px 10px", fontSize: 12, boxSizing: "border-box" }} />
+                <button onClick={() => {
+                  if (!nombreNuevaPlanificacion.trim()) return;
+                  onGuardarVersion(alumno.id, nombreNuevaPlanificacion.trim());
+                  cambiarPlanConHistorial(mkPlanVacio());
+                  setNombreNuevaPlanificacion("");
+                  setEmpezandoNueva(false);
+                }} className="font-body" style={{ background: "#FFC94A", border: "none", borderRadius: 8, color: "#3A2A00", fontWeight: 700, padding: "0 14px", cursor: "pointer" }}>Guardar y empezar</button>
+              </div>
+            </div>
+          )}
+          <div style={{ marginBottom: 6 }}>
             <button onClick={() => setGuardandoPlantilla(!guardandoPlantilla)} className="font-body" style={{ width: "100%", background: "rgba(51,214,166,0.1)", border: "1px dashed #33D6A6", borderRadius: 8, color: "#33D6A6", fontWeight: 700, fontSize: 10, padding: 9, cursor: "pointer" }}>⭐ Guardar este plan como plantilla reutilizable</button>
           </div>
           {guardandoPlantilla && (
@@ -2137,6 +2512,21 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
           {compartiendoCoach && (
             <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 10 }}>
               <div className="font-body" style={{ color: "#8B8698", fontSize: 10, marginBottom: 6 }}>Los entrenadores que agregues acá también van a poder ver y editar a {alumno.nombre}. Vos seguís teniendo acceso igual.</div>
+              {grupos && grupos.length > 0 && (
+                <div style={{ marginBottom: 8 }}>
+                  <div className="font-body" style={{ color: "#7DD6C0", fontSize: 9, fontWeight: 700, marginBottom: 4 }}>GRUPOS COMPLETOS</div>
+                  {grupos.map((g) => {
+                    const todosLoTienen = g.coachIds.every((id) => alumno.coachIds === null || alumno.coachIds.includes(id));
+                    return (
+                      <div key={g.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 4 }}>
+                        <span className="font-body" style={{ color: "#F4F1EA", fontSize: 11 }}>👥 {g.nombre}</span>
+                        <button onClick={() => onCompartirGrupo(alumno.id, g.id)} disabled={todosLoTienen} className="font-body" style={{ background: todosLoTienen ? "transparent" : "#7DD6C0", border: todosLoTienen ? "1px solid #322E3D" : "none", borderRadius: 999, color: todosLoTienen ? "#8B8698" : "#0B2A2E", fontWeight: 700, fontSize: 9, padding: "4px 10px", cursor: todosLoTienen ? "default" : "pointer" }}>{todosLoTienen ? "Ya lo ven todos" : "Compartir con el grupo"}</button>
+                      </div>
+                    );
+                  })}
+                  <div className="font-body" style={{ color: "#7DD6C0", fontSize: 9, fontWeight: 700, margin: "8px 0 4px" }}>O UNO POR UNO</div>
+                </div>
+              )}
               {coaches.filter((c) => c.id !== coachIdActual).map((c) => {
                 const yaComparte = alumno.coachIds === null || alumno.coachIds.includes(c.id);
                 return (
@@ -2169,12 +2559,26 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
               <div className="font-body" style={{ fontSize: 10, color: "#8B8698", fontWeight: 700, marginBottom: 6 }}>VERSIONES GUARDADAS</div>
               <div className="font-body" style={{ fontSize: 9, color: "#6B6678", marginBottom: 8 }}>Tocá el nombre para ver esa versión. "Restaurar" reemplaza el plan actual por esa versión.</div>
               {alumno.historialPlanes.map((v) => (
-                <div key={v.id} style={{ display: "flex", alignItems: "center", gap: 8, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 6 }}>
-                  <button onClick={() => setViendoVersion(viendoVersion === v.id ? null : v.id)} className="font-body" style={{ flex: 1, background: "none", border: "none", textAlign: "left", cursor: "pointer", padding: 0 }}>
-                    <div style={{ color: "#7DD6C0", fontSize: 12, fontWeight: 600, textDecoration: "underline" }}>{v.nombre}</div>
-                    <div style={{ color: "#8B8698", fontSize: 9 }}>Guardado el {mostrarFecha(v.fecha)}</div>
-                  </button>
-                  <button onClick={() => onRestaurarVersion(alumno.id, v.id)} className="font-body" style={{ background: "#FF6B35", border: "none", borderRadius: 6, color: "#121017", fontWeight: 700, fontSize: 10, padding: "6px 10px", cursor: "pointer" }}>Restaurar</button>
+                <div key={v.id} style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <button onClick={() => setViendoVersion(viendoVersion === v.id ? null : v.id)} className="font-body" style={{ flex: 1, background: "none", border: "none", textAlign: "left", cursor: "pointer", padding: 0 }}>
+                      <div style={{ color: "#7DD6C0", fontSize: 12, fontWeight: 600, textDecoration: "underline" }}>{v.nombre}</div>
+                      <div style={{ color: "#8B8698", fontSize: 9 }}>Guardado el {mostrarFecha(v.fecha)}</div>
+                    </button>
+                    <button onClick={() => onRestaurarVersion(alumno.id, v.id)} className="font-body" style={{ background: "#FF6B35", border: "none", borderRadius: 6, color: "#121017", fontWeight: 700, fontSize: 10, padding: "6px 10px", cursor: "pointer" }}>Restaurar</button>
+                    <button onClick={() => setPasandoVersion(pasandoVersion === v.id ? null : v.id)} className="font-body" style={{ background: "none", border: "1px solid #5AA0E6", borderRadius: 6, color: "#5AA0E6", fontWeight: 700, fontSize: 10, padding: "6px 10px", cursor: "pointer" }}>📤 Pasar</button>
+                  </div>
+                  {pasandoVersion === v.id && (
+                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #322E3D" }}>
+                      <div className="font-body" style={{ color: "#8B8698", fontSize: 10, marginBottom: 6 }}>¿A quién le pasás "{v.nombre}"? (le reemplaza el plan actual a esa persona)</div>
+                      {alumnos.filter((a) => a.id !== alumno.id).length === 0 && <div className="font-body" style={{ color: "#8B8698", fontSize: 11 }}>No hay otros/as alumnos/as todavía.</div>}
+                      {alumnos.filter((a) => a.id !== alumno.id).map((a) => (
+                        <button key={a.id} onClick={() => { onCopiarVersionAOtro(v.plan, a.id); setPasandoVersion(null); }} className="font-body" style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, padding: 8, cursor: "pointer", textAlign: "left", marginBottom: 4 }}>
+                          <Avatar text={a.foto} size={20} /><span style={{ color: "#F4F1EA", fontSize: 11 }}>{a.nombre}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
               {viendoVersion && (() => {
@@ -2194,6 +2598,38 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
             </div>
           )}
 
+          <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, padding: 12, marginBottom: 14 }}>
+            <div className="font-body" style={{ fontSize: 10, color: "#8B8698", fontWeight: 700, marginBottom: 4 }}>🗂️ RUTINAS EXTRA (además de esta principal)</div>
+            <div className="font-body" style={{ fontSize: 9, color: "#6B6678", marginBottom: 8 }}>Ej: una rutina de flexibilidad para hacer en casa. {alumno.nombre} va a poder ver todas, sin que se reemplacen entre sí.</div>
+            {alumno.planesSecundarios.map((p) => (
+              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 6 }}>
+                <span className="font-body" style={{ flex: 1, color: "#7DD6C0", fontSize: 12, fontWeight: 600 }}>{p.nombre}</span>
+                <button onClick={() => onQuitarPlanSecundario(alumno.id, p.id)} className="font-body" style={{ background: "none", border: "none", color: "#E85D5D", fontSize: 10, cursor: "pointer" }}>Quitar</button>
+              </div>
+            ))}
+            {agregandoSecundaria ? (
+              <div style={{ marginTop: 6 }}>
+                <MiniInput label="Nombre (ej: Flexibilidad en casa)" value={nombreSecundaria} onChange={setNombreSecundaria} wide />
+                <div className="font-body" style={{ fontSize: 9, color: "#8B8698", margin: "8px 0 4px" }}>Elegí una plantilla de base para esta rutina:</div>
+                <select value={plantillaSecundaria} onChange={(e) => setPlantillaSecundaria(e.target.value)} className="font-body" style={{ width: "100%", background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "7px 8px", fontSize: 11, boxSizing: "border-box", marginBottom: 8 }}>
+                  <option value="" disabled>Elegir plantilla...</option>
+                  {templates.map((t) => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+                </select>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button onClick={() => { setAgregandoSecundaria(false); setNombreSecundaria(""); setPlantillaSecundaria(""); }} className="font-body" style={{ flex: 1, background: "transparent", border: "1px solid #322E3D", borderRadius: 6, color: "#8B8698", fontSize: 11, padding: 8, cursor: "pointer" }}>Cancelar</button>
+                  <button onClick={() => {
+                    const t = templates.find((x) => x.id === plantillaSecundaria);
+                    if (!nombreSecundaria.trim() || !t) return;
+                    onAgregarPlanSecundario(alumno.id, nombreSecundaria.trim(), t.plan);
+                    setAgregandoSecundaria(false); setNombreSecundaria(""); setPlantillaSecundaria("");
+                  }} className="font-body" style={{ flex: 1, background: "#7DD6C0", border: "none", borderRadius: 6, color: "#0B2A2E", fontWeight: 700, fontSize: 11, padding: 8, cursor: "pointer" }}>Agregar</button>
+                </div>
+              </div>
+            ) : (
+              <button onClick={() => setAgregandoSecundaria(true)} className="font-body" style={{ width: "100%", background: "rgba(125,214,192,0.1)", border: "1px dashed #7DD6C0", borderRadius: 8, color: "#7DD6C0", fontWeight: 700, fontSize: 11, padding: 9, cursor: "pointer" }}>+ Agregar rutina extra</button>
+            )}
+          </div>
+
           {historialPlan.length > 0 && (
             <button onClick={deshacerUltimoCambio} className="font-body" style={{ width: "100%", background: "rgba(255,201,74,0.1)", border: "1px solid #FFC94A", borderRadius: 8, color: "#FFC94A", fontWeight: 700, fontSize: 11, padding: 9, cursor: "pointer", marginBottom: 8 }}>↩️ Deshacer último cambio</button>
           )}
@@ -2203,6 +2639,27 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
 
       {tab === "perfil" && (
         <div style={{ padding: "0 20px" }}>
+          <button onClick={() => descargarInformePDF(alumno)} className="font-body" style={{ width: "100%", background: "#FF6B35", border: "none", borderRadius: 10, color: "#121017", fontWeight: 700, fontSize: 12, padding: 11, cursor: "pointer", marginBottom: 6 }}>📄 Descargar informe prolijo (PDF)</button>
+          <div className="font-body" style={{ fontSize: 9, color: "#6B6678", textAlign: "center", marginBottom: 10 }}>Se abre y guarda un archivo — tocá "Imprimir / Guardar como PDF" ahí adentro para convertirlo a PDF de verdad.</div>
+          <button onClick={() => compartirTextoPorWhatsApp(generarInformeCompleto(alumno))} className="font-body" style={{ width: "100%", background: "#25D366", border: "none", borderRadius: 10, color: "#0B2A2E", fontWeight: 700, fontSize: 12, padding: 11, cursor: "pointer", marginBottom: 6 }}>💬 Informe rápido (texto) por WhatsApp</button>
+          <button onClick={() => compartirTexto(`Informe de ${alumno.nombre}`, generarInformeCompleto(alumno))} className="font-body" style={{ width: "100%", background: "none", border: "none", color: "#FF6B35", fontWeight: 700, fontSize: 10, padding: "4px 0", cursor: "pointer", marginBottom: 16 }}>Más opciones para compartir (mail, copiar, etc.)</button>
+
+          {alumno.mesesArchivados && alumno.mesesArchivados.length > 0 && (
+            <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, padding: 12, marginBottom: 16 }}>
+              <button onClick={() => setVerInformesMensuales(!verInformesMensuales)} className="font-body" style={{ width: "100%", background: "none", border: "none", color: "#F4F1EA", fontWeight: 700, fontSize: 12, cursor: "pointer", textAlign: "left", padding: 0 }}>📆 Informes mensuales guardados ({alumno.mesesArchivados.length}) {verInformesMensuales ? "▲" : "▼"}</button>
+              {verInformesMensuales && (
+                <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+                  {[...alumno.mesesArchivados].sort().reverse().map((mes) => (
+                    <button key={mes} onClick={() => descargarInformePDF(alumno, mes)} className="font-body" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, padding: "9px 12px", color: "#F4F1EA", fontSize: 12, cursor: "pointer" }}>
+                      <span style={{ textTransform: "capitalize" }}>{new Date(mes + "-02T00:00:00").toLocaleDateString("es-AR", { month: "long", year: "numeric" })}</span>
+                      <span style={{ color: "#FF6B35", fontSize: 10, fontWeight: 700 }}>📄 Descargar</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="font-body" style={{ fontSize: 11, color: "#FF6B35", fontWeight: 600, marginBottom: 8 }}>ACCESO A LA APP</div>
           <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
             <MiniInput label="Usuario" value={alumno.usuario} onChange={(v) => onUpdateAlumno(alumno.id, { usuario: v })} wide />
@@ -2265,13 +2722,32 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
               </div>
             ))}
           </div>
-          <div className="font-body" style={{ fontSize: 11, color: "#FF6B35", fontWeight: 600, marginBottom: 8 }}>NOTAS DE EJERCICIOS (peso, sensaciones)</div>
+          <div className="font-body" style={{ fontSize: 11, color: "#FF6B35", fontWeight: 600, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>NOTAS DE EJERCICIOS (peso, sensaciones)</span>
+            {alumno.notasEjercicios && Object.keys(alumno.notasEjercicios).length > 0 && (
+              <button onClick={() => compartirTextoPorWhatsApp(generarTextoNotas(alumno))} className="font-body" style={{ background: "none", border: "none", color: "#25D366", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>💬 Compartir</button>
+            )}
+          </div>
           <div style={{ marginBottom: 20 }}>
             {(!alumno.notasEjercicios || Object.keys(alumno.notasEjercicios).length === 0) && <div className="font-body" style={{ color: "#8B8698", fontSize: 11 }}>Todavía no anotó nada durante sus entrenamientos.</div>}
-            {Object.values(alumno.notasEjercicios || {}).filter((n) => n.texto && n.texto.trim()).sort((a, b) => (a.fecha < b.fecha ? 1 : -1)).map((n, i) => (
-              <div key={i} style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, padding: 10, marginBottom: 6 }}>
-                <div className="font-body" style={{ color: "#8B8698", fontSize: 9, fontWeight: 600, marginBottom: 4 }}>{n.exNombre?.toUpperCase()} · {mostrarFecha(n.fecha)}</div>
-                <div className="font-body" style={{ color: "#F4F1EA", fontSize: 12 }}>{n.texto}</div>
+            {Object.entries(
+              Object.values(alumno.notasEjercicios || {}).filter((n) => n.texto && n.texto.trim()).reduce((acc, n) => { (acc[n.fecha] = acc[n.fecha] || []).push(n); return acc; }, {})
+            ).sort((a, b) => (a[0] < b[0] ? 1 : -1)).map(([fecha, notas]) => (
+              <div key={fecha} style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, marginBottom: 6, overflow: "hidden" }}>
+                <button onClick={() => setDiaNotasAbierto(diaNotasAbierto === fecha ? null : fecha)} className="font-body" style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", background: "none", border: "none", padding: 10, cursor: "pointer", textAlign: "left" }}>
+                  <span style={{ color: "#F4F1EA", fontWeight: 700, fontSize: 12 }}>{mostrarFecha(fecha)}</span>
+                  <span style={{ color: "#8B8698", fontSize: 10 }}>{notas.length} nota{notas.length === 1 ? "" : "s"} {diaNotasAbierto === fecha ? "▲" : "▼"}</span>
+                </button>
+                {diaNotasAbierto === fecha && (
+                  <div style={{ padding: "0 10px 10px" }}>
+                    {notas.map((n, i) => (
+                      <div key={i} style={{ background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 6 }}>
+                        <div className="font-body" style={{ color: "#8B8698", fontSize: 9, fontWeight: 600, marginBottom: 4 }}>{n.exNombre?.toUpperCase()}</div>
+                        <div className="font-body" style={{ color: "#F4F1EA", fontSize: 12 }}>{n.texto}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -2339,7 +2815,7 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
   );
 }
 
-function CoachPlantillas({ templates, alumnos, onAsignar, onCrearPlantilla, onAddToLibrary, version, rolesPersonalizados, onAgregarRolPersonalizado }) {
+function CoachPlantillas({ templates, alumnos, onAsignar, onCrearPlantilla, onAddToLibrary, version, rolesPersonalizados, onAgregarRolPersonalizado, coachIdActual }) {
   const [targetOpen, setTargetOpen] = useState(null);
   const [previewOpen, setPreviewOpen] = useState(null);
   const [creando, setCreando] = useState(false);
@@ -2349,7 +2825,7 @@ function CoachPlantillas({ templates, alumnos, onAsignar, onCrearPlantilla, onAd
 
   const guardar = () => {
     if (!nombre.trim() || plan.dias.length === 0) return;
-    onCrearPlantilla({ id: uid(), nombre: nombre.trim(), categoria, plan });
+    onCrearPlantilla({ id: uid(), nombre: nombre.trim(), categoria, plan, coachIds: coachIdActual ? [coachIdActual] : null });
     setNombre(""); setPlan(mkPlanVacio()); setCreando(false);
   };
 
@@ -2485,13 +2961,13 @@ function CoachEjercicios({ onAddExercise, version, onToggleFav, onEditVideo }) {
   useEffect(() => { setLimite(60); }, [filtro, busqueda]);
   const listaCompleta = useMemo(() => {
     let l = filtro === "★ Favoritos" ? EXERCISES.filter((e) => FAVORITOS_SET.has(e.id))
-      : filtro === "⚠ Sin video directo" ? EXERCISES.filter((e) => e.video && e.video.includes("youtube.com/results"))
+      : filtro === "⚠ Sin video directo" ? EXERCISES.filter((e) => { const v = videoEfectivo(e); return v && v.includes("youtube.com/results"); })
       : filtro === "Todos" ? EXERCISES : EXERCISES.filter((e) => e.categoria === filtro);
     if (busqueda.trim()) { const q = busqueda.toLowerCase(); l = l.filter((e) => e.nombre.toLowerCase().includes(q)); }
     return l;
   }, [filtro, busqueda, version]);
   const lista = listaCompleta.slice(0, limite);
-  const sinVideoCount = useMemo(() => EXERCISES.filter((e) => e.video && e.video.includes("youtube.com/results")).length, [version]);
+  const sinVideoCount = useMemo(() => EXERCISES.filter((e) => { const v = videoEfectivo(e); return v && v.includes("youtube.com/results"); }).length, [version]);
   return (
     <div>
       <TopBar title="Ejercicios" subtitle={`${EXERCISES.length} en la biblioteca`} />
@@ -2504,7 +2980,7 @@ function CoachEjercicios({ onAddExercise, version, onToggleFav, onEditVideo }) {
         {CATEGORIAS.map((c) => <Pill key={c} active={filtro === c} onClick={() => setFiltro(c)}>{c}</Pill>)}
       </div>
       <div className="font-body" style={{ padding: "0 20px", fontSize: 10, color: "#6B6678", marginBottom: 6 }}>{listaCompleta.length} resultados en "{filtro}"{listaCompleta.length > lista.length ? ` · mostrando ${lista.length}` : ""}</div>
-      <div className="font-body" style={{ padding: "0 20px", fontSize: 9, color: "#6B6678", marginBottom: 8 }}>Tocá el ✏️ de cualquier ejercicio para poner el link exacto de YouTube — le va a quedar guardado a ese ejercicio para siempre, en cualquier plan donde lo uses.</div>
+      <div className="font-body" style={{ padding: "0 20px", fontSize: 9, color: "#6B6678", marginBottom: 8 }}>Tocá el ✏️ de cualquier ejercicio para poner el link exacto de YouTube — le va a quedar guardado para siempre, en cualquier plan donde lo uses.</div>
       <div style={{ padding: "0 20px", display: "flex", flexDirection: "column", gap: 8 }}>
         {creando ? (
           <NuevoEjercicioForm onCancelar={() => setCreando(false)} onCrear={(ex) => { onAddExercise(ex); setCreando(false); }} />
@@ -2513,24 +2989,30 @@ function CoachEjercicios({ onAddExercise, version, onToggleFav, onEditVideo }) {
         )}
         {lista.length === 0 && filtro === "★ Favoritos" && <div className="font-body" style={{ color: "#8B8698", fontSize: 12, textAlign: "center", padding: 16 }}>Todavía no marcaste favoritos. Tocá la estrella de cualquier ejercicio.</div>}
         {lista.map((e) => {
-          const esBusqueda = e.video && e.video.includes("youtube.com/results");
+          const videoEf = videoEfectivo(e);
+          const esBusqueda = videoEf && videoEf.includes("youtube.com/results");
           const editando = editandoId === e.id;
           return (
             <div key={e.id} style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 12, padding: 10, width: "100%" }}>
               <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                <button onClick={() => openVideo(e.video)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", gap: 10, alignItems: "center", flex: 1, textAlign: "left" }}>
+                <button onClick={() => openVideo(videoEf)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", gap: 10, alignItems: "center", flex: 1, textAlign: "left" }}>
                   <div style={{ width: 34, height: 34, borderRadius: 8, background: `${e.color}22`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 16 }}>{e.emoji}</div>
                   <div style={{ flex: 1 }}>
                     <div className="font-display" style={{ fontSize: 12, color: "#F4F1EA", fontWeight: 600 }}>{e.nombre}{e.custom && <span style={{ color: "#7DD6C0", fontSize: 9 }}> ★ tuyo</span>}</div>
                     <div className="font-body" style={{ fontSize: 9, color: e.color, marginTop: 2, fontWeight: 600 }}>{e.categoria} · {e.material} · {e.dificultad}{!esBusqueda && <span style={{ color: "#7DD6C0" }}> · con video directo</span>}</div>
                   </div>
                 </button>
-                <button onClick={() => { setEditandoId(editando ? null : e.id); setValorEdicion(!esBusqueda ? e.video : ""); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: editando ? "#7DD6C0" : "#8B8698", flexShrink: 0 }}>✏️</button>
+                <button onClick={() => { setEditandoId(editando ? null : e.id); setValorEdicion(!esBusqueda ? videoEf : ""); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: editando ? "#7DD6C0" : "#8B8698", flexShrink: 0 }}>✏️</button>
                 <button onClick={() => onToggleFav(e.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: FAVORITOS_SET.has(e.id) ? "#FFC94A" : "#3A3646", flexShrink: 0 }}>★</button>
               </div>
               {editando && (
                 <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #322E3D" }}>
-                  <div className="font-body" style={{ fontSize: 9, color: "#8B8698", marginBottom: 4 }}>Link de YouTube para este ejercicio (queda guardado para siempre)</div>
+                  {esBusqueda ? (
+                    <div className="font-body" style={{ fontSize: 10, color: "#FF6B35", fontWeight: 700, marginBottom: 6, background: "rgba(255,107,53,0.1)", border: "1px solid #FF6B35", borderRadius: 6, padding: "5px 8px" }}>⚠ Este ejercicio no tiene link cargado</div>
+                  ) : (
+                    <div className="font-body" style={{ fontSize: 10, color: "#33D6A6", fontWeight: 700, marginBottom: 6 }}>✓ Ya tiene un link cargado</div>
+                  )}
+                  <div className="font-body" style={{ fontSize: 9, color: "#8B8698", marginBottom: 4 }}>Link de YouTube para este ejercicio (queda guardado para siempre, lo ve cualquier entrenador)</div>
                   <div style={{ display: "flex", gap: 6 }}>
                     <input value={valorEdicion} onChange={(ev) => setValorEdicion(ev.target.value)} placeholder="https://youtube.com/watch?v=..." className="font-body" style={{ flex: 1, background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "6px 8px", fontSize: 11, boxSizing: "border-box" }} />
                     <button onClick={() => { onEditVideo(e.id, valorEdicion.trim()); setEditandoId(null); }} className="font-body" style={{ background: "#7DD6C0", border: "none", borderRadius: 6, color: "#0B2A2E", fontWeight: 700, padding: "0 12px", cursor: "pointer", fontSize: 11 }}>Guardar</button>
@@ -2715,7 +3197,10 @@ function formatObjetivo(obj) {
 }
 
 function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizados }) {
-  const dias = alumno.plan.dias;
+  // Si hay rutinas extra (además de la principal), la alumna puede elegir cuál está viendo/usando.
+  const [rutinaActivaId, setRutinaActivaId] = useState(null); // null = la principal
+  const planActivo = rutinaActivaId ? (alumno.planesSecundarios || []).find((p) => p.id === rutinaActivaId)?.plan || alumno.plan : alumno.plan;
+  const dias = planActivo.dias;
   const [diaIdx, setDiaIdx] = useState(0);
   const ejercicios = flatEjercicios(dias[diaIdx]);
   const maxSemanas = Math.max(1, ...ejercicios.map((e) => e.semanas?.length || 1));
@@ -2724,6 +3209,13 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
   const [restTimer, setRestTimer] = useState(null);
   const timeoutRef = useRef(null);
 
+  useEffect(() => {
+    // Al cambiar de rutina, arrancamos de nuevo desde el día 1 (evita quedar "afuera de rango"
+    // si la otra rutina tiene menos días que la que estaba viendo).
+    setDiaIdx(0);
+    setSemana(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rutinaActivaId]);
   useEffect(() => {
     setActiveId(ejercicios[0]?.id);
     // Mantenemos la semana que ya tenías elegida al cambiar de día — solo la ajustamos
@@ -2738,8 +3230,15 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
     return () => clearTimeout(timeoutRef.current);
   }, [restTimer]);
 
-  if (dias.length === 0) return <div className="font-body" style={{ color: "#8B8698", fontSize: 13, textAlign: "center", padding: "40px 20px" }}>No hay ningún día cargado todavía.</div>;
-  if (ejercicios.length === 0) return <div className="font-body" style={{ color: "#8B8698", fontSize: 13, textAlign: "center", padding: "40px 20px" }}>Este día no tiene ejercicios asignados.</div>;
+  const selectorRutinas = alumno.planesSecundarios && alumno.planesSecundarios.length > 0 && (
+    <div style={{ padding: "0 26px 8px", display: "flex", gap: 6, overflowX: "auto" }}>
+      <Pill active={rutinaActivaId === null} onClick={() => setRutinaActivaId(null)} activeColor="#FF6B35">Principal</Pill>
+      {alumno.planesSecundarios.map((p) => <Pill key={p.id} active={rutinaActivaId === p.id} onClick={() => setRutinaActivaId(p.id)} activeColor="#7DD6C0">{p.nombre}</Pill>)}
+    </div>
+  );
+
+  if (dias.length === 0) return <div>{selectorRutinas}<div className="font-body" style={{ color: "#8B8698", fontSize: 13, textAlign: "center", padding: "40px 20px" }}>No hay ningún día cargado todavía.</div></div>;
+  if (ejercicios.length === 0) return <div>{selectorRutinas}<div className="font-body" style={{ color: "#8B8698", fontSize: 13, textAlign: "center", padding: "40px 20px" }}>Este día no tiene ejercicios asignados.</div></div>;
 
   const notas = alumno.notasEjercicios || {};
   const getNota = (id) => notas[id]?.texto || "";
@@ -2754,6 +3253,8 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
   return (
     <div>
       <TopBar title="Entrenando" subtitle={`${dias[diaIdx].nombre}`} />
+
+      {selectorRutinas}
 
       {dias.length > 1 && (
         <div style={{ padding: "0 26px 8px", display: "flex", gap: 6, overflowX: "auto" }}>
@@ -2783,33 +3284,46 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
       )}
 
       <div style={{ padding: "0 26px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
-        {ejercicios.map((pe, i) => {
-          const done = tieneNota(pe.id);
-          const obj = pe.tipo === "tabata" ? `Tabata ${pe.tabata.trabajo}s/${pe.tabata.descanso}s × ${pe.tabata.rounds}` : (pe.semanas[semana] || pe.semanas[0] || "—");
-          const videoFila = videoDe(pe);
-          const rolPE = [...ROLES_EJERCICIO, ...(rolesPersonalizados || [])].find((r) => r.id === pe.rol);
-          return (
-            <div key={pe.id}>
-              <div onClick={() => setActiveId(pe.id)} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 12px", borderRadius: 10, cursor: "pointer", border: activeId === pe.id ? "1px solid #FF6B35" : `1px solid ${rolPE ? rolPE.color : "#322E3D"}`, background: activeId === pe.id ? "rgba(255,107,53,0.12)" : (rolPE ? `${rolPE.color}38` : "#1C1A24"), boxSizing: "border-box" }}>
-                <span style={{ fontSize: 16, flexShrink: 0 }}>{pe.emoji}</span>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <button onClick={(e) => { e.stopPropagation(); if (activeId === pe.id) { openVideo(videoFila); } else { setActiveId(pe.id); } }} className="font-body" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left", display: "block", color: done ? "#33D6A6" : "#F4F1EA", fontWeight: 600, fontSize: 13 }}>
-                    {done ? "✓ " : ""}{pe.nombre}
-                  </button>
-                  <div className="font-body" style={{ color: "#8B8698", fontSize: 11, marginTop: 2 }}>{formatObjetivo(obj)}{pe.rm && ` · ${pe.rm}`}</div>
-                </div>
-                {rolPE && <span className="font-body" style={{ fontSize: 8, fontWeight: 700, color: rolPE.color, background: `${rolPE.color}22`, borderRadius: 999, padding: "3px 7px", flexShrink: 0 }}>{rolPE.label}</span>}
-                {activeId === pe.id && <span className="font-body" style={{ fontSize: 8, color: "#FF6B35", flexShrink: 0 }}>▶ tocá de nuevo</span>}
+        {dias[diaIdx].bloques.map((bloque, bIdx) => (
+          <div key={bloque.id}>
+            {dias[diaIdx].bloques.length > 1 && (
+              <div style={{ margin: bIdx === 0 ? "0 0 10px" : "36px 0 10px" }}>
+                {bIdx > 0 && <div style={{ height: 1, background: "#26232F", marginBottom: 16 }} />}
+                <div className="font-body" style={{ color: "#7DD6C0", fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase", marginLeft: 2 }}>{bloque.nombre}</div>
               </div>
-              {pe.sinDescansoSiguiente && i < ejercicios.length - 1 && (
-                <div className="font-body" style={{ display: "flex", alignItems: "center", gap: 6, margin: "2px 0 2px 20px", color: "#FFC94A", fontSize: 9, fontWeight: 700 }}>
-                  <div style={{ width: 2, height: 12, background: "#FFC94A" }} />
-                  🔗 SIN DESCANSO
-                </div>
-              )}
+            )}
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {bloque.ejercicios.map((pe, iLocal) => {
+                const i = ejercicios.findIndex((e) => e.id === pe.id);
+                const done = tieneNota(pe.id);
+                const obj = pe.tipo === "tabata" ? `Tabata ${pe.tabata.trabajo}s/${pe.tabata.descanso}s × ${pe.tabata.rounds}` : (pe.semanas[semana] || pe.semanas[0] || "—");
+                const videoFila = videoDe(pe);
+                const rolPE = [...ROLES_EJERCICIO, ...(rolesPersonalizados || [])].find((r) => r.id === pe.rol);
+                return (
+                  <div key={pe.id}>
+                    <div onClick={() => setActiveId(pe.id)} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 12px", borderRadius: 10, cursor: "pointer", border: activeId === pe.id ? "1px solid #FF6B35" : `1px solid ${rolPE ? rolPE.color : "#322E3D"}`, background: activeId === pe.id ? "rgba(255,107,53,0.12)" : (rolPE ? `${rolPE.color}38` : "#1C1A24"), boxSizing: "border-box" }}>
+                      <span style={{ fontSize: 16, flexShrink: 0 }}>{pe.emoji}</span>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <button onClick={(e) => { e.stopPropagation(); if (activeId === pe.id) { openVideo(videoFila); } else { setActiveId(pe.id); } }} className="font-body" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left", display: "block", color: done ? "#33D6A6" : "#F4F1EA", fontWeight: 600, fontSize: 13 }}>
+                          {done ? "✓ " : ""}{pe.nombre}
+                        </button>
+                        <div className="font-body" style={{ color: "#8B8698", fontSize: 11, marginTop: 2 }}>{formatObjetivo(obj)}{pe.rm && ` · ${pe.rm}`}</div>
+                      </div>
+                      {rolPE && <span className="font-body" style={{ fontSize: 8, fontWeight: 700, color: rolPE.color, background: `${rolPE.color}22`, borderRadius: 999, padding: "3px 7px", flexShrink: 0 }}>{rolPE.label}</span>}
+                      {activeId === pe.id && <span className="font-body" style={{ fontSize: 8, color: "#FF6B35", flexShrink: 0 }}>▶ tocá de nuevo</span>}
+                    </div>
+                    {pe.sinDescansoSiguiente && i < ejercicios.length - 1 && (
+                      <div className="font-body" style={{ display: "flex", alignItems: "center", gap: 6, margin: "2px 0 2px 20px", color: "#FFC94A", fontSize: 9, fontWeight: 700 }}>
+                        <div style={{ width: 2, height: 12, background: "#FFC94A" }} />
+                        🔗 SIN DESCANSO
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-          );
-        })}
+          </div>
+        ))}
       </div>
 
       {/* Tarjeta de detalle del ejercicio activo, estilo ficha grande */}
@@ -3715,6 +4229,10 @@ function sanearAlumno(a) {
       })(),
       wellness: { checkins: [], sesionesDesdeEncuesta: 0, encuestaPendiente: false, encuestas: [], ...(a.wellness || {}) },
       historialPlanes: Array.isArray(a.historialPlanes) ? a.historialPlanes : [],
+      // Rutinas extra, además de la principal (ej: una de flexibilidad para hacer en casa) — no
+      // reemplazan el plan de entrenamiento activo, quedan disponibles aparte para que la alumna
+      // elija cuál ver.
+      planesSecundarios: Array.isArray(a.planesSecundarios) ? a.planesSecundarios : [],
       competencia: a.competencia && typeof a.competencia === "object" ? a.competencia : { nombre: "", fecha: "" },
       notasEjercicios: a.notasEjercicios && typeof a.notasEjercicios === "object" ? a.notasEjercicios : {},
       chat: Array.isArray(a.chat) ? a.chat : [],
@@ -3729,6 +4247,11 @@ function sanearAlumno(a) {
       // Cuándo fue la última vez que el coach entró a este alumno — para que la lista se
       // reordene sola, poniendo arriba a quien estés usando más seguido.
       ultimoAcceso: typeof a.ultimoAcceso === "string" ? a.ultimoAcceso : null,
+      // Meses ("YYYY-MM") que ya quedaron archivados como informe mensual — no se duplica el
+      // trabajo de armar el informe: se guarda solo la marca de "este mes ya quedó archivado",
+      // y el informe en sí se arma al toque con los datos reales de ese mes (siempre están
+      // guardados, nunca se borran) — así nunca queda desactualizado.
+      mesesArchivados: Array.isArray(a.mesesArchivados) ? a.mesesArchivados : [],
     };
   } catch {
     return a;
@@ -3775,12 +4298,22 @@ export default function GymPlannerCoachApp() {
   const [modoPausa, setModoPausa] = useState(guardado.modoPausa || false);
   const [diasAvisoPlan, setDiasAvisoPlan] = useState(guardado.diasAvisoPlan || 7);
   const [rolesPersonalizados, setRolesPersonalizados] = useState(guardado.rolesPersonalizados || []);
+  // Grupos de entrenadores: un coach puede armar "equipos" (ej: "Mis ayudantes") y compartirles
+  // alumnos a todos los del grupo de una sola vez, en vez de uno por uno. Un entrenador que creaste
+  // aparte (que no esté en ningún grupo tuyo, ej: le vendiste la app a otra persona) sigue sin ver
+  // nada tuyo, salvo que se lo compartas puntualmente — el aislamiento de siempre no cambia.
+  const [grupos, setGrupos] = useState(guardado.grupos || []);
+  const [videosGuardados, setVideosGuardados] = useState(guardado.videosGuardados || {});
+  useEffect(() => { VIDEOS_GUARDADOS = videosGuardados; }, [videosGuardados]);
+  const crearGrupo = (nombre, coachIds) => setGrupos((prev) => [...prev, { id: uid(), nombre, coachIds }]);
+  const editarGrupo = (grupoId, nombre, coachIds) => setGrupos((prev) => prev.map((g) => (g.id === grupoId ? { ...g, nombre, coachIds } : g)));
+  const eliminarGrupo = (grupoId) => setGrupos((prev) => prev.filter((g) => g.id !== grupoId));
   const [logActividad, setLogActividad] = useState(guardado.logActividad || []);
   // Guarda hasta 50 movimientos recientes, con quién los hizo — así, si trabajan 2 o 3 entrenadores
   // en la misma cuenta, se puede ver rápido quién tocó qué sin tener que preguntar.
   const registrarActividad = (texto) => {
     const nombreCoach = coaches.find((c) => c.id === session?.coachId)?.nombre || "Alguien";
-    setLogActividad((prev) => [{ id: uid(), texto, coach: nombreCoach, fecha: new Date().toISOString() }, ...prev].slice(0, 50));
+    setLogActividad((prev) => [{ id: uid(), texto, coach: nombreCoach, coachId: session?.coachId || null, fecha: new Date().toISOString() }, ...prev].slice(0, 50));
   };
   const agregarRolPersonalizado = (label, color) => setRolesPersonalizados((prev) => [...prev, { id: `custom_${uid()}`, label, color }]);
   const [alumnos, setAlumnos] = useState(sanearAlumnos(guardado.alumnos) || sanearAlumnos(ALUMNOS_INICIAL));
@@ -3819,6 +4352,8 @@ export default function GymPlannerCoachApp() {
           if (typeof remoto.modoPausa === "boolean") setModoPausa(remoto.modoPausa);
           if (typeof remoto.diasAvisoPlan === "number") setDiasAvisoPlan(remoto.diasAvisoPlan);
           if (Array.isArray(remoto.rolesPersonalizados)) setRolesPersonalizados(remoto.rolesPersonalizados);
+          if (Array.isArray(remoto.grupos)) setGrupos(remoto.grupos);
+          if (remoto.videosGuardados && typeof remoto.videosGuardados === "object") setVideosGuardados(remoto.videosGuardados);
           if (Array.isArray(remoto.logActividad)) setLogActividad(remoto.logActividad);
           if (remoto.coaches) setCoaches(remoto.coaches);
           if (remoto.alumnos) setAlumnos(sanearAlumnos(remoto.alumnos) || ALUMNOS_INICIAL);
@@ -3847,6 +4382,8 @@ export default function GymPlannerCoachApp() {
           if (typeof remoto.modoPausa === "boolean") setModoPausa(remoto.modoPausa);
           if (typeof remoto.diasAvisoPlan === "number") setDiasAvisoPlan(remoto.diasAvisoPlan);
           if (Array.isArray(remoto.rolesPersonalizados)) setRolesPersonalizados(remoto.rolesPersonalizados);
+          if (Array.isArray(remoto.grupos)) setGrupos(remoto.grupos);
+          if (remoto.videosGuardados && typeof remoto.videosGuardados === "object") setVideosGuardados(remoto.videosGuardados);
           if (Array.isArray(remoto.logActividad)) setLogActividad(remoto.logActividad);
           if (remoto.coaches) setCoaches(remoto.coaches);
           if (remoto.alumnos) setAlumnos(sanearAlumnos(remoto.alumnos) || ALUMNOS_INICIAL);
@@ -3859,7 +4396,7 @@ export default function GymPlannerCoachApp() {
 
   useEffect(() => {
     if (!remotoListo) return; // todavía no trajimos lo compartido: no guardamos para no pisarlo
-    const data = { coachNombre, coaches, alumnos, templates, mensajeRecordatorio, modoPausa, diasAvisoPlan, rolesPersonalizados, logActividad, _uidMax: _uid };
+    const data = { coachNombre, coaches, alumnos, templates, mensajeRecordatorio, modoPausa, diasAvisoPlan, rolesPersonalizados, logActividad, grupos, videosGuardados, _uidMax: _uid };
     guardarTodo(data); // copia local rápida (funciona siempre, con o sin internet)
     if (remotoSincronizadoRef.current) {
       guardarTodoRemoto(data); // solo subimos a la nube si confirmamos que arrancamos con la versión real compartida
@@ -3868,7 +4405,7 @@ export default function GymPlannerCoachApp() {
     const t = setTimeout(() => setGuardadoOk(false), 1200);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coachNombre, coaches, alumnos, templates, mensajeRecordatorio, modoPausa, diasAvisoPlan, rolesPersonalizados, logActividad, remotoListo]);
+  }, [coachNombre, coaches, alumnos, templates, mensajeRecordatorio, modoPausa, diasAvisoPlan, rolesPersonalizados, logActividad, grupos, videosGuardados, remotoListo]);
 
   // Le avisa al coach por notificación push apenas aparece una alerta nueva (ánimo bajo, cumplimiento
   // bajo, etc.). Guardamos cuáles ya se avisaron en este dispositivo (no solo en la memoria de esta
@@ -3895,13 +4432,32 @@ export default function GymPlannerCoachApp() {
     if (cambio) guardarAlertasNotificadas(alertasNotificadasRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [alumnos, remotoListo, notificacionesActivas]);
+  // Archivo mensual automático: cada vez que se abre la app, si ya terminó un mes que todavía
+  // no está marcado como archivado para algún alumno, lo marca — no hace falta que el coach
+  // toque nada. El informe de ese mes se arma al toque, cuando se lo quiera ver, con los datos
+  // reales guardados (nunca se borran), así que nunca queda desactualizado.
+  useEffect(() => {
+    if (!remotoListo) return;
+    const hoy = new Date();
+    const mesPasado = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+    const claveMesPasado = `${mesPasado.getFullYear()}-${String(mesPasado.getMonth() + 1).padStart(2, "0")}`;
+    const faltaArchivar = alumnos.some((a) => !a.mesesArchivados.includes(claveMesPasado));
+    if (!faltaArchivar) return;
+    setAlumnos((prev) => prev.map((a) => (a.mesesArchivados.includes(claveMesPasado) ? a : { ...a, mesesArchivados: [...a.mesesArchivados, claveMesPasado] })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remotoListo]);
   const addCustomExercise = (ex) => { EXERCISES.push(ex); setLibVersion((v) => v + 1); };
   const toggleFavorito = (id) => { FAVORITOS_SET.has(id) ? FAVORITOS_SET.delete(id) : FAVORITOS_SET.add(id); setLibVersion((v) => v + 1); };
-  // Edita el video de un ejercicio de la biblioteca de forma permanente: le queda guardado a ese
-  // ejercicio para cualquier plan donde se use de ahí en más (no solo en un plan puntual).
+  // Edita el video de un ejercicio de la biblioteca, de forma simple y compartida (como pediste):
+  // lo ve cualquier entrenador, y esta vez sí queda guardado de verdad entre sesiones.
   const editarVideoLibreria = (id, video) => {
-    const ex = EXERCISES.find((e) => e.id === id);
-    if (ex) ex.video = video || `https://www.youtube.com/results?search_query=${encodeURIComponent(ex.nombre + " técnica")}`;
+    const nuevoVideo = video || null;
+    setVideosGuardados((prev) => {
+      const actualizado = { ...prev };
+      if (nuevoVideo) actualizado[id] = nuevoVideo; else delete actualizado[id];
+      VIDEOS_GUARDADOS = actualizado;
+      return actualizado;
+    });
     setLibVersion((v) => v + 1);
   };
 
@@ -3947,12 +4503,25 @@ export default function GymPlannerCoachApp() {
     if (!origen) return;
     setAlumnos((prev) => prev.map((a) => (a.id === destinoId ? { ...a, plan: clonarPlan(origen.plan) } : a)));
   };
+  // Igual que copiarPlan, pero para pasarle a otro/a alumno/a una VERSIÓN GUARDADA puntual
+  // (no el plan actual en uso) — por ejemplo, una rutina vieja que quedó archivada.
+  const copiarVersionAOtro = (planOrigen, destinoId) => {
+    setAlumnos((prev) => prev.map((a) => (a.id === destinoId ? { ...a, plan: clonarPlan(planOrigen) } : a)));
+  };
+  // Suma una rutina extra (además de la principal) — ej: una de flexibilidad para hacer en casa.
+  // La alumna la va a poder ver aparte, sin que le pise el plan de entrenamiento activo.
+  const agregarPlanSecundario = (alumnoId, nombre, plan) => {
+    setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...a, planesSecundarios: [...a.planesSecundarios, { id: uid(), nombre, plan: clonarPlan(plan) }] } : a)));
+  };
+  const quitarPlanSecundario = (alumnoId, planId) => {
+    setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...a, planesSecundarios: a.planesSecundarios.filter((p) => p.id !== planId) } : a)));
+  };
   // Convierte el plan actual de un/a alumno/a en una plantilla nueva y reutilizable — no toca
   // el plan original de esa persona, es una copia independiente.
   const guardarComoPlantilla = (alumnoId, nombre) => {
     const origen = alumnos.find((a) => a.id === alumnoId);
     if (!origen) return;
-    crearPlantilla({ id: uid(), nombre, categoria: "Personalizada", plan: clonarPlan(origen.plan) });
+    crearPlantilla({ id: uid(), nombre, categoria: "Personalizada", plan: clonarPlan(origen.plan), coachIds: session?.coachId ? [session.coachId] : null });
   };
   const ultimoLogPorAlumnoRef = useRef({});
   const updatePlan = (alumnoId, newPlan) => {
@@ -4009,6 +4578,18 @@ export default function GymPlannerCoachApp() {
       return { ...a, coachIds: actuales.includes(otroCoachId) ? actuales : [...actuales, otroCoachId] };
     }));
   };
+  // Comparte un alumno con TODOS los entrenadores de un grupo de una sola vez, en vez de tener
+  // que compartirlo uno por uno con cada uno.
+  const compartirAlumnoConGrupo = (alumnoId, grupoId) => {
+    const grupo = grupos.find((g) => g.id === grupoId);
+    if (!grupo) return;
+    setAlumnos((prev) => prev.map((a) => {
+      if (a.id !== alumnoId) return a;
+      const actuales = a.coachIds === null ? coaches.map((c) => c.id) : a.coachIds;
+      const nuevos = grupo.coachIds.filter((id) => !actuales.includes(id));
+      return { ...a, coachIds: [...actuales, ...nuevos] };
+    }));
+  };
   const dejarDeCompartirAlumno = (alumnoId, coachIdAQuitar) => {
     setAlumnos((prev) => prev.map((a) => {
       if (a.id !== alumnoId) return a;
@@ -4050,11 +4631,16 @@ export default function GymPlannerCoachApp() {
     // Un alumno con coachIds = null es "de todos" (así quedan los que ya tenías antes de esta
     // función). Uno con coachIds = [...] solo lo ven los entrenadores que estén en esa lista.
     const alumnosVisibles = alumnos.filter((a) => a.coachIds === null || a.coachIds.includes(session.coachId));
-    if (tab === "dashboard") body = <CoachDashboard alumnos={alumnosVisibles} goAlumnos={(id) => { setTab("alumnos"); setSelectedCoachAlumno(id); }} coachNombre={coachNombre} onUpdateCoach={setCoachNombre} coaches={coaches} onAddCoach={addCoach} onRemoveCoach={removeCoach} mensajeRecordatorio={mensajeRecordatorio} onUpdateMensajeRecordatorio={setMensajeRecordatorio} notificacionesActivas={notificacionesActivas} onToggleNotificaciones={setNotificacionesActivas} modoPausa={modoPausa} onToggleModoPausa={setModoPausa} diasAvisoPlan={diasAvisoPlan} onSetDiasAvisoPlan={setDiasAvisoPlan} coachId={session?.coachId} onCambiarPassword={cambiarPasswordCoach} onSetRecoveryPin={setRecoveryPin} onReclamarAlumnos={reclamarAlumnosSinDueño} logActividad={logActividad} />;
-    else if (tab === "alumnos") body = <CoachAlumnos alumnos={alumnosVisibles} selectedId={selectedCoachAlumno} setSelectedId={setSelectedCoachAlumno} templates={templates} onAsignarPlantilla={asignarPlantilla} onCopiarPlan={copiarPlan} onGuardarComoPlantilla={guardarComoPlantilla} onUpdatePlan={updatePlan} onUpdateAlumno={updateAlumno} onDeleteAlumno={deleteAlumno} onAddAlumno={addAlumno} onSendMsg={sendMsg} onGuardarVersion={guardarVersion} onRestaurarVersion={restaurarVersion} onGuardarHistorialRM={agregarHistorialRM} onAddToLibrary={addCustomExercise} version={libVersion} coaches={coaches} coachIdActual={session.coachId} onCompartirAlumno={compartirAlumnoConCoach} onDejarDeCompartir={dejarDeCompartirAlumno} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={agregarRolPersonalizado} />;
-    else if (tab === "plantillas") body = <CoachPlantillas templates={templates} alumnos={alumnosVisibles} onAsignar={asignarPlantilla} onCrearPlantilla={crearPlantilla} onAddToLibrary={addCustomExercise} version={libVersion} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={agregarRolPersonalizado} />;
+    // Igual que con los alumnos: una plantilla sin coachIds (las de base, o las viejas de antes de
+    // esta función) es visible para todos; una plantilla con coachIds solo la ve quien la creó,
+    // salvo que se comparta — así un entrenador nuevo (ej: le vendiste la app a otro) no ve tus
+    // plantillas personalizadas, solo puede armar las suyas.
+    const templatesVisibles = templates.filter((t) => t.coachIds == null || t.coachIds.includes(session.coachId));
+    if (tab === "dashboard") body = <CoachDashboard alumnos={alumnosVisibles} goAlumnos={(id) => { setTab("alumnos"); setSelectedCoachAlumno(id); }} coachNombre={coachNombre} onUpdateCoach={setCoachNombre} coaches={coaches} onAddCoach={addCoach} onRemoveCoach={removeCoach} mensajeRecordatorio={mensajeRecordatorio} onUpdateMensajeRecordatorio={setMensajeRecordatorio} notificacionesActivas={notificacionesActivas} onToggleNotificaciones={setNotificacionesActivas} modoPausa={modoPausa} onToggleModoPausa={setModoPausa} diasAvisoPlan={diasAvisoPlan} onSetDiasAvisoPlan={setDiasAvisoPlan} coachId={session?.coachId} onCambiarPassword={cambiarPasswordCoach} onSetRecoveryPin={setRecoveryPin} onReclamarAlumnos={reclamarAlumnosSinDueño} logActividad={logActividad} grupos={grupos} onCrearGrupo={crearGrupo} onEliminarGrupo={eliminarGrupo} />;
+    else if (tab === "alumnos") body = <CoachAlumnos alumnos={alumnosVisibles} selectedId={selectedCoachAlumno} setSelectedId={setSelectedCoachAlumno} templates={templatesVisibles} onAsignarPlantilla={asignarPlantilla} onCopiarPlan={copiarPlan} onCopiarVersionAOtro={copiarVersionAOtro} onAgregarPlanSecundario={agregarPlanSecundario} onQuitarPlanSecundario={quitarPlanSecundario} onGuardarComoPlantilla={guardarComoPlantilla} onUpdatePlan={updatePlan} onUpdateAlumno={updateAlumno} onDeleteAlumno={deleteAlumno} onAddAlumno={addAlumno} onSendMsg={sendMsg} onGuardarVersion={guardarVersion} onRestaurarVersion={restaurarVersion} onGuardarHistorialRM={agregarHistorialRM} onAddToLibrary={addCustomExercise} version={libVersion} coaches={coaches} coachIdActual={session.coachId} onCompartirAlumno={compartirAlumnoConCoach} onDejarDeCompartir={dejarDeCompartirAlumno} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={agregarRolPersonalizado} grupos={grupos} onCompartirGrupo={compartirAlumnoConGrupo} />;
+    else if (tab === "plantillas") body = <CoachPlantillas templates={templatesVisibles} alumnos={alumnosVisibles} onAsignar={asignarPlantilla} onCrearPlantilla={crearPlantilla} onAddToLibrary={addCustomExercise} version={libVersion} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={agregarRolPersonalizado} coachIdActual={session.coachId} />;
     else if (tab === "ejercicios") body = <CoachEjercicios onAddExercise={addCustomExercise} version={libVersion} onToggleFav={toggleFavorito} onEditVideo={editarVideoLibreria} />;
-    else body = <BuscarGlobal alumnos={alumnosVisibles} templates={templates} version={libVersion} onGoAlumno={(id) => { setTab("alumnos"); setSelectedCoachAlumno(id); }} onGoPlantillas={() => setTab("plantillas")} />;
+    else body = <BuscarGlobal alumnos={alumnosVisibles} templates={templatesVisibles} version={libVersion} onGoAlumno={(id) => { setTab("alumnos"); setSelectedCoachAlumno(id); }} onGoPlantillas={() => setTab("plantillas")} />;
   } else if (!athlete) {
     body = <div className="font-body" style={{ color: "#8B8698", fontSize: 13, textAlign: "center", padding: "40px 20px" }}>Tu cuenta ya no está activa. Consultá con tu entrenador.</div>;
   } else if (athlete.wellness.encuestaPendiente && tab !== "entrenar") {
@@ -4075,9 +4661,9 @@ export default function GymPlannerCoachApp() {
 
   // Detecta si estamos en una pantalla de celular real, para que ahí la app ocupe todo
   // (sin el marco decorativo de celular que solo tiene sentido viéndolo desde una compu)
-  const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 640 : false));
+  const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.screen.width <= 640 : false));
   useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth <= 640);
+    const check = () => setIsMobile(window.screen.width <= 640);
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
@@ -4106,19 +4692,16 @@ export default function GymPlannerCoachApp() {
     </div>
   );
 
-  if (isMobile) {
-    // En el celular: la app ocupa toda la pantalla, sin marco ni texto decorativo, como una app real
-    return (
-      <div style={{ width: "100vw", height: "100dvh", background: "#0B0A0F", overflow: "hidden" }}>
-        {FONTS}
-        {appShell}
-        <VideoModal />
-      </div>
-    );
-  }
-
+  // Una sola estructura de siempre (en vez de dos ramas distintas para celular/compu) — así,
+  // si "isMobile" llega a cambiar de valor mientras escribís (por ejemplo, el navegador dispara
+  // un evento de "resize" al abrirse el teclado del celular), React solo actualiza el estilo de
+  // este mismo div, en vez de reconstruir toda la pantalla de cero — que era lo que te perdía
+  // el scroll y te tiraba para abajo de todo mientras cargabas series y repeticiones.
   return (
-    <div style={{ minHeight: "100vh", background: "#0B0A0F", display: "flex", flexDirection: "column", alignItems: "center", padding: 24, gap: 14, position: "relative", overflow: "hidden" }}>
+    <div style={isMobile
+      ? { width: "100vw", height: "100dvh", background: "#0B0A0F", overflow: "hidden" }
+      : { minHeight: "100vh", background: "#0B0A0F", display: "flex", flexDirection: "column", alignItems: "center", padding: 24, gap: 14, position: "relative", overflow: "hidden" }
+    }>
       {FONTS}
       {appShell}
       <VideoModal />
