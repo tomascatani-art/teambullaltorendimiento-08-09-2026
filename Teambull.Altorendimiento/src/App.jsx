@@ -1140,7 +1140,20 @@ function generarHTMLInforme(alumno, mesFiltro) {
           <div class="perfil-item"><b>Descanso entre series</b>${metaPlan.descanso || "—"}</div>
         </div>
         <div class="dias-plan">
-          ${diasPlan.map((d) => `<div class="dia-chip"><b>${d.nombre}</b>${(d.bloques || []).reduce((n, b) => n + (b.ejercicios || []).length, 0)} ejercicios</div>`).join("")}
+          ${diasPlan.map((d) => {
+            const totalEj = (d.bloques || []).reduce((n, b) => n + (b.ejercicios || []).length, 0);
+            // Tanteo de roles del día — muestra en qué está enfocado el entrenamiento (Fuerza,
+            // Estructura, etc.), que dice mucho más que solo la cantidad de ejercicios.
+            const conteoRoles = {};
+            (d.bloques || []).forEach((b) => (b.ejercicios || []).forEach((ej) => {
+              if (!ej.rol) return;
+              const rolInfo = ROLES_EJERCICIO.find((r) => r.id === ej.rol);
+              const nombreRol = rolInfo ? rolInfo.label : ej.rol;
+              conteoRoles[nombreRol] = (conteoRoles[nombreRol] || 0) + 1;
+            }));
+            const topRoles = Object.entries(conteoRoles).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([n]) => n);
+            return `<div class="dia-chip"><b>${d.nombre}</b>${totalEj} ejercicio${totalEj === 1 ? "" : "s"}${topRoles.length ? `<div style="margin-top:5px;font-size:10px;color:#B8763F;font-weight:600;">${topRoles.join(" · ")}</div>` : ""}</div>`;
+          }).join("")}
         </div>` : ""}
 
         <h2 class="seccion">📊 Resumen</h2>
@@ -1190,12 +1203,21 @@ function generarHTMLInforme(alumno, mesFiltro) {
           const masComunes = Object.entries(conteoPorEjercicio).sort((a, b) => b[1] - a[1]).slice(0, 5);
           const ultimasNotas = [...todasLasNotas].sort((a, b) => (a.fecha < b.fecha ? 1 : -1)).slice(0, 5);
           return `<h2 class="seccion">📝 Notas de ejercicios <span style="font-weight:400;text-transform:none;letter-spacing:0;opacity:0.7;">(${totalNotas} en total)</span></h2>
-          ${masComunes.length ? `<div style="font-size:11.5px;color:#555;margin-bottom:10px;"><b>Ejercicios con más notas:</b> ${masComunes.map(([nombre, n]) => `${nombre} (${n})`).join(", ")}</div>` : ""}
-          <div style="font-size:10px;color:#8B8698;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px;">Últimas notas</div>
-          <div style="border:1px solid #EEE;border-radius:10px;overflow:hidden;">
-            ${ultimasNotas.map((n) => `<div style="display:flex;gap:8px;padding:7px 12px;border-bottom:1px solid #EEE;font-size:11.5px;align-items:baseline;"><span style="color:#8B8698;flex-shrink:0;width:52px;">${mostrarFecha(n.fecha)}</span><span style="font-weight:700;flex-shrink:0;">${n.exNombre}:</span><span style="color:#444;">${n.texto}</span></div>`).join("")}
-          </div>
-          ${totalNotas > 5 ? `<div style="font-size:10px;color:#8B8698;margin-top:6px;">+ ${totalNotas - 5} notas más este mes.</div>` : ""}`;
+          ${masComunes.length ? `<div style="margin-bottom:14px;">
+            <div style="font-size:9.5px;color:#8B8698;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px;">Ejercicios con más notas</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;">
+              ${masComunes.map(([nombre, n]) => `<span style="background:#F8F6F1;border:1px solid #E8E3D8;border-radius:999px;padding:4px 11px;font-size:11px;font-weight:600;color:#333;">${nombre} <span style="color:#B8763F;font-weight:800;">×${n}</span></span>`).join("")}
+            </div>
+          </div>` : ""}
+          <div style="font-size:9.5px;color:#8B8698;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">Últimas notas</div>
+          ${ultimasNotas.map((n) => `<div style="border-left:3px solid #B8763F;background:#F8F6F1;border-radius:0 8px 8px 0;padding:9px 14px;margin-bottom:7px;">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px;">
+              <span style="font-weight:700;font-size:12px;">${n.exNombre}</span>
+              <span style="font-size:9.5px;color:#8B8698;text-transform:uppercase;">${mostrarFecha(n.fecha)}</span>
+            </div>
+            <div style="font-size:12px;color:#444;font-style:italic;">"${n.texto}"</div>
+          </div>`).join("")}
+          ${totalNotas > 5 ? `<div style="font-size:10px;color:#8B8698;margin-top:2px;">+ ${totalNotas - 5} notas más este mes.</div>` : ""}`;
         })() : ""}
 
         ${mesFiltro && !checkins.length && !encuestas.length && !diasConNotas.length ? `<div style="color:#8B8698;font-size:13px;padding:20px 0;text-align:center;">Sin actividad registrada este mes.</div>` : ""}
@@ -2093,7 +2115,7 @@ function generarAlertas(a) {
   return alertas;
 }
 
-function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coaches, onAddCoach, onRemoveCoach, mensajeRecordatorio, onUpdateMensajeRecordatorio, notificacionesActivas, onToggleNotificaciones, modoPausa, onToggleModoPausa, diasAvisoPlan, onSetDiasAvisoPlan, coachId, onCambiarPassword, onSetRecoveryPin, onReclamarAlumnos, logActividad, grupos, onCrearGrupo, onEliminarGrupo }) {
+function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coaches, onAddCoach, onRemoveCoach, mensajeRecordatorio, onUpdateMensajeRecordatorio, notificacionesActivas, onToggleNotificaciones, modoPausa, onToggleModoPausa, diasAvisoPlan, onSetDiasAvisoPlan, coachId, onCambiarPassword, onSetRecoveryPin, onSetTelefono, onReclamarAlumnos, logActividad, grupos, onCrearGrupo, onEliminarGrupo }) {
   const [editando, setEditando] = useState(false);
   const [agregandoCoach, setAgregandoCoach] = useState(false);
   const [nombreNuevoCoach, setNombreNuevoCoach] = useState("");
@@ -2118,6 +2140,14 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
     const r = onSetRecoveryPin(coachId, pinNuevo);
     if (r.ok) { setPinMensaje({ ok: true, texto: "✓ PIN guardado." }); setPinNuevo(""); setTimeout(() => { setConfigurandoPin(false); setPinMensaje(null); }, 1500); }
     else setPinMensaje({ ok: false, texto: r.motivo });
+  };
+  const coachActual = coaches.find((c) => c.id === coachId);
+  const [telefonoNuevo, setTelefonoNuevo] = useState(coachActual?.telefono || "");
+  const [telefonoMensaje, setTelefonoMensaje] = useState(null);
+  const guardarTelefonoNuevo = () => {
+    onSetTelefono(coachId, telefonoNuevo);
+    setTelefonoMensaje({ ok: true, texto: "✓ Guardado." });
+    setTimeout(() => setTelefonoMensaje(null), 1500);
   };
   const alumnosActivos = alumnos.filter((a) => a.activo !== false);
   const promedio = Math.round(alumnosActivos.reduce((a, x) => a + x.cumplimiento, 0) / (alumnosActivos.length || 1));
@@ -2179,6 +2209,11 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
                 <input value={pinNuevo} onChange={(e) => setPinNuevo(e.target.value)} placeholder="Tu PIN de recuperación" className="font-body" style={{ width: "100%", background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "8px 10px", fontSize: 12, boxSizing: "border-box", marginBottom: 8 }} />
                 {pinMensaje && <div className="font-body" style={{ color: pinMensaje.ok ? "#33D6A6" : "#E85D5D", fontSize: 11, marginBottom: 8 }}>{pinMensaje.texto}</div>}
                 <button onClick={guardarPinNuevo} className="font-body" style={{ width: "100%", background: "#7DD6C0", border: "none", borderRadius: 8, color: "#0B2A2E", fontWeight: 700, padding: 9, cursor: "pointer" }}>Guardar PIN</button>
+                <div style={{ height: 1, background: "#322E3D", margin: "14px 0" }} />
+                <div className="font-body" style={{ color: "#6B6678", fontSize: 9, marginBottom: 8 }}>Tu número de WhatsApp — si alguien intenta recuperar su contraseña y nunca configuró un PIN, le vamos a mostrar un botón para escribirte directo a vos, en vez de dejarlo sin salida.</div>
+                <input value={telefonoNuevo} onChange={(e) => setTelefonoNuevo(e.target.value)} placeholder="Ej: 3489123456 (sin espacios ni guiones)" className="font-body" style={{ width: "100%", background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "8px 10px", fontSize: 12, boxSizing: "border-box", marginBottom: 8 }} />
+                {telefonoMensaje && <div className="font-body" style={{ color: "#33D6A6", fontSize: 11, marginBottom: 8 }}>{telefonoMensaje.texto}</div>}
+                <button onClick={guardarTelefonoNuevo} className="font-body" style={{ width: "100%", background: "#25D366", border: "none", borderRadius: 8, color: "#0B2A2E", fontWeight: 700, padding: 9, cursor: "pointer" }}>Guardar WhatsApp</button>
               </div>
             )}
           </div>
@@ -3350,8 +3385,8 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
         {dias[diaIdx].bloques.map((bloque, bIdx) => (
           <div key={bloque.id}>
             {dias[diaIdx].bloques.length > 1 && (
-              <div style={{ margin: bIdx === 0 ? "0 0 10px" : "36px 0 10px" }}>
-                {bIdx > 0 && <div style={{ height: 1, background: "#26232F", marginBottom: 16 }} />}
+              <div style={{ margin: bIdx === 0 ? "0 0 10px" : "18px 0 8px" }}>
+                {bIdx > 0 && <div style={{ height: 1, background: "#26232F", marginBottom: 8 }} />}
                 <div className="font-body" style={{ color: "#7DD6C0", fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase", marginLeft: 2 }}>{bloque.nombre}</div>
               </div>
             )}
@@ -4126,11 +4161,23 @@ function AuthScreen({ onLogin, coaches }) {
           <button type="button" onClick={() => {
             const c = (coaches || []).find((co) => co.usuario === usuarioRecuperar.trim());
             if (!c) { setResultadoRecuperar({ ok: false, texto: "No existe ese usuario." }); return; }
-            if (!c.recoveryPin) { setResultadoRecuperar({ ok: false, texto: "Ese usuario todavía no configuró un PIN de recuperación." }); return; }
+            if (!c.recoveryPin) { setResultadoRecuperar({ ok: false, texto: "Ese usuario todavía no configuró un PIN de recuperación.", sinPin: true, telefono: c.telefono || "" }); return; }
             if (c.recoveryPin !== pinRecuperar.trim()) { setResultadoRecuperar({ ok: false, texto: "El PIN no coincide." }); return; }
             setResultadoRecuperar({ ok: true, texto: `Tu contraseña es: ${c.password}` });
           }} className="font-body" style={{ width: "100%", background: "#7DD6C0", border: "none", borderRadius: 8, color: "#0B2A2E", fontWeight: 700, padding: 9, cursor: "pointer" }}>Ver mi contraseña</button>
           {resultadoRecuperar && <div className="font-body" style={{ color: resultadoRecuperar.ok ? "#33D6A6" : "#E85D5D", fontSize: 12, fontWeight: 700, marginTop: 8 }}>{resultadoRecuperar.texto}</div>}
+          {resultadoRecuperar?.sinPin && (
+            <button
+              type="button"
+              onClick={() => {
+                const texto = encodeURIComponent(`Hola, no puedo recuperar mi contraseña de Team Bull (usuario: ${usuarioRecuperar.trim()}). ¿Me ayudás?`);
+                const url = resultadoRecuperar.telefono ? `https://wa.me/${resultadoRecuperar.telefono.replace(/\D/g, "")}?text=${texto}` : `https://wa.me/?text=${texto}`;
+                window.open(url, "_blank", "noopener,noreferrer");
+              }}
+              className="font-body"
+              style={{ width: "100%", background: "#25D366", border: "none", borderRadius: 8, color: "#0B2A2E", fontWeight: 700, padding: 9, cursor: "pointer", marginTop: 8 }}
+            >💬 Escribirle por WhatsApp</button>
+          )}
         </div>
       )}
       <label className="font-body" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer", userSelect: "none" }}>
@@ -4566,6 +4613,13 @@ export default function GymPlannerCoachApp() {
     setCoaches((prev) => prev.map((co) => (co.id === coachId ? { ...co, recoveryPin: pin.trim() } : co)));
     return { ok: true };
   };
+  // Teléfono de contacto del entrenador — se usa como respaldo cuando alguien quiere recuperar
+  // su contraseña pero nunca configuró un PIN: en vez de quedar sin salida, le mostramos un botón
+  // directo a WhatsApp para que le escriba a este número.
+  const setTelefonoCoach = (coachId, telefono) => {
+    setCoaches((prev) => prev.map((co) => (co.id === coachId ? { ...co, telefono: telefono.trim() } : co)));
+    return { ok: true };
+  };
 
   const asignarPlantilla = (alumnoId, templateId) => {
     const tpl = templates.find((t) => t.id === templateId);
@@ -4709,7 +4763,7 @@ export default function GymPlannerCoachApp() {
     // salvo que se comparta — así un entrenador nuevo (ej: le vendiste la app a otro) no ve tus
     // plantillas personalizadas, solo puede armar las suyas.
     const templatesVisibles = templates.filter((t) => t.coachIds == null || t.coachIds.includes(session.coachId));
-    if (tab === "dashboard") body = <CoachDashboard alumnos={alumnosVisibles} goAlumnos={(id) => { setTab("alumnos"); setSelectedCoachAlumno(id); }} coachNombre={coachNombre} onUpdateCoach={setCoachNombre} coaches={coaches} onAddCoach={addCoach} onRemoveCoach={removeCoach} mensajeRecordatorio={mensajeRecordatorio} onUpdateMensajeRecordatorio={setMensajeRecordatorio} notificacionesActivas={notificacionesActivas} onToggleNotificaciones={setNotificacionesActivas} modoPausa={modoPausa} onToggleModoPausa={setModoPausa} diasAvisoPlan={diasAvisoPlan} onSetDiasAvisoPlan={setDiasAvisoPlan} coachId={session?.coachId} onCambiarPassword={cambiarPasswordCoach} onSetRecoveryPin={setRecoveryPin} onReclamarAlumnos={reclamarAlumnosSinDueño} logActividad={logActividad} grupos={grupos} onCrearGrupo={crearGrupo} onEliminarGrupo={eliminarGrupo} />;
+    if (tab === "dashboard") body = <CoachDashboard alumnos={alumnosVisibles} goAlumnos={(id) => { setTab("alumnos"); setSelectedCoachAlumno(id); }} coachNombre={coachNombre} onUpdateCoach={setCoachNombre} coaches={coaches} onAddCoach={addCoach} onRemoveCoach={removeCoach} mensajeRecordatorio={mensajeRecordatorio} onUpdateMensajeRecordatorio={setMensajeRecordatorio} notificacionesActivas={notificacionesActivas} onToggleNotificaciones={setNotificacionesActivas} modoPausa={modoPausa} onToggleModoPausa={setModoPausa} diasAvisoPlan={diasAvisoPlan} onSetDiasAvisoPlan={setDiasAvisoPlan} coachId={session?.coachId} onCambiarPassword={cambiarPasswordCoach} onSetRecoveryPin={setRecoveryPin} onSetTelefono={setTelefonoCoach} onReclamarAlumnos={reclamarAlumnosSinDueño} logActividad={logActividad} grupos={grupos} onCrearGrupo={crearGrupo} onEliminarGrupo={eliminarGrupo} />;
     else if (tab === "alumnos") body = <CoachAlumnos alumnos={alumnosVisibles} selectedId={selectedCoachAlumno} setSelectedId={setSelectedCoachAlumno} templates={templatesVisibles} onAsignarPlantilla={asignarPlantilla} onCopiarPlan={copiarPlan} onCopiarVersionAOtro={copiarVersionAOtro} onAgregarPlanSecundario={agregarPlanSecundario} onQuitarPlanSecundario={quitarPlanSecundario} onGuardarComoPlantilla={guardarComoPlantilla} onUpdatePlan={updatePlan} onUpdateAlumno={updateAlumno} onDeleteAlumno={deleteAlumno} onAddAlumno={addAlumno} onSendMsg={sendMsg} onGuardarVersion={guardarVersion} onRestaurarVersion={restaurarVersion} onGuardarHistorialRM={agregarHistorialRM} onAddToLibrary={addCustomExercise} version={libVersion} coaches={coaches} coachIdActual={session.coachId} onCompartirAlumno={compartirAlumnoConCoach} onDejarDeCompartir={dejarDeCompartirAlumno} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={agregarRolPersonalizado} grupos={grupos} onCompartirGrupo={compartirAlumnoConGrupo} />;
     else if (tab === "plantillas") body = <CoachPlantillas templates={templatesVisibles} alumnos={alumnosVisibles} onAsignar={asignarPlantilla} onCrearPlantilla={crearPlantilla} onAddToLibrary={addCustomExercise} version={libVersion} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={agregarRolPersonalizado} coachIdActual={session.coachId} />;
     else if (tab === "ejercicios") body = <CoachEjercicios onAddExercise={addCustomExercise} version={libVersion} onToggleFav={toggleFavorito} onEditVideo={editarVideoLibreria} />;
@@ -4749,7 +4803,7 @@ export default function GymPlannerCoachApp() {
         <button onClick={logout} className="font-body" style={{ position: "absolute", top: "calc(14px + env(safe-area-inset-top, 0px))", right: 14, zIndex: 5, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 999, color: "#8B8698", fontSize: 10, fontWeight: 700, padding: "5px 10px", cursor: "pointer" }}>Cerrar sesión</button>
       )}
       {session && session.role === "coach" && (
-        <div className="font-body" style={{ position: "absolute", top: "calc(16px + env(safe-area-inset-top, 0px))", left: 14, right: 14, zIndex: 5, fontSize: 9, color: !remotoSincronizado ? "#FF6B35" : guardadoOk ? "#33D6A6" : "#4A4658", transition: "color 0.3s" }}>
+        <div className="font-body" style={{ position: "absolute", top: "calc(16px + env(safe-area-inset-top, 0px))", left: 14, right: 90, zIndex: 4, fontSize: 9, color: !remotoSincronizado ? "#FF6B35" : guardadoOk ? "#33D6A6" : "#4A4658", transition: "color 0.3s", pointerEvents: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {!remotoSincronizado ? `⚠ Sin conexión con la nube${detalleErrorSync ? ` · ${detalleErrorSync}` : ""}` : guardadoOk ? "✓ Guardado" : "●"}
         </div>
       )}
