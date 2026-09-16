@@ -736,6 +736,18 @@ const mkDia = (nombre, bloques = [], diaSemana = "") => ({ id: uid(), nombre, bl
 const mkWarm = (nombre, series = "", reps = "", video = null) => ({ id: uid(), nombre, series, reps, video });
 const DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 const todayISO = () => new Date().toISOString().slice(0, 10);
+// Calcula qué semana del mesociclo le toca a un alumno HOY, en base a la fecha real de inicio
+// que cargó el coach — para que la app arranque ahí sola, y para poder marcarla como "la que toca"
+// aunque el alumno esté mirando otra. Si no hay fecha cargada, no recomienda nada (null).
+function semanaQueToca(fechaInicio, maxSemanas) {
+  if (!fechaInicio) return null;
+  const inicio = new Date(fechaInicio + "T00:00:00");
+  if (isNaN(inicio.getTime())) return null;
+  const diffDias = Math.floor((new Date(todayISO() + "T00:00:00") - inicio) / (1000 * 60 * 60 * 24));
+  if (diffDias < 0) return 0; // todavía no arrancó, mostramos semana 1
+  const semana = Math.floor(diffDias / 7);
+  return Math.max(0, Math.min(semana, maxSemanas - 1));
+}
 // Convierte una fecha ISO en "hace 5 min", "hace 2 h", "hace 3 días", etc.
 function tiempoRelativo(iso) {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -937,16 +949,17 @@ async function compartirTexto(titulo, texto) {
 // Gráfico de línea en SVG puro (no depende de React) — para poder incluirlo en el PDF impreso,
 // no solo en la pantalla. Mismo estilo visual que los gráficos de la app.
 // Gráfico circular (dona) en SVG puro — para porcentajes tipo cumplimiento o ánimo promedio.
-function svgDonutChart(valorActual, valorMax, color, textoCentro, label) {
+function svgDonutChart(valorActual, valorMax, color, textoCentro, label, tamano = 100) {
   const pct = Math.max(0, Math.min(1, valorActual / valorMax));
-  const r = 40, cx = 52, cy = 52, grosor = 10;
+  const r = tamano * 0.385, cx = tamano / 2 + 2, cy = tamano / 2 + 2, grosor = tamano * 0.096;
   const circun = 2 * Math.PI * r;
   const lleno = circun * pct;
+  const vb = tamano + 4;
   return `
-    <div style="display:flex;flex-direction:column;align-items:center;background:#F8F6F1;border-radius:12px;padding:14px 18px;">
-      <div style="font-size:10px;color:#8B8698;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">${label}</div>
-      <div style="font-size:24px;font-weight:800;color:#121017;margin-bottom:6px;">${textoCentro}</div>
-      <svg width="100" height="100" viewBox="0 0 104 104">
+    <div style="display:flex;flex-direction:column;align-items:center;background:#F8F6F1;border-radius:12px;padding:${tamano < 90 ? "10px 8px" : "14px 18px"};">
+      <div style="font-size:${tamano < 90 ? 8.5 : 10}px;color:#8B8698;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;text-align:center;">${label}</div>
+      <div style="font-size:${tamano < 90 ? 15 : 24}px;font-weight:800;color:#121017;margin-bottom:6px;">${textoCentro}</div>
+      <svg width="${tamano}" height="${tamano}" viewBox="0 0 ${vb} ${vb}">
         <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#E8E3D8" stroke-width="${grosor}"/>
         <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="${grosor}" stroke-linecap="round" stroke-dasharray="${lleno} ${circun}" transform="rotate(-90 ${cx} ${cy})"/>
       </svg>
@@ -1009,6 +1022,14 @@ function generarHTMLInforme(alumno, mesFiltro) {
   const checkins = checkinsTodos.filter((c) => enMes(c.fecha));
   const promAnimo = checkins.length ? (checkins.reduce((s, c) => s + c.valor, 0) / checkins.length).toFixed(1) : null;
   const encuestas = (alumno.wellness?.encuestas || []).filter((e) => enMes(e.fecha));
+  // Promedios de las encuestas post-entreno, para mostrar como gráficos circulares chicos en vez
+  // de una lista larga con cada día — así el informe no se hace eterno con muchas semanas cargadas.
+  const promedioCampo = (campo) => encuestas.length ? (encuestas.reduce((s, e) => s + (Number(e[campo]) || 0), 0) / encuestas.length).toFixed(1) : null;
+  const promFatiga = promedioCampo("fatiga");
+  const promSueno = promedioCampo("sueno");
+  const promDolor = promedioCampo("dolorMuscular");
+  const promMotivacion = promedioCampo("motivacion");
+  const comentariosEncuestas = encuestas.filter((e) => e.comentario && e.comentario.trim());
   const notasPorDia = Object.values(alumno.notasEjercicios || {}).filter((n) => n.texto && n.texto.trim() && enMes(n.fecha)).reduce((acc, n) => { (acc[n.fecha] = acc[n.fecha] || []).push(n); return acc; }, {});
   const diasConNotas = Object.entries(notasPorDia).sort((a, b) => (a[0] < b[0] ? 1 : -1));
   const tituloMes = mesFiltro ? new Date(mesFiltro + "-02T00:00:00").toLocaleDateString("es-AR", { month: "long", year: "numeric" }) : null;
@@ -1138,14 +1159,44 @@ function generarHTMLInforme(alumno, mesFiltro) {
 
         ${alumno.historialPeso && alumno.historialPeso.length > 1 ? `<h2 class="seccion">⚖️ Evolución de peso corporal</h2><div class="chart-box">${svgLineChart(alumno.historialPeso, "#7DD6C0", "kg")}</div>` : ""}
 
-        ${ejerciciosRM.length ? `<h2 class="seccion">💪 RM por ejercicio</h2>` + ejerciciosRM.map((ej) => {
-          const vals = alumno.historialRM[ej];
-          return `<div class="chart-box"><div class="titulo">${ej}</div>${svgLineChart(vals, "#FF6B35", "kg")}</div>`;
-        }).join("") : ""}
+        ${ejerciciosRM.length ? `<h2 class="seccion">💪 RM por ejercicio <span style="font-weight:400;text-transform:none;letter-spacing:0;opacity:0.7;">(${ejerciciosRM.length} ejercicio${ejerciciosRM.length === 1 ? "" : "s"})</span></h2>
+        <div style="border:1px solid #EEE;border-radius:10px;overflow:hidden;">
+          ${ejerciciosRM.map((ej) => {
+            const vals = alumno.historialRM[ej];
+            const actual = vals[vals.length - 1];
+            const inicial = vals[0];
+            const subio = actual >= inicial;
+            const delta = Math.abs(actual - inicial);
+            return `<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;border-bottom:1px solid #EEE;font-size:12px;"><span style="font-weight:600;">${ej}</span><span><b>${actual}kg</b> <span style="color:${subio ? "#1a9c6e" : "#c94a3a"};font-size:10px;">${subio ? "▲" : "▼"} ${delta}kg</span></span></div>`;
+          }).join("")}
+        </div>` : ""}
 
-        ${encuestas.length ? `<h2 class="seccion">📋 Encuestas post-entreno</h2>` + encuestas.slice(0, 15).map((e) => `<div class="card"><div class="fecha">${mostrarFecha(e.fecha)}</div><div class="txt">Fatiga ${e.fatiga} · Sueño ${e.sueno} · Dolor ${e.dolorMuscular} · Motivación ${e.motivacion}${e.comentario ? `<br><i>"${e.comentario}"</i>` : ""}</div></div>`).join("") : ""}
+        ${encuestas.length ? `<h2 class="seccion">📋 Encuestas post-entreno <span style="font-weight:400;text-transform:none;letter-spacing:0;opacity:0.7;">(promedio de ${encuestas.length} registro${encuestas.length === 1 ? "" : "s"})</span></h2>
+        <div class="donuts" style="flex-wrap:wrap;gap:10px;">
+          ${svgDonutChart(promFatiga, 10, "#E85D5D", promFatiga, "Fatiga", 68)}
+          ${svgDonutChart(promSueno, 10, "#5AA0E6", promSueno, "Sueño", 68)}
+          ${svgDonutChart(promDolor, 10, "#F2A93B", promDolor, "Dolor muscular", 68)}
+          ${svgDonutChart(promMotivacion, 10, "#33D6A6", promMotivacion, "Motivación", 68)}
+        </div>
+        ${comentariosEncuestas.length ? `<div style="margin-top:10px;">` + comentariosEncuestas.slice(0, 6).map((e) => `<div class="card" style="padding:8px 12px;"><span style="color:#8B8698;font-size:10px;">${mostrarFecha(e.fecha)}:</span> <i style="font-size:12px;">"${e.comentario}"</i></div>`).join("") + `</div>` : ""}` : ""}
 
-        ${diasConNotas.length ? `<h2 class="seccion">📝 Notas de ejercicios</h2>` + diasConNotas.map(([fecha, notas]) => `<div class="card"><div class="fecha">${mostrarFecha(fecha)}</div>${notas.map((n) => `<div class="ej">${n.exNombre}</div><div class="txt">${n.texto}</div>`).join("")}</div>`).join("") : ""}
+        ${diasConNotas.length ? (() => {
+          const todasLasNotas = diasConNotas.flatMap(([fecha, notas]) => notas.map((n) => ({ ...n, fecha })));
+          const totalNotas = todasLasNotas.length;
+          // Contamos cuántas veces aparece cada ejercicio, para mostrar solo un resumen de "en qué
+          // se enfocó" en vez de listar cada nota — así el informe no crece con la cantidad de días.
+          const conteoPorEjercicio = {};
+          todasLasNotas.forEach((n) => { conteoPorEjercicio[n.exNombre] = (conteoPorEjercicio[n.exNombre] || 0) + 1; });
+          const masComunes = Object.entries(conteoPorEjercicio).sort((a, b) => b[1] - a[1]).slice(0, 5);
+          const ultimasNotas = [...todasLasNotas].sort((a, b) => (a.fecha < b.fecha ? 1 : -1)).slice(0, 5);
+          return `<h2 class="seccion">📝 Notas de ejercicios <span style="font-weight:400;text-transform:none;letter-spacing:0;opacity:0.7;">(${totalNotas} en total)</span></h2>
+          ${masComunes.length ? `<div style="font-size:11.5px;color:#555;margin-bottom:10px;"><b>Ejercicios con más notas:</b> ${masComunes.map(([nombre, n]) => `${nombre} (${n})`).join(", ")}</div>` : ""}
+          <div style="font-size:10px;color:#8B8698;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px;">Últimas notas</div>
+          <div style="border:1px solid #EEE;border-radius:10px;overflow:hidden;">
+            ${ultimasNotas.map((n) => `<div style="display:flex;gap:8px;padding:7px 12px;border-bottom:1px solid #EEE;font-size:11.5px;align-items:baseline;"><span style="color:#8B8698;flex-shrink:0;width:52px;">${mostrarFecha(n.fecha)}</span><span style="font-weight:700;flex-shrink:0;">${n.exNombre}:</span><span style="color:#444;">${n.texto}</span></div>`).join("")}
+          </div>
+          ${totalNotas > 5 ? `<div style="font-size:10px;color:#8B8698;margin-top:6px;">+ ${totalNotas - 5} notas más este mes.</div>` : ""}`;
+        })() : ""}
 
         ${mesFiltro && !checkins.length && !encuestas.length && !diasConNotas.length ? `<div style="color:#8B8698;font-size:13px;padding:20px 0;text-align:center;">Sin actividad registrada este mes.</div>` : ""}
 
@@ -2542,12 +2593,8 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
               })}
             </div>
           )}
-          <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
-            <button onClick={() => compartirPorWhatsApp(alumno)} className="font-body" style={{ flex: 1, background: "#25D366", border: "none", borderRadius: 8, color: "#0B2A2E", fontWeight: 700, fontSize: 10, padding: 9, cursor: "pointer" }}>💬 Enviar por WhatsApp</button>
-            <button onClick={() => descargarPlanPDF(alumno)} className="font-body" style={{ flex: 1, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, color: "#8B8698", fontWeight: 700, fontSize: 10, padding: 9, cursor: "pointer" }}>⬇️ Descargar</button>
-          </div>
-          <button onClick={() => compartirPlan(alumno)} className="font-body" style={{ width: "100%", background: "none", border: "none", color: "#7DD6C0", fontWeight: 700, fontSize: 10, padding: "4px 0", cursor: "pointer", marginBottom: 8 }}>Más opciones para compartir (mail, copiar, etc.)</button>
-          <div className="font-body" style={{ fontSize: 9, color: "#6B6678", marginBottom: 10 }}>"WhatsApp" abre WhatsApp con el plan como texto listo para enviar. "Descargar" guarda un archivo — abrilo y tocá "Imprimir / Guardar como PDF" para convertirlo a PDF. Nota: estas acciones necesitan la app publicada (no funcionan siempre en la vista previa del chat).</div>
+          <button onClick={() => descargarPlanPDF(alumno)} className="font-body" style={{ width: "100%", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, color: "#8B8698", fontWeight: 700, fontSize: 10, padding: 9, cursor: "pointer", marginBottom: 8 }}>⬇️ Descargar plan (PDF)</button>
+          <div className="font-body" style={{ fontSize: 9, color: "#6B6678", marginBottom: 10 }}>Se abre y guarda un archivo — tocá "Imprimir / Guardar como PDF" ahí adentro, y de ahí lo mandás por WhatsApp como cualquier otro archivo. Nota: esto necesita la app publicada (no funciona siempre en la vista previa del chat).</div>
           {guardandoVersion && (
             <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
               <input value={nombreVersion} onChange={(e) => setNombreVersion(e.target.value)} placeholder="Ej: Agosto, Pretemporada..." className="font-body" style={{ flex: 1, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, color: "#F4F1EA", padding: "8px 10px", fontSize: 12, boxSizing: "border-box" }} />
@@ -2626,7 +2673,7 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
                 </div>
               </div>
             ) : (
-              <button onClick={() => setAgregandoSecundaria(true)} className="font-body" style={{ width: "100%", background: "rgba(125,214,192,0.1)", border: "1px dashed #7DD6C0", borderRadius: 8, color: "#7DD6C0", fontWeight: 700, fontSize: 11, padding: 9, cursor: "pointer" }}>+ Agregar rutina extra</button>
+              <button onClick={() => setAgregandoSecundaria(true)} className="font-body" style={{ width: "100%", background: "rgba(125,214,192,0.1)", border: "1px dashed #7DD6C0", borderRadius: 8, color: "#7DD6C0", fontWeight: 700, fontSize: 11, padding: 9, cursor: "pointer" }}>+ Agregar planificación</button>
             )}
           </div>
 
@@ -2640,9 +2687,7 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
       {tab === "perfil" && (
         <div style={{ padding: "0 20px" }}>
           <button onClick={() => descargarInformePDF(alumno)} className="font-body" style={{ width: "100%", background: "#FF6B35", border: "none", borderRadius: 10, color: "#121017", fontWeight: 700, fontSize: 12, padding: 11, cursor: "pointer", marginBottom: 6 }}>📄 Descargar informe prolijo (PDF)</button>
-          <div className="font-body" style={{ fontSize: 9, color: "#6B6678", textAlign: "center", marginBottom: 10 }}>Se abre y guarda un archivo — tocá "Imprimir / Guardar como PDF" ahí adentro para convertirlo a PDF de verdad.</div>
-          <button onClick={() => compartirTextoPorWhatsApp(generarInformeCompleto(alumno))} className="font-body" style={{ width: "100%", background: "#25D366", border: "none", borderRadius: 10, color: "#0B2A2E", fontWeight: 700, fontSize: 12, padding: 11, cursor: "pointer", marginBottom: 6 }}>💬 Informe rápido (texto) por WhatsApp</button>
-          <button onClick={() => compartirTexto(`Informe de ${alumno.nombre}`, generarInformeCompleto(alumno))} className="font-body" style={{ width: "100%", background: "none", border: "none", color: "#FF6B35", fontWeight: 700, fontSize: 10, padding: "4px 0", cursor: "pointer", marginBottom: 16 }}>Más opciones para compartir (mail, copiar, etc.)</button>
+          <div className="font-body" style={{ fontSize: 9, color: "#6B6678", textAlign: "center", marginBottom: 16 }}>Se abre y guarda un archivo — tocá "Imprimir / Guardar como PDF" ahí adentro, y de ahí lo podés mandar por WhatsApp como cualquier otro archivo.</div>
 
           {alumno.mesesArchivados && alumno.mesesArchivados.length > 0 && (
             <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, padding: 12, marginBottom: 16 }}>
@@ -3204,16 +3249,17 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
   const [diaIdx, setDiaIdx] = useState(0);
   const ejercicios = flatEjercicios(dias[diaIdx]);
   const maxSemanas = Math.max(1, ...ejercicios.map((e) => e.semanas?.length || 1));
-  const [semana, setSemana] = useState(0);
+  const semanaRecomendada = semanaQueToca(planActivo.meta?.fechaInicio, maxSemanas);
+  const [semana, setSemana] = useState(() => (semanaRecomendada !== null ? semanaRecomendada : 0));
   const [activeId, setActiveId] = useState(ejercicios[0]?.id);
   const [restTimer, setRestTimer] = useState(null);
   const timeoutRef = useRef(null);
 
   useEffect(() => {
-    // Al cambiar de rutina, arrancamos de nuevo desde el día 1 (evita quedar "afuera de rango"
-    // si la otra rutina tiene menos días que la que estaba viendo).
+    // Al cambiar de rutina, arrancamos en la semana que le toca según la fecha de inicio de ESA
+    // rutina (o semana 1 si no tiene fecha cargada) — no simplemente "semana 1" siempre.
     setDiaIdx(0);
-    setSemana(0);
+    setSemana(semanaRecomendada !== null ? semanaRecomendada : 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rutinaActivaId]);
   useEffect(() => {
@@ -3241,8 +3287,13 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
   if (ejercicios.length === 0) return <div>{selectorRutinas}<div className="font-body" style={{ color: "#8B8698", fontSize: 13, textAlign: "center", padding: "40px 20px" }}>Este día no tiene ejercicios asignados.</div></div>;
 
   const notas = alumno.notasEjercicios || {};
-  const getNota = (id) => notas[id]?.texto || "";
-  const tieneNota = (id) => !!(notas[id]?.texto && notas[id].texto.trim());
+  // La nota (y su tilde ✓) quedan atadas a la semana puntual, no solo al ejercicio — así, si dejaste
+  // una nota en la Semana 1, no te aparece pegada como si ya hubieras hecho la Semana 2, 3 o 4.
+  // Las notas viejas (de antes de este cambio, guardadas sin semana) se muestran como si fueran de
+  // la Semana 1 — para no perder ese historial — y no aparecen en las demás semanas.
+  const claveNota = (id, sem) => `${id}__s${sem}`;
+  const getNota = (id) => notas[claveNota(id, semana)]?.texto || (semana === 0 ? notas[id]?.texto || "" : "");
+  const tieneNota = (id) => !!(notas[claveNota(id, semana)]?.texto?.trim() || (semana === 0 && notas[id]?.texto?.trim()));
 
   const activePE = ejercicios.find((pe) => pe.id === activeId) || ejercicios[0];
   const objetivo = (activePE.semanas && activePE.semanas[semana]) || "—";
@@ -3263,17 +3314,29 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
       )}
 
       {maxSemanas > 1 && activePE.tipo !== "tabata" && (
-        <div style={{ padding: "0 26px 8px", display: "flex", gap: 6, alignItems: "center", overflowX: "auto" }}>
-          <span className="font-body" style={{ color: "#8B8698", fontSize: 10, flexShrink: 0 }}>Semana:</span>
-          {Array.from({ length: maxSemanas }, (_, i) => <Pill key={i} active={semana === i} onClick={() => setSemana(i)} activeColor="#7DD6C0">S{i + 1}</Pill>)}
+        <div style={{ padding: "0 26px 4px" }}>
+          <div style={{ display: "flex", gap: 6, alignItems: "center", overflowX: "auto" }}>
+            <span className="font-body" style={{ color: "#8B8698", fontSize: 10, flexShrink: 0 }}>Semana:</span>
+            {Array.from({ length: maxSemanas }, (_, i) => (
+              <div key={i} style={{ position: "relative", flexShrink: 0 }}>
+                <Pill active={semana === i} onClick={() => setSemana(i)} activeColor="#7DD6C0">S{i + 1}</Pill>
+                {semanaRecomendada === i && (
+                  <div style={{ position: "absolute", top: -4, right: -2, width: 8, height: 8, borderRadius: 999, background: "#FFC94A", border: "1.5px solid #121017" }} />
+                )}
+              </div>
+            ))}
+          </div>
+          {semanaRecomendada !== null && semanaRecomendada !== semana && (
+            <div className="font-body" style={{ color: "#FFC94A", fontSize: 10, marginTop: 6, fontWeight: 600 }}>🔶 Según tu fecha de inicio, hoy te toca la Semana {semanaRecomendada + 1} — estás mirando otra.</div>
+          )}
         </div>
       )}
 
-      {alumno.plan.calentamiento.length > 0 && (
+      {planActivo.calentamiento.length > 0 && (
         <div style={{ padding: "0 26px 12px" }}>
           <div className="font-body" style={{ fontSize: 11, color: "#FF6B35", fontWeight: 700, marginBottom: 6 }}>🔥 ENTRADA EN CALOR</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {alumno.plan.calentamiento.map((w) => (
+            {planActivo.calentamiento.map((w) => (
               <button key={w.id} onClick={() => openVideo(videoDe(w))} className="font-body" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, padding: "9px 12px", cursor: "pointer", textAlign: "left" }}>
                 <span style={{ color: "#F4F1EA", fontWeight: 600, fontSize: 12 }}>{w.nombre}</span>
                 <span style={{ color: "#8B8698", fontSize: 11 }}>{w.series && w.reps ? `${w.series} x ${w.reps}` : (w.series || w.reps || "")}</span>
@@ -3368,7 +3431,7 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
               <div className="font-body" style={{ color: "#7DD6C0", fontSize: 11, fontWeight: 700, marginTop: 14, marginBottom: 6 }}>TU NOTA (peso, cómo te sentiste, etc.)</div>
               <textarea
                 value={getNota(activePE.id)}
-                onChange={(e) => onUpdateNota(activePE.id, activePE.nombre, e.target.value)}
+                onChange={(e) => onUpdateNota(activePE.id, activePE.nombre, e.target.value, claveNota(activePE.id, semana))}
                 placeholder="Ej: hice 60kg, se sintió bien / me costó la última serie..."
                 className="font-body"
                 style={{ width: "100%", minHeight: 60, background: "#151319", border: "1px solid #26232F", borderRadius: 12, color: "#F4F1EA", padding: 12, fontSize: 13, boxSizing: "border-box", resize: "vertical" }}
@@ -4163,11 +4226,18 @@ async function cargarGuardadoRemoto() {
     const res = await fetch(SUPABASE_TABLE_URL, {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
     });
-    if (!res.ok) return { ok: false, data: null };
+    if (!res.ok) {
+      // Guardamos el motivo exacto (código + lo que responde Supabase) para poder mostrarlo en
+      // la app — así, si algún día se corta la conexión con la nube, se puede ver la causa real
+      // sin tener que entrar a Supabase a revisar.
+      let detalle = `HTTP ${res.status}`;
+      try { const cuerpo = await res.text(); if (cuerpo) detalle += ` — ${cuerpo.slice(0, 150)}`; } catch {}
+      return { ok: false, data: null, detalle };
+    }
     const rows = await res.json();
     return { ok: true, data: rows?.[0]?.data || null };
-  } catch {
-    return { ok: false, data: null }; // sin internet o Supabase caído
+  } catch (e) {
+    return { ok: false, data: null, detalle: `Sin red o bloqueado: ${e?.message || "error desconocido"}` }; // sin internet o Supabase caído
   }
 }
 async function guardarTodoRemoto(data) {
@@ -4330,6 +4400,7 @@ export default function GymPlannerCoachApp() {
   // hechos desde otro celular por una mala conexión momentánea en este.
   const remotoSincronizadoRef = useRef(false);
   const [remotoSincronizado, setRemotoSincronizado] = useState(false);
+  const [detalleErrorSync, setDetalleErrorSync] = useState("");
 
   useEffect(() => {
     let cancelado = false;
@@ -4342,6 +4413,7 @@ export default function GymPlannerCoachApp() {
         intento = await cargarGuardadoRemoto();
       }
       if (cancelado) return;
+      if (!intento.ok) setDetalleErrorSync(intento.detalle || "");
       if (intento.ok) {
         remotoSincronizadoRef.current = true;
         setRemotoSincronizado(true);
@@ -4372,6 +4444,7 @@ export default function GymPlannerCoachApp() {
     if (remotoSincronizado) return;
     const intervalo = setInterval(async () => {
       const intento = await cargarGuardadoRemoto();
+      if (!intento.ok) setDetalleErrorSync(intento.detalle || "");
       if (intento.ok) {
         remotoSincronizadoRef.current = true;
         setRemotoSincronizado(true);
@@ -4545,7 +4618,7 @@ export default function GymPlannerCoachApp() {
     return v ? { ...a, plan: clonarPlan(v.plan) } : a;
   }));
   const registrarCheckin = (alumnoId, valor) => setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...a, wellness: { ...a.wellness, checkins: [...a.wellness.checkins, { fecha: todayISO(), valor }] } } : a)));
-  const updateNota = (alumnoId, exId, exNombre, texto) => setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...a, notasEjercicios: { ...(a.notasEjercicios || {}), [exId]: { texto, exNombre, fecha: todayISO() } } } : a)));
+  const updateNota = (alumnoId, exId, exNombre, texto, claveNota) => setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...a, notasEjercicios: { ...(a.notasEjercicios || {}), [claveNota || exId]: { texto, exNombre, fecha: todayISO() } } } : a)));
   // Guarda un nuevo punto en el histórico de RM de un ejercicio puntual (no solo sentadilla),
   // para que cualquier levantamiento que cargues tenga su propio gráfico de evolución.
   const agregarHistorialRM = (alumnoId, ejercicio, valor) => {
@@ -4652,7 +4725,7 @@ export default function GymPlannerCoachApp() {
     );
   } else {
     if (tab === "inicio") body = <AthleteInicio alumno={athlete} goEntrenar={() => setTab("entrenar")} onCheckin={registrarCheckin} />;
-    else if (tab === "entrenar") body = <AthleteEntrenar alumno={athlete} onFinalizar={(id) => { finalizarEntrenamiento(id); setTab("inicio"); }} onUpdateNota={(exId, exNombre, texto) => updateNota(athlete.id, exId, exNombre, texto)} rolesPersonalizados={rolesPersonalizados} />;
+    else if (tab === "entrenar") body = <AthleteEntrenar alumno={athlete} onFinalizar={(id) => { finalizarEntrenamiento(id); setTab("inicio"); }} onUpdateNota={(exId, exNombre, texto, claveNota) => updateNota(athlete.id, exId, exNombre, texto, claveNota)} rolesPersonalizados={rolesPersonalizados} />;
     else if (tab === "progreso") body = <AthleteProgreso alumno={athlete} onGuardarHistorialRM={(ejercicio, valor) => agregarHistorialRM(athlete.id, ejercicio, valor)} />;
     else if (tab === "nutricion") body = <CalculadoraScreen alumno={athlete} />;
     else body = <ChatScreen alumno={athlete} onSendMsg={sendMsg} />;
@@ -4676,17 +4749,25 @@ export default function GymPlannerCoachApp() {
         <button onClick={logout} className="font-body" style={{ position: "absolute", top: "calc(14px + env(safe-area-inset-top, 0px))", right: 14, zIndex: 5, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 999, color: "#8B8698", fontSize: 10, fontWeight: 700, padding: "5px 10px", cursor: "pointer" }}>Cerrar sesión</button>
       )}
       {session && session.role === "coach" && (
-        <div className="font-body" style={{ position: "absolute", top: "calc(16px + env(safe-area-inset-top, 0px))", left: 14, zIndex: 5, fontSize: 9, color: !remotoSincronizado ? "#FF6B35" : guardadoOk ? "#33D6A6" : "#4A4658", transition: "color 0.3s" }}>{!remotoSincronizado ? "⚠ Sin conexión con la nube" : guardadoOk ? "✓ Guardado" : "●"}</div>
+        <div className="font-body" style={{ position: "absolute", top: "calc(16px + env(safe-area-inset-top, 0px))", left: 14, right: 14, zIndex: 5, fontSize: 9, color: !remotoSincronizado ? "#FF6B35" : guardadoOk ? "#33D6A6" : "#4A4658", transition: "color 0.3s" }}>
+          {!remotoSincronizado ? `⚠ Sin conexión con la nube${detalleErrorSync ? ` · ${detalleErrorSync}` : ""}` : guardadoOk ? "✓ Guardado" : "●"}
+        </div>
       )}
       <div style={{ flex: 1, overflowY: "auto", paddingBottom: 8, paddingTop: "env(safe-area-inset-top, 0px)", position: "relative", zIndex: 1 }}>{body}</div>
       {session && (
         <div style={{ display: "flex", borderTop: "1px solid #26232F", background: "#151319", padding: "8px 4px calc(8px + env(safe-area-inset-bottom, 0px))", position: "relative", zIndex: 1 }}>
-          {tabs.map((t) => (
-            <button key={t.id} onClick={() => setTab(t.id)} style={{ flex: 1, background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-              <span style={{ fontSize: 15, opacity: tab === t.id ? 1 : 0.45 }}>{t.icon}</span>
-              <span className="font-body" style={{ fontSize: 8, fontWeight: 600, color: tab === t.id ? (session.role === "coach" ? "#FF6B35" : "#7DD6C0") : "#8B8698" }}>{t.label}</span>
-            </button>
-          ))}
+          {tabs.map((t) => {
+            const activo = tab === t.id;
+            const colorActivo = session.role === "coach" ? "#FF6B35" : "#7DD6C0";
+            return (
+              <button key={t.id} onClick={() => setTab(t.id)} style={{ flex: 1, background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "4px 14px", borderRadius: 12, background: activo ? `${colorActivo}1F` : "transparent", transition: "background 0.15s" }}>
+                  <span style={{ fontSize: 15, opacity: activo ? 1 : 0.45 }}>{t.icon}</span>
+                  <span className="font-body" style={{ fontSize: 8, fontWeight: 700, color: activo ? colorActivo : "#8B8698" }}>{t.label}</span>
+                </div>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
