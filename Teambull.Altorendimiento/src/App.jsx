@@ -2150,6 +2150,11 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
     setTimeout(() => setTelefonoMensaje(null), 1500);
   };
   const alumnosActivos = alumnos.filter((a) => a.activo !== false);
+  const [soloHoyEntrenan, setSoloHoyEntrenan] = useState(true);
+  const hoyNombreDia = DIAS_SEMANA[(new Date().getDay() + 6) % 7]; // getDay(): 0=domingo — lo pasamos a Lunes=0
+  const alumnosParaRecordatorio = soloHoyEntrenan
+    ? alumnosActivos.filter((a) => (a.plan?.dias || []).some((d) => d.diaSemana === hoyNombreDia))
+    : alumnosActivos;
   const promedio = Math.round(alumnosActivos.reduce((a, x) => a + x.cumplimiento, 0) / (alumnosActivos.length || 1));
   const ranking = [...alumnosActivos].sort((a, b) => b.cumplimiento - a.cumplimiento);
   return (
@@ -2261,15 +2266,29 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
             </div>
           )}
 
-          <div className="font-body" style={{ fontSize: 11, color: "#7DD6C0", fontWeight: 700, marginTop: 16, marginBottom: 6 }}>MENSAJE DEL RECORDATORIO DIARIO</div>
-          <div className="font-body" style={{ fontSize: 9, color: "#6B6678", marginBottom: 6 }}>Se manda solo, todas las mañanas, a quien tenga entrenamiento ese día y todavía no hizo el check-in. Podés usar <b>{"{nombre}"}</b> y se reemplaza por el nombre de cada una.</div>
+          <div className="font-body" style={{ fontSize: 11, color: "#7DD6C0", fontWeight: 700, marginTop: 16, marginBottom: 6 }}>MENSAJE DEL RECORDATORIO</div>
+          <div className="font-body" style={{ fontSize: 9, color: "#6B6678", marginBottom: 6 }}>Elegís vos a quién y cuándo mandárselo (abajo). Podés usar <b>{"{nombre}"}</b> y se reemplaza por el nombre de cada una.</div>
           <textarea
             value={mensajeRecordatorio}
             onChange={(e) => onUpdateMensajeRecordatorio(e.target.value)}
             placeholder="Ej: {nombre}, hoy tenés entrenamiento — no te olvides de avisarme cómo venís."
             className="font-body"
-            style={{ width: "100%", minHeight: 60, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, color: "#F4F1EA", padding: 10, fontSize: 12, boxSizing: "border-box", resize: "vertical", marginBottom: 16 }}
+            style={{ width: "100%", minHeight: 60, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, color: "#F4F1EA", padding: 10, fontSize: 12, boxSizing: "border-box", resize: "vertical", marginBottom: 10 }}
           />
+          <label className="font-body" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, cursor: "pointer", userSelect: "none", fontSize: 11, color: "#8B8698" }}>
+            <input type="checkbox" checked={soloHoyEntrenan} onChange={(e) => setSoloHoyEntrenan(e.target.checked)} style={{ width: 15, height: 15, accentColor: "#7DD6C0", cursor: "pointer" }} />
+            Mostrar solo a quienes entrenan hoy ({DIAS_SEMANA[(new Date().getDay() + 6) % 7]})
+          </label>
+          <div style={{ maxHeight: 240, overflowY: "auto", marginBottom: 16 }}>
+            {alumnosParaRecordatorio.length === 0 && <div className="font-body" style={{ color: "#6B6678", fontSize: 11, padding: "8px 0" }}>Nadie tiene entrenamiento programado para hoy.</div>}
+            {alumnosParaRecordatorio.map((a) => (
+              <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 6 }}>
+                <Avatar text={a.foto} size={26} />
+                <span className="font-body" style={{ flex: 1, color: "#F4F1EA", fontSize: 12 }}>{a.nombre}</span>
+                <button onClick={() => compartirTextoPorWhatsApp(mensajeRecordatorio.replaceAll("{nombre}", a.nombre))} className="font-body" style={{ background: "#25D366", border: "none", borderRadius: 6, color: "#0B2A2E", fontWeight: 700, fontSize: 10, padding: "6px 10px", cursor: "pointer" }}>💬 Enviar</button>
+              </div>
+            ))}
+          </div>
           <div className="font-body" style={{ fontSize: 11, color: "#7DD6C0", fontWeight: 700, marginBottom: 8 }}>ENTRENADORES CON ACCESO</div>
           {coaches.map((c) => (
             <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 8, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 6 }}>
