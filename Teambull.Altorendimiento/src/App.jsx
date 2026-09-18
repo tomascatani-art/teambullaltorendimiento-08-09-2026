@@ -29,7 +29,7 @@ const GYM_PATTERN_B64 = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3d
    BIBLIOTECA DE EJERCICIOS
    ========================================================= */
 const CATALOGO = [
-  { categoria: "Olímpico", emoji: "🏋️", color: "#FF6B35", material: "Barra olímpica", movimientos: ["Arranque", "Cargada", "Envión", "Cargada y Envión", "Push Press", "Push Jerk", "Split Jerk", "Power Jerk", "Cargada de potencia", "Arranque de potencia", "Primer tirón", "Segundo tirón", "Sentadilla frontal olímpica", "Sentadilla overhead", "Snatch balance", "Muscle snatch", "Tall snatch", "Tall clean", "Clean pull", "Snatch pull", "Behind the neck jerk", "Press Jerk"], variantes: ["Desde el piso", "Colgante (hang)", "Desde bloques", "Con pausa en la rodilla", "Con pausa bajo la rodilla", "Tempo lento", "Con banda elástica", "Con cadenas", "Técnica (barra vacía)", "Velocidad máxima"] },
+  { categoria: "Olímpico", emoji: "🏋️", color: "#FF6B35", material: "Barra olímpica", movimientos: ["Arranque", "Cargada", "Envión", "Cargada y Envión", "Push Press", "Push Jerk", "Split Jerk", "Power Jerk", "Cargada de potencia", "Arranque de potencia", "Primer tirón", "Segundo tirón", "Sentadilla frontal olímpica", "Sentadilla overhead", "Snatch balance", "Muscle snatch", "Tall snatch", "Tall clean", "Clean pull", "Snatch pull", "Behind the neck jerk", "Press Jerk"], variantes: ["Desde el piso", "Colgante (hang)", "Desde bloques", "Con pausa en la rodilla", "Con pausa bajo la rodilla", "Tempo lento", "Con banda elástica", "Técnica (barra vacía)", "Velocidad máxima"] },
   // "Fuerza" separado en 3 subgrupos: las variantes de agarre (agarre ancho/cerrado) solo tienen
   // sentido en ejercicios de empuje/tracción con barra o mancuerna — no en sentadillas ni en
   // ejercicios de aislamiento, así que cada grupo tiene su propia lista de variantes coherente.
@@ -707,6 +707,9 @@ const VIDEOS_POR_CATEGORIA = [
   { match: /salto al caj[oó]n|box jump/i, video: "https://www.youtube.com/watch?v=Hms1tVivbQM" },
   { match: /abdominal|oblicuo|v.?ups|sit.?ups|escaladores|mountain climber/i, video: "https://www.youtube.com/watch?v=Cv4WUTZ_S6s" },
   { match: /cargada|arranque|clean|snatch|split jerk/i, video: "https://www.youtube.com/watch?v=9pU4XeeW2aA" },
+  { match: /kettlebell|swing/i, video: "https://www.youtube.com/watch?v=0bz_YtynvYk" },
+  { match: /movilidad/i, video: "https://www.youtube.com/watch?v=Sgk7SU6jvMo" },
+  { match: /flexibilidad|estiramiento|stretch/i, video: "https://www.youtube.com/watch?v=WJHB_WSNbDo" },
 ];
 // Siempre devuelve un link para ver: el que cargó el coach, o si no, un video real de la técnica
 // según el tipo de movimiento, o como último recurso una búsqueda de YouTube.
@@ -736,6 +739,58 @@ const mkDia = (nombre, bloques = [], diaSemana = "") => ({ id: uid(), nombre, bl
 const mkWarm = (nombre, series = "", reps = "", video = null) => ({ id: uid(), nombre, series, reps, video });
 const DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 const todayISO = () => new Date().toISOString().slice(0, 10);
+// Racha de constancia: cuántos días de entrenamiento PROGRAMADOS seguidos vino cumpliendo, sin
+// cortarse. Solo cuenta los días que realmente le tocaba entrenar (según el día de la semana
+// asignado a cada día del plan) — no todos los días del calendario, que no tendría sentido.
+function calcularRacha(alumno) {
+  const diasProgramados = new Set((alumno.plan?.dias || []).map((d) => d.diaSemana).filter(Boolean));
+  if (diasProgramados.size === 0) return 0;
+  const sesiones = new Set(alumno.historialSesiones || []);
+  let racha = 0;
+  const fecha = new Date();
+  for (let i = 0; i < 365; i++) {
+    const fechaISO = fecha.toISOString().slice(0, 10);
+    const nombreDia = DIAS_SEMANA[(fecha.getDay() + 6) % 7];
+    if (diasProgramados.has(nombreDia)) {
+      if (sesiones.has(fechaISO)) racha++;
+      else if (i > 0) break; // si es hoy y todavía no entrenó, no le cortamos la racha — puede entrenar más tarde
+    }
+    fecha.setDate(fecha.getDate() - 1);
+  }
+  return racha;
+}
+// Saca acentos y pasa a minúscula, para que buscar "sentadilla" encuentre "Sentadillа" aunque
+// falte una tilde o esté mal escrito el acento — no corrige errores de ortografía en general,
+// pero cubre el caso más común (tildes y mayúsculas).
+const normalizarTexto = (s) => (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+// Cuántas letras hay que cambiar/agregar/sacar para pasar de una palabra a la otra — así "sentadila"
+// (con error de tipeo) igual encuentra "sentadilla".
+function distanciaEdicion(a, b) {
+  const m = a.length, n = b.length;
+  if (Math.abs(m - n) > 3) return 99; // palabras de largo muy distinto, ni vale la pena comparar
+  const fila = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    let anterior = fila[0];
+    fila[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const temp = fila[j];
+      fila[j] = a[i - 1] === b[j - 1] ? anterior : 1 + Math.min(anterior, fila[j], fila[j - 1]);
+      anterior = temp;
+    }
+  }
+  return fila[n];
+}
+// Busca por palabras sueltas, no como un bloque de texto exacto — así "flex de brazo" encuentra
+// "Flexión de brazo" (le falta el final a una palabra), y tolera algún error de tipeo en cada
+// palabra (una letra de más/menos/cambiada cada ~4 letras, aprox.).
+function coincideBusqueda(nombre, busqueda) {
+  const palabrasBusqueda = normalizarTexto(busqueda).split(/\s+/).filter(Boolean);
+  if (palabrasBusqueda.length === 0) return true;
+  const palabrasNombre = normalizarTexto(nombre).split(/\s+/).filter(Boolean);
+  return palabrasBusqueda.every((pb) =>
+    palabrasNombre.some((pn) => pn.startsWith(pb) || pn.includes(pb) || distanciaEdicion(pb, pn) <= Math.max(1, Math.floor(pb.length / 4)))
+  );
+}
 // Calcula qué semana del mesociclo le toca a un alumno HOY, en base a la fecha real de inicio
 // que cargó el coach — para que la app arranque ahí sola, y para poder marcarla como "la que toca"
 // aunque el alumno esté mirando otra. Si no hay fecha cargada, no recomienda nada (null).
@@ -1052,7 +1107,10 @@ function generarHTMLInforme(alumno, mesFiltro) {
   const diasPlan = alumno.plan?.dias || [];
 
   // Próxima competencia (si está cargada)
-  const competencia = alumno.competencia;
+  // Próxima competencia (si hay alguna cargada) — la más cercana en el tiempo, entre todas
+  const hoyDate = new Date(todayISO() + "T00:00:00");
+  const competenciasFuturas = (alumno.competencias || []).filter((c) => c.fecha && new Date(c.fecha + "T00:00:00") >= hoyDate).sort((a, b) => a.fecha < b.fecha ? -1 : 1);
+  const competencia = competenciasFuturas[0] || null;
 
   // Análisis final — un resumen corto en texto, no solo números, cruzando cumplimiento/ánimo/RM
   const analisis = [];
@@ -1751,7 +1809,7 @@ function ExercisePicker({ onPick, onClose, version }) {
   useEffect(() => { setLimite(60); }, [busqueda, filtro]);
   const listaCompleta = useMemo(() => {
     let l = filtro === "Todos" ? EXERCISES : EXERCISES.filter((e) => e.categoria === filtro);
-    if (busqueda.trim()) { const q = busqueda.toLowerCase(); l = l.filter((e) => e.nombre.toLowerCase().includes(q)); }
+    if (busqueda.trim()) { l = l.filter((e) => coincideBusqueda(e.nombre, busqueda)); }
     return l;
   }, [busqueda, filtro, version]);
   const lista = listaCompleta.slice(0, limite);
@@ -1767,13 +1825,17 @@ function ExercisePicker({ onPick, onClose, version }) {
       </div>
       <div className="font-body" style={{ fontSize: 9, color: "#6B6678", marginBottom: 6 }}>{listaCompleta.length} resultados{listaCompleta.length > lista.length ? ` · mostrando ${lista.length}` : ""}</div>
       <div style={{ maxHeight: 220, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
-        {lista.map((e) => (
-          <button key={e.id} onClick={() => onPick(e)} className="font-body" style={{ display: "flex", alignItems: "center", gap: 8, textAlign: "left", background: "#26232F", border: "none", borderRadius: 6, color: "#F4F1EA", fontSize: 11, padding: "7px 9px", cursor: "pointer" }}>
-            <span style={{ fontSize: 14 }}>{e.emoji}</span>
-            <span style={{ flex: 1 }}>{e.nombre}</span>
-            <span style={{ color: e.color, fontSize: 9, fontWeight: 700 }}>+</span>
-          </button>
-        ))}
+        {lista.map((e) => {
+          const sinVideo = videoEfectivo(e).includes("youtube.com/results");
+          return (
+            <button key={e.id} onClick={() => onPick(e)} className="font-body" style={{ display: "flex", alignItems: "center", gap: 8, textAlign: "left", background: "#26232F", border: "none", borderRadius: 6, color: "#F4F1EA", fontSize: 11, padding: "7px 9px", cursor: "pointer" }}>
+              <span style={{ fontSize: 14 }}>{e.emoji}</span>
+              <span style={{ flex: 1 }}>{e.nombre}</span>
+              {sinVideo && <span title="Sin video puntual cargado" style={{ color: "#FF6B35", fontSize: 10 }}>⚠</span>}
+              <span style={{ color: e.color, fontSize: 9, fontWeight: 700 }}>+</span>
+            </button>
+          );
+        })}
         {listaCompleta.length > limite && (
           <button onClick={() => setLimite((l) => l + 60)} className="font-body" style={{ background: "#26232F", border: "1px dashed #322E3D", borderRadius: 6, color: "#7DD6C0", fontSize: 10, fontWeight: 700, padding: "8px 9px", cursor: "pointer" }}>
             Mostrar {Math.min(60, listaCompleta.length - limite)} más ({listaCompleta.length - limite} restantes)
@@ -1854,9 +1916,12 @@ function FilaEjercicio({ fila, onChange, onRemove, onAddToLibrary, rolesPersonal
       </button>
 
       <div style={{ marginBottom: 8 }}>
-        <div className="font-body" style={{ fontSize: 9, color: esBusqueda ? "#FF6B35" : "#8B8698", marginBottom: 3 }}>{esBusqueda ? "⚠ Todavía no hay un video puntual — pegá el link acá:" : (fila.video ? "Link de YouTube (lo cargaste vos)" : "Link de YouTube (video por defecto — lo podés cambiar)")}</div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
+          <div className="font-body" style={{ fontSize: 9, color: esBusqueda ? "#FF6B35" : "#8B8698" }}>{fila.video ? "Link de YouTube (lo cargaste vos)" : esBusqueda ? "⚠ Todavía no hay un video puntual — pegá el link acá:" : "Sin link puntual — se usa un video por defecto. Pegá uno acá si querés poner otro:"}</div>
+          <a href={`https://www.youtube.com/results?search_query=${encodeURIComponent(fila.nombre + " técnica")}`} target="_blank" rel="noopener noreferrer" className="font-body" style={{ fontSize: 9, color: "#7DD6C0", fontWeight: 700, textDecoration: "none", flexShrink: 0, marginLeft: 8 }}>🔍 Buscar en YouTube</a>
+        </div>
         <input
-          value={!esBusqueda ? videoActual : ""}
+          value={fila.video || ""}
           onChange={(e) => { const v = e.target.value.trim(); set("video")(v || null); }}
           placeholder="https://youtube.com/watch?v=..."
           className="font-body"
@@ -2092,14 +2157,14 @@ function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibr
 /* Alertas automáticas: cumplimiento bajo + bienestar (ánimo sostenido bajo, fatiga/dolor alto reportado) */
 function generarAlertas(a) {
   const alertas = [];
-  if (a.cumplimiento < 70) alertas.push({ titulo: `${a.nombre} — cumplimiento bajo`, detalle: `Solo ${a.cumplimiento}% de sesiones completadas.` });
+  if (a.cumplimiento < 70) alertas.push({ tipo: "Cumplimiento bajo", nombre: a.nombre, detalle: `Solo ${a.cumplimiento}% de sesiones completadas.` });
   const ultimosCheckins = a.wellness.checkins.slice(-3);
   if (ultimosCheckins.length >= 3 && ultimosCheckins.every((c) => c.valor <= 4)) {
-    alertas.push({ titulo: `${a.nombre} — ánimo bajo sostenido`, detalle: `Los últimos ${ultimosCheckins.length} check-ins vinieron con valores de 4 o menos.` });
+    alertas.push({ tipo: "Ánimo bajo sostenido", nombre: a.nombre, detalle: `Los últimos ${ultimosCheckins.length} check-ins vinieron con valores de 4 o menos.` });
   }
   const ultimaEncuesta = a.wellness.encuestas[0];
   if (ultimaEncuesta && (ultimaEncuesta.fatiga >= 8 || ultimaEncuesta.dolorMuscular >= 8)) {
-    alertas.push({ titulo: `${a.nombre} — fatiga/dolor alto reportado`, detalle: `Última encuesta: fatiga ${ultimaEncuesta.fatiga}/10, dolor muscular ${ultimaEncuesta.dolorMuscular}/10.` });
+    alertas.push({ tipo: "Fatiga/dolor alto reportado", nombre: a.nombre, detalle: `Última encuesta: fatiga ${ultimaEncuesta.fatiga}/10, dolor muscular ${ultimaEncuesta.dolorMuscular}/10.` });
   }
   // Cuántos días de los últimos 7 se olvidó de hacer el check-in de ánimo
   const hoy = new Date();
@@ -2110,13 +2175,15 @@ function generarAlertas(a) {
   });
   const diasSinCheckin = 7 - checkinsUltimos7.length;
   if (diasSinCheckin >= 3) {
-    alertas.push({ titulo: `${a.nombre} — check-in incompleto`, detalle: `No registró el check-in de ánimo ${diasSinCheckin} de los últimos 7 días.` });
+    alertas.push({ tipo: "Check-in incompleto", nombre: a.nombre, detalle: `No registró el check-in de ánimo ${diasSinCheckin} de los últimos 7 días.` });
   }
   return alertas;
 }
 
 function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coaches, onAddCoach, onRemoveCoach, mensajeRecordatorio, onUpdateMensajeRecordatorio, notificacionesActivas, onToggleNotificaciones, modoPausa, onToggleModoPausa, diasAvisoPlan, onSetDiasAvisoPlan, coachId, onCambiarPassword, onSetRecoveryPin, onSetTelefono, onReclamarAlumnos, logActividad, grupos, onCrearGrupo, onEliminarGrupo }) {
   const [editando, setEditando] = useState(false);
+  const [tipoAlertaAbierto, setTipoAlertaAbierto] = useState(null);
+  const [verTodoRanking, setVerTodoRanking] = useState(false);
   const [agregandoCoach, setAgregandoCoach] = useState(false);
   const [nombreNuevoCoach, setNombreNuevoCoach] = useState("");
   const [credencialesNuevoCoach, setCredencialesNuevoCoach] = useState(null);
@@ -2151,6 +2218,7 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
   };
   const alumnosActivos = alumnos.filter((a) => a.activo !== false);
   const [soloHoyEntrenan, setSoloHoyEntrenan] = useState(true);
+  const [enviados, setEnviados] = useState({});
   const hoyNombreDia = DIAS_SEMANA[(new Date().getDay() + 6) % 7]; // getDay(): 0=domingo — lo pasamos a Lunes=0
   const alumnosParaRecordatorio = soloHoyEntrenan
     ? alumnosActivos.filter((a) => (a.plan?.dias || []).some((d) => d.diaSemana === hoyNombreDia))
@@ -2267,7 +2335,7 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
           )}
 
           <div className="font-body" style={{ fontSize: 11, color: "#7DD6C0", fontWeight: 700, marginTop: 16, marginBottom: 6 }}>MENSAJE DEL RECORDATORIO</div>
-          <div className="font-body" style={{ fontSize: 9, color: "#6B6678", marginBottom: 6 }}>Elegís vos a quién y cuándo mandárselo (abajo). Podés usar <b>{"{nombre}"}</b> y se reemplaza por el nombre de cada una.</div>
+          <div className="font-body" style={{ fontSize: 9, color: "#6B6678", marginBottom: 6 }}>Elegís vos a quién y cuándo mandárselo (abajo) — le llega como notificación de la app, no como un WhatsApp tuyo. Solo funciona si esa persona tiene las notificaciones activadas en su celular. Podés usar <b>{"{nombre}"}</b> y se reemplaza por el nombre de cada una.</div>
           <textarea
             value={mensajeRecordatorio}
             onChange={(e) => onUpdateMensajeRecordatorio(e.target.value)}
@@ -2285,7 +2353,12 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
               <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 6 }}>
                 <Avatar text={a.foto} size={26} />
                 <span className="font-body" style={{ flex: 1, color: "#F4F1EA", fontSize: 12 }}>{a.nombre}</span>
-                <button onClick={() => compartirTextoPorWhatsApp(mensajeRecordatorio.replaceAll("{nombre}", a.nombre))} className="font-body" style={{ background: "#25D366", border: "none", borderRadius: 6, color: "#0B2A2E", fontWeight: 700, fontSize: 10, padding: "6px 10px", cursor: "pointer" }}>💬 Enviar</button>
+                <button onClick={() => {
+                  const mensaje = mensajeRecordatorio.replaceAll("{nombre}", a.nombre);
+                  enviarNotificacion(a.id, "💪 Team Bull", mensaje);
+                  setEnviados((prev) => ({ ...prev, [a.id]: true }));
+                  setTimeout(() => setEnviados((prev) => ({ ...prev, [a.id]: false })), 2000);
+                }} className="font-body" style={{ background: enviados[a.id] ? "#33D6A6" : "#FF6B35", border: "none", borderRadius: 6, color: "#121017", fontWeight: 700, fontSize: 10, padding: "6px 10px", cursor: "pointer", minWidth: 88, textAlign: "center" }}>{enviados[a.id] ? "✓ Enviado" : "🔔 Notificar"}</button>
               </div>
             ))}
           </div>
@@ -2347,7 +2420,7 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
         <button onClick={() => descargarPlantelPDF(alumnosActivos)} className="font-body" style={{ width: "100%", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, color: "#8B8698", fontWeight: 700, fontSize: 11, padding: 10, cursor: "pointer", marginBottom: 16 }}>📄 Descargar planes de todo el plantel (uno solo)</button>
         <div className="font-body" style={{ fontSize: 11, color: "#8B8698", fontWeight: 600, marginBottom: 8 }}>RANKING DE CUMPLIMIENTO</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
-          {ranking.map((a, i) => (
+          {(verTodoRanking ? ranking : ranking.slice(0, 5)).map((a, i) => (
             <button key={a.id} onClick={() => goAlumnos(a.id)} style={{ display: "flex", alignItems: "center", gap: 10, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 12, padding: 10, cursor: "pointer", width: "100%", textAlign: "left" }}>
               <span className="font-display" style={{ color: "#8B8698", fontSize: 13, width: 16 }}>{i + 1}</span>
               <Avatar text={a.foto} />
@@ -2358,15 +2431,38 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
               <span className="font-display" style={{ color: a.cumplimiento >= 80 ? "#33D6A6" : a.cumplimiento >= 60 ? "#FF6B35" : "#E85D5D", fontSize: 15, fontWeight: 600 }}>{a.cumplimiento}%</span>
             </button>
           ))}
+          {ranking.length > 5 && (
+            <button onClick={() => setVerTodoRanking(!verTodoRanking)} className="font-body" style={{ background: "none", border: "1px dashed #322E3D", borderRadius: 10, color: "#8B8698", fontWeight: 700, fontSize: 11, padding: 9, cursor: "pointer" }}>{verTodoRanking ? "▲ Ver menos" : `▼ Ver todos (${ranking.length})`}</button>
+          )}
         </div>
         <div className="font-body" style={{ fontSize: 11, color: "#8B8698", fontWeight: 600, marginBottom: 8 }}>ALERTAS</div>
-        {alumnosActivos.flatMap((a) => generarAlertas(a)).length === 0 && <div className="font-body" style={{ color: "#8B8698", fontSize: 11, marginBottom: 8 }}>Todo tranquilo por ahora.</div>}
-        {alumnosActivos.flatMap((a) => generarAlertas(a).map((al, i) => ({ ...al, key: `${a.id}-${i}` }))).map((al) => (
-          <div key={al.key} style={{ background: "rgba(232,93,93,0.1)", border: "1px solid #E85D5D", borderRadius: 12, padding: 12, marginBottom: 8 }}>
-            <div className="font-body" style={{ color: "#F4F1EA", fontSize: 12, fontWeight: 600 }}>{al.titulo}</div>
-            <div className="font-body" style={{ color: "#8B8698", fontSize: 11, marginTop: 2 }}>{al.detalle}</div>
-          </div>
-        ))}
+        {(() => {
+          const todasLasAlertas = alumnosActivos.flatMap((a) => generarAlertas(a));
+          if (todasLasAlertas.length === 0) return <div className="font-body" style={{ color: "#8B8698", fontSize: 11, marginBottom: 8 }}>Todo tranquilo por ahora.</div>;
+          // Agrupamos por tipo de alerta (ej: "Check-in incompleto") en vez de mostrar una tarjeta
+          // por cada alumna — así, si son varias con lo mismo, no se hace una lista larga y
+          // desprolija: queda una fila por tipo, que se despliega al tocarla.
+          const grupos = {};
+          todasLasAlertas.forEach((al) => { (grupos[al.tipo] = grupos[al.tipo] || []).push(al); });
+          return Object.entries(grupos).map(([tipo, items]) => (
+            <div key={tipo} style={{ background: "rgba(232,93,93,0.08)", border: "1px solid #E85D5D", borderRadius: 12, marginBottom: 8, overflow: "hidden" }}>
+              <button onClick={() => setTipoAlertaAbierto(tipoAlertaAbierto === tipo ? null : tipo)} className="font-body" style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", background: "none", border: "none", padding: 12, cursor: "pointer", textAlign: "left" }}>
+                <span style={{ color: "#F4F1EA", fontSize: 12, fontWeight: 600 }}>⚠ {tipo}</span>
+                <span style={{ color: "#E85D5D", fontSize: 11, fontWeight: 700 }}>{items.length} {items.length === 1 ? "alumna" : "alumnas"} {tipoAlertaAbierto === tipo ? "▲" : "▼"}</span>
+              </button>
+              {tipoAlertaAbierto === tipo && (
+                <div style={{ padding: "0 12px 12px" }}>
+                  {items.map((al, i) => (
+                    <div key={i} style={{ background: "#1C1A24", borderRadius: 8, padding: 9, marginBottom: 6 }}>
+                      <div className="font-body" style={{ color: "#F4F1EA", fontSize: 12, fontWeight: 600 }}>{al.nombre}</div>
+                      <div className="font-body" style={{ color: "#8B8698", fontSize: 11, marginTop: 2 }}>{al.detalle}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ));
+        })()}
         {coaches.length > 1 && logActividad.length > 0 && (() => {
           // Solo mostramos actividad de entrenadores que comparten un grupo con vos (o la tuya
           // propia) — un entrenador fuera de tu grupo (ej: le vendiste la app a otra persona) no
@@ -2392,9 +2488,15 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
   );
 }
 
-function NuevaAlumnaForm({ onCrear, onCancelar }) {
+function NuevaAlumnaForm({ onCrear, onCancelar, alumnos }) {
   const [d, setD] = useState({ nombre: "", edad: "", peso: "", altura: "", objetivo: "", deportes: "", nivel: "Intermedio", equipo: "" });
+  const [planBaseId, setPlanBaseId] = useState("");
   const set = (k) => (v) => setD((p) => ({ ...p, [k]: v }));
+  const crear = () => {
+    if (!d.nombre.trim()) return;
+    const origen = planBaseId ? alumnos.find((a) => a.id === planBaseId) : null;
+    onCrear({ ...d, planBase: origen ? origen.plan : null });
+  };
   return (
     <div style={{ background: "#1C1A24", border: "1px solid #FF6B35", borderRadius: 14, padding: 14, marginBottom: 4 }}>
       <div className="font-body" style={{ color: "#FF6B35", fontSize: 12, fontWeight: 700, marginBottom: 10 }}>Nuevo/a alumno/a</div>
@@ -2407,31 +2509,87 @@ function NuevaAlumnaForm({ onCrear, onCancelar }) {
         <MiniInput label="Deporte" value={d.deportes} onChange={set("deportes")} wide />
         <MiniInput label="Equipo" value={d.equipo} onChange={set("equipo")} wide />
       </div>
+      {alumnos && alumnos.length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          <div className="font-body" style={{ fontSize: 9, color: "#8B8698", marginBottom: 3 }}>Arranca con plan vacío, salvo que elijas usar el de otro/a como base:</div>
+          <select value={planBaseId} onChange={(e) => setPlanBaseId(e.target.value)} className="font-body" style={{ width: "100%", background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "7px 8px", fontSize: 11, boxSizing: "border-box" }}>
+            <option value="">Plan vacío (por defecto)</option>
+            {alumnos.map((a) => <option key={a.id} value={a.id}>Usar el plan de {a.nombre}</option>)}
+          </select>
+        </div>
+      )}
       <div style={{ display: "flex", gap: 8 }}>
         <button onClick={onCancelar} className="font-body" style={{ flex: 1, background: "transparent", border: "1px solid #322E3D", borderRadius: 8, color: "#8B8698", fontWeight: 700, fontSize: 11, padding: 9, cursor: "pointer" }}>Cancelar</button>
-        <button onClick={() => d.nombre.trim() && onCrear(d)} disabled={!d.nombre.trim()} className="font-body" style={{ flex: 1, background: d.nombre.trim() ? "#FF6B35" : "#3A3646", border: "none", borderRadius: 8, color: d.nombre.trim() ? "#121017" : "#8B8698", fontWeight: 700, fontSize: 11, padding: 9, cursor: "pointer" }}>Crear</button>
+        <button onClick={crear} disabled={!d.nombre.trim()} className="font-body" style={{ flex: 1, background: d.nombre.trim() ? "#FF6B35" : "#3A3646", border: "none", borderRadius: 8, color: d.nombre.trim() ? "#121017" : "#8B8698", fontWeight: 700, fontSize: 11, padding: 9, cursor: "pointer" }}>Crear</button>
       </div>
     </div>
   );
 }
 
-function CoachAlumnos({ alumnos, selectedId, setSelectedId, templates, onAsignarPlantilla, onCopiarPlan, onCopiarVersionAOtro, onGuardarComoPlantilla, onUpdatePlan, onUpdateAlumno, onDeleteAlumno, onAddAlumno, onSendMsg, onGuardarVersion, onRestaurarVersion, onGuardarHistorialRM, onAddToLibrary, version, coaches, coachIdActual, onCompartirAlumno, onDejarDeCompartir, rolesPersonalizados, onAgregarRolPersonalizado, grupos, onCompartirGrupo, onAgregarPlanSecundario, onQuitarPlanSecundario }) {
+function CoachAlumnos({ alumnos, selectedId, setSelectedId, templates, onAsignarPlantilla, onCopiarPlan, onCopiarVersionAOtro, onGuardarComoPlantilla, onUpdatePlan, onUpdateAlumno, onDeleteAlumno, onAddAlumno, onSendMsg, onGuardarVersion, onRestaurarVersion, onGuardarHistorialRM, onAddToLibrary, version, coaches, coachIdActual, onCompartirAlumno, onDejarDeCompartir, rolesPersonalizados, onAgregarRolPersonalizado, grupos, onCompartirGrupo, onAgregarPlanSecundario, onQuitarPlanSecundario, plantelGrupos, onCrearPlantelGrupo, onRenombrarPlantelGrupo, onEliminarPlantelGrupo, onAsignarPlantelGrupo }) {
   const [creando, setCreando] = useState(false);
   const [credencialesNuevas, setCredencialesNuevas] = useState(null);
   const [verBajas, setVerBajas] = useState(false);
+  const [filtroGrupo, setFiltroGrupo] = useState("todos"); // "todos" | id de plantelGrupo | "sin-grupo"
+  const [editandoGrupos, setEditandoGrupos] = useState(false);
+  const [seccionesExpandidas, setSeccionesExpandidas] = useState(() => new Set());
+  const [nombreGrupoNuevo, setNombreGrupoNuevo] = useState("");
+  const [renombrandoId, setRenombrandoId] = useState(null);
+  const [nombreRenombrar, setNombreRenombrar] = useState("");
   const alumno = alumnos.find((a) => a.id === selectedId);
   if (!alumno) {
-    const activos = [...alumnos.filter((a) => a.activo !== false)].sort((a, b) => {
+    const activosTodos = [...alumnos.filter((a) => a.activo !== false)].sort((a, b) => {
       if (a.ultimoAcceso && b.ultimoAcceso) return b.ultimoAcceso.localeCompare(a.ultimoAcceso);
       if (a.ultimoAcceso) return -1; // los ya usados van arriba de los que nunca se tocaron
       if (b.ultimoAcceso) return 1;
       return 0; // entre los nunca tocados, se respeta el orden original
     });
+    const activos = filtroGrupo === "todos" ? activosTodos : filtroGrupo === "sin-grupo" ? activosTodos.filter((a) => !a.plantelGrupoId) : activosTodos.filter((a) => a.plantelGrupoId === filtroGrupo);
     const bajas = alumnos.filter((a) => a.activo === false);
+    // Si no hay ningún filtro puntual elegido, agrupamos visualmente por subgrupo (con encabezado
+    // de sección); si hay un filtro elegido, mostramos la lista plana de ese grupo nomás.
+    const seccionesAgrupadas = plantelGrupos.length === 0 ? [{ id: "todos", nombre: null, items: activos }]
+      : filtroGrupo === "todos"
+      ? [...plantelGrupos.map((g) => ({ id: g.id, nombre: g.nombre, items: activos.filter((a) => a.plantelGrupoId === g.id) })), { id: "sin-grupo", nombre: "Sin grupo asignado", items: activos.filter((a) => !a.plantelGrupoId) }].filter((s) => s.items.length > 0)
+      : [{ id: filtroGrupo, nombre: null, items: activos }];
     return (
       <div>
-        <TopBar title="Alumnos/as" subtitle={`${activos.length} en tu plantel`} />
+        <TopBar title="Alumnos/as" subtitle={`${activosTodos.length} en tu plantel`} />
         <div style={{ padding: "0 20px", display: "flex", flexDirection: "column", gap: 10 }}>
+          {plantelGrupos.length > 0 && (
+            <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>
+              <Pill active={filtroGrupo === "todos"} onClick={() => setFiltroGrupo("todos")}>Todos</Pill>
+              {plantelGrupos.map((g) => <Pill key={g.id} active={filtroGrupo === g.id} onClick={() => setFiltroGrupo(g.id)} activeColor="#7DD6C0">{g.nombre}</Pill>)}
+              <Pill active={editandoGrupos} onClick={() => setEditandoGrupos(!editandoGrupos)}>⚙️ Editar grupos</Pill>
+            </div>
+          )}
+          {plantelGrupos.length === 0 && (
+            <button onClick={() => setEditandoGrupos(!editandoGrupos)} className="font-body" style={{ background: "none", border: "1px dashed #322E3D", borderRadius: 10, color: "#8B8698", fontWeight: 700, fontSize: 11, padding: 8, cursor: "pointer" }}>⚙️ Armar subgrupos (ej: Plantel A, Sub-18)</button>
+          )}
+          {editandoGrupos && (
+            <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 12, padding: 12 }}>
+              {plantelGrupos.map((g) => (
+                <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                  {renombrandoId === g.id ? (
+                    <>
+                      <input value={nombreRenombrar} onChange={(e) => setNombreRenombrar(e.target.value)} className="font-body" style={{ flex: 1, background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "6px 8px", fontSize: 11, boxSizing: "border-box" }} />
+                      <button onClick={() => { if (nombreRenombrar.trim()) onRenombrarPlantelGrupo(g.id, nombreRenombrar.trim()); setRenombrandoId(null); }} className="font-body" style={{ background: "#7DD6C0", border: "none", borderRadius: 6, color: "#0B2A2E", fontWeight: 700, fontSize: 10, padding: "6px 10px", cursor: "pointer" }}>OK</button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="font-body" style={{ flex: 1, color: "#F4F1EA", fontSize: 12 }}>{g.nombre}</span>
+                      <button onClick={() => { setRenombrandoId(g.id); setNombreRenombrar(g.nombre); }} className="font-body" style={{ background: "none", border: "none", color: "#7DD6C0", fontSize: 10, cursor: "pointer" }}>Cambiar nombre</button>
+                      <button onClick={() => { if (filtroGrupo === g.id) setFiltroGrupo("todos"); onEliminarPlantelGrupo(g.id); }} className="font-body" style={{ background: "none", border: "none", color: "#E85D5D", fontSize: 10, cursor: "pointer" }}>Borrar</button>
+                    </>
+                  )}
+                </div>
+              ))}
+              <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                <input value={nombreGrupoNuevo} onChange={(e) => setNombreGrupoNuevo(e.target.value)} placeholder="Ej: Plantel A, Sub-18..." className="font-body" style={{ flex: 1, background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "7px 8px", fontSize: 11, boxSizing: "border-box" }} />
+                <button onClick={() => { if (!nombreGrupoNuevo.trim()) return; onCrearPlantelGrupo(nombreGrupoNuevo.trim()); setNombreGrupoNuevo(""); }} className="font-body" style={{ background: "#FF6B35", border: "none", borderRadius: 6, color: "#121017", fontWeight: 700, fontSize: 10, padding: "0 12px", cursor: "pointer" }}>+ Crear</button>
+              </div>
+            </div>
+          )}
           {credencialesNuevas && (
             <div style={{ background: "rgba(51,214,166,0.1)", border: "1px solid #33D6A6", borderRadius: 12, padding: 12 }}>
               <div className="font-body" style={{ color: "#33D6A6", fontWeight: 700, fontSize: 12, marginBottom: 4 }}>✓ Creado/a — pasale estos datos:</div>
@@ -2440,20 +2598,33 @@ function CoachAlumnos({ alumnos, selectedId, setSelectedId, templates, onAsignar
             </div>
           )}
           {creando ? (
-            <NuevaAlumnaForm onCancelar={() => setCreando(false)} onCrear={(d) => { const cred = onAddAlumno(d); setCredencialesNuevas(cred); setCreando(false); }} />
+            <NuevaAlumnaForm alumnos={alumnos} onCancelar={() => setCreando(false)} onCrear={(d) => { const cred = onAddAlumno(d); setCredencialesNuevas(cred); setCreando(false); }} />
           ) : (
             <button onClick={() => { setCreando(true); setCredencialesNuevas(null); }} className="font-body" style={{ background: "rgba(255,107,53,0.1)", border: "1px dashed #FF6B35", borderRadius: 14, padding: 14, color: "#FF6B35", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>+ Agregar alumno/a</button>
           )}
-          {activos.map((a) => (
-            <button key={a.id} onClick={() => { onUpdateAlumno(a.id, { ultimoAcceso: new Date().toISOString() }); setSelectedId(a.id); }} style={{ display: "flex", alignItems: "center", gap: 10, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 14, padding: 12, cursor: "pointer", width: "100%", textAlign: "left" }}>
-              <Avatar text={a.foto} size={38} />
-              <div style={{ flex: 1 }}>
-                <div className="font-display" style={{ color: "#F4F1EA", fontSize: 14, fontWeight: 600 }}>{a.nombre}</div>
-                <div className="font-body" style={{ color: "#8B8698", fontSize: 11 }}>{a.equipo || "Sin equipo"} · {a.objetivo || "Sin objetivo"}</div>
-              </div>
-              <span style={{ color: "#8B8698" }}>›</span>
-            </button>
-          ))}
+          {seccionesAgrupadas.map((sec) => {
+            const expandida = seccionesExpandidas.has(sec.id);
+            return (
+            <div key={sec.id}>
+              {sec.nombre && (
+                <button onClick={() => setSeccionesExpandidas((prev) => { const next = new Set(prev); if (next.has(sec.id)) next.delete(sec.id); else next.add(sec.id); return next; })} className="font-body" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 12, cursor: "pointer", padding: 12, marginBottom: 8, textAlign: "left" }}>
+                  <span style={{ color: "#7DD6C0", fontSize: 12, fontWeight: 700 }}>{sec.nombre} <span style={{ color: "#8B8698", fontWeight: 400 }}>({sec.items.length})</span></span>
+                  <span style={{ color: "#8B8698", fontSize: 10 }}>{expandida ? "▲" : "▼"}</span>
+                </button>
+              )}
+              {(!sec.nombre || expandida) && sec.items.map((a) => (
+                <button key={a.id} onClick={() => { onUpdateAlumno(a.id, { ultimoAcceso: new Date().toISOString() }); setSelectedId(a.id); }} style={{ display: "flex", alignItems: "center", gap: 10, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 14, padding: 12, cursor: "pointer", width: "100%", textAlign: "left", marginBottom: 8, marginLeft: sec.nombre ? 12 : 0, maxWidth: sec.nombre ? "calc(100% - 12px)" : "100%" }}>
+                  <Avatar text={a.foto} size={38} />
+                  <div style={{ flex: 1 }}>
+                    <div className="font-display" style={{ color: "#F4F1EA", fontSize: 14, fontWeight: 600 }}>{a.nombre}</div>
+                    <div className="font-body" style={{ color: "#8B8698", fontSize: 11 }}>{a.equipo || "Sin equipo"} · {a.objetivo || "Sin objetivo"}</div>
+                  </div>
+                  <span style={{ color: "#8B8698" }}>›</span>
+                </button>
+              ))}
+            </div>
+            );
+          })}
           {bajas.length > 0 && (
             <>
               <button onClick={() => setVerBajas(!verBajas)} className="font-body" style={{ background: "none", border: "none", color: "#8B8698", fontSize: 11, cursor: "pointer", padding: "6px 0", textAlign: "left" }}>{verBajas ? "▲" : "▼"} {bajas.length} de baja</button>
@@ -2473,10 +2644,10 @@ function CoachAlumnos({ alumnos, selectedId, setSelectedId, templates, onAsignar
       </div>
     );
   }
-  return <AlumnoDetalle alumno={alumno} alumnos={alumnos} templates={templates} onBack={() => setSelectedId(null)} onAsignarPlantilla={onAsignarPlantilla} onCopiarPlan={onCopiarPlan} onCopiarVersionAOtro={onCopiarVersionAOtro} onGuardarComoPlantilla={onGuardarComoPlantilla} onUpdatePlan={onUpdatePlan} onUpdateAlumno={onUpdateAlumno} onDeleteAlumno={() => { onDeleteAlumno(alumno.id); setSelectedId(null); }} onSendMsg={onSendMsg} onGuardarVersion={onGuardarVersion} onRestaurarVersion={onRestaurarVersion} onGuardarHistorialRM={onGuardarHistorialRM} onAddToLibrary={onAddToLibrary} version={version} coaches={coaches} coachIdActual={coachIdActual} onCompartirAlumno={onCompartirAlumno} onDejarDeCompartir={onDejarDeCompartir} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={onAgregarRolPersonalizado} grupos={grupos} onCompartirGrupo={onCompartirGrupo} onAgregarPlanSecundario={onAgregarPlanSecundario} onQuitarPlanSecundario={onQuitarPlanSecundario} />;
+  return <AlumnoDetalle alumno={alumno} alumnos={alumnos} templates={templates} onBack={() => setSelectedId(null)} onAsignarPlantilla={onAsignarPlantilla} onCopiarPlan={onCopiarPlan} onCopiarVersionAOtro={onCopiarVersionAOtro} onGuardarComoPlantilla={onGuardarComoPlantilla} onUpdatePlan={onUpdatePlan} onUpdateAlumno={onUpdateAlumno} onDeleteAlumno={() => { onDeleteAlumno(alumno.id); setSelectedId(null); }} onSendMsg={onSendMsg} onGuardarVersion={onGuardarVersion} onRestaurarVersion={onRestaurarVersion} onGuardarHistorialRM={onGuardarHistorialRM} onAddToLibrary={onAddToLibrary} version={version} coaches={coaches} coachIdActual={coachIdActual} onCompartirAlumno={onCompartirAlumno} onDejarDeCompartir={onDejarDeCompartir} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={onAgregarRolPersonalizado} grupos={grupos} onCompartirGrupo={onCompartirGrupo} onAgregarPlanSecundario={onAgregarPlanSecundario} onQuitarPlanSecundario={onQuitarPlanSecundario} plantelGrupos={plantelGrupos} onAsignarPlantelGrupo={onAsignarPlantelGrupo} />;
 }
 
-function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla, onCopiarPlan, onCopiarVersionAOtro, onGuardarComoPlantilla, onUpdatePlan, onUpdateAlumno, onDeleteAlumno, onSendMsg, onGuardarVersion, onRestaurarVersion, onGuardarHistorialRM, onAddToLibrary, version, coaches, coachIdActual, onCompartirAlumno, onDejarDeCompartir, rolesPersonalizados, onAgregarRolPersonalizado, grupos, onCompartirGrupo, onAgregarPlanSecundario, onQuitarPlanSecundario }) {
+function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla, onCopiarPlan, onCopiarVersionAOtro, onGuardarComoPlantilla, onUpdatePlan, onUpdateAlumno, onDeleteAlumno, onSendMsg, onGuardarVersion, onRestaurarVersion, onGuardarHistorialRM, onAddToLibrary, version, coaches, coachIdActual, onCompartirAlumno, onDejarDeCompartir, rolesPersonalizados, onAgregarRolPersonalizado, grupos, onCompartirGrupo, onAgregarPlanSecundario, onQuitarPlanSecundario, plantelGrupos, onAsignarPlantelGrupo }) {
   const [tab, setTab] = useState("plan");
   const [msg, setMsg] = useState("");
   const [busquedaChat, setBusquedaChat] = useState("");
@@ -2487,6 +2658,7 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
   const [nombreNuevaPlanificacion, setNombreNuevaPlanificacion] = useState("");
   const [diaNotasAbierto, setDiaNotasAbierto] = useState(null);
   const [verInformesMensuales, setVerInformesMensuales] = useState(false);
+  const [masOpcionesPlan, setMasOpcionesPlan] = useState(false);
   const [guardandoVersion, setGuardandoVersion] = useState(false);
   // Historial de "Deshacer": guarda una copia del plan justo antes de cada cambio, para poder
   // volver atrás con un toque si borrás un día, un bloque, o cualquier otra cosa por error.
@@ -2515,6 +2687,9 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
   const [viendoVersion, setViendoVersion] = useState(null);
   const [pasandoVersion, setPasandoVersion] = useState(null);
   const [agregandoSecundaria, setAgregandoSecundaria] = useState(false);
+  const [agregandoCompetencia, setAgregandoCompetencia] = useState(false);
+  const [nombreCompNueva, setNombreCompNueva] = useState("");
+  const [fechaCompNueva, setFechaCompNueva] = useState("");
   const [nombreSecundaria, setNombreSecundaria] = useState("");
   const [plantillaSecundaria, setPlantillaSecundaria] = useState("");
   const [notifState, setNotifState] = useState(() => (typeof Notification !== "undefined" ? Notification.permission : "default"));
@@ -2555,25 +2730,43 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
 
       {tab === "plan" && (
         <div style={{ padding: "0 20px" }}>
-          <select onChange={(e) => { if (e.target.value) onAsignarPlantilla(alumno.id, e.target.value); e.target.value = ""; }} defaultValue="" className="font-body"
+          <select onChange={(e) => {
+            if (!e.target.value) return;
+            const tpl = templates.find((t) => t.id === e.target.value);
+            // Antes de reemplazar todo, guardamos automáticamente lo que tenía cargado — así nunca
+            // se pierde una planificación por aplicar una plantilla sin querer.
+            const totalEjActual = (alumno.plan.dias || []).reduce((n, d) => n + (d.bloques || []).reduce((n2, b) => n2 + (b.ejercicios || []).length, 0), 0);
+            if (totalEjActual > 0) {
+              const nombreAuto = `${alumno.plan.meta?.mesociclo ? `Mesociclo ${alumno.plan.meta.mesociclo}` : "Plan anterior"} (antes de "${tpl?.nombre || "plantilla"}") — ${fechaLegible(todayISO())}`;
+              onGuardarVersion(alumno.id, nombreAuto);
+            }
+            onAsignarPlantilla(alumno.id, e.target.value);
+            e.target.value = "";
+          }} defaultValue="" className="font-body"
             style={{ width: "100%", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, color: "#F4F1EA", padding: "10px 12px", fontSize: 12, marginBottom: 6, boxSizing: "border-box" }}>
             <option value="" disabled>Reemplazar todo por una plantilla…</option>
             {templates.map((t) => <option key={t.id} value={t.id}>{t.nombre}</option>)}
           </select>
+          <div className="font-body" style={{ fontSize: 9, color: "#6B6678", marginBottom: 10 }}>
+            Si ya tenías algo cargado, se guarda solo antes de reemplazarlo — lo encontrás en "💾 Guardar planificación" → historial.
+          </div>
           <div className="font-body" style={{ fontSize: 10, color: "#8B8698", marginBottom: 10 }}>
             O editá el plan como tu planilla: mesociclo, entrada en calor, días con bloques, tantas semanas como necesites, y modo Tabata por ejercicio.
           </div>
 
-          <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
-            <button onClick={() => setGuardandoVersion(!guardandoVersion)} className="font-body" style={{ flex: 1, background: "rgba(125,214,192,0.1)", border: "1px dashed #7DD6C0", borderRadius: 8, color: "#7DD6C0", fontWeight: 700, fontSize: 10, padding: 9, cursor: "pointer" }}>📦 Guardar versión</button>
-            <button onClick={() => setCopiandoPlan(!copiandoPlan)} className="font-body" style={{ flex: 1, background: "rgba(255,107,53,0.1)", border: "1px dashed #FF6B35", borderRadius: 8, color: "#FF6B35", fontWeight: 700, fontSize: 10, padding: 9, cursor: "pointer" }}>📄 Copiar a otro/a</button>
-          </div>
+          <button onClick={() => setGuardandoVersion(!guardandoVersion)} className="font-body" style={{ width: "100%", background: "rgba(125,214,192,0.15)", border: "1.5px solid #7DD6C0", borderRadius: 8, color: "#7DD6C0", fontWeight: 700, fontSize: 11, padding: 12, cursor: "pointer", marginBottom: 6 }}>💾 Guardar planificación</button>
+          {guardandoVersion && (
+            <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+              <input value={nombreVersion} onChange={(e) => setNombreVersion(e.target.value)} placeholder="Ej: Agosto, Pretemporada..." className="font-body" style={{ flex: 1, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, color: "#F4F1EA", padding: "8px 10px", fontSize: 12, boxSizing: "border-box" }} />
+              <button onClick={() => { if (!nombreVersion.trim()) return; onGuardarVersion(alumno.id, nombreVersion.trim()); setNombreVersion(""); setGuardandoVersion(false); }} className="font-body" style={{ background: "#7DD6C0", border: "none", borderRadius: 8, color: "#0B2A2E", fontWeight: 700, padding: "0 14px", cursor: "pointer" }}>Guardar</button>
+            </div>
+          )}
           <div style={{ marginBottom: 6 }}>
             <button onClick={() => { setEmpezandoNueva(!empezandoNueva); setNombreNuevaPlanificacion(""); }} className="font-body" style={{ width: "100%", background: "rgba(255,201,74,0.1)", border: "1px dashed #FFC94A", borderRadius: 8, color: "#FFC94A", fontWeight: 700, fontSize: 10, padding: 9, cursor: "pointer" }}>🆕 Empezar planificación nueva</button>
           </div>
           {empezandoNueva && (
             <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 10 }}>
-              <div className="font-body" style={{ color: "#8B8698", fontSize: 10, marginBottom: 6 }}>Antes de vaciar el plan actual de {alumno.nombre}, lo guardamos con el nombre que le pongas acá (después lo encontrás en "📦 Guardar versión" → historial).</div>
+              <div className="font-body" style={{ color: "#8B8698", fontSize: 10, marginBottom: 6 }}>Antes de vaciar el plan actual de {alumno.nombre}, lo guardamos con el nombre que le pongas acá (después lo encontrás en "💾 Guardar planificación" → historial).</div>
               <div style={{ display: "flex", gap: 6 }}>
                 <input value={nombreNuevaPlanificacion} onChange={(e) => setNombreNuevaPlanificacion(e.target.value)} placeholder="Ej: Pretemporada 2026, Marzo..." className="font-body" style={{ flex: 1, background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, color: "#F4F1EA", padding: "8px 10px", fontSize: 12, boxSizing: "border-box" }} />
                 <button onClick={() => {
@@ -2586,6 +2779,16 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
               </div>
             </div>
           )}
+
+          <button onClick={() => setMasOpcionesPlan(!masOpcionesPlan)} className="font-body" style={{ width: "100%", background: "none", border: "1px solid #322E3D", borderRadius: 8, color: "#8B8698", fontWeight: 700, fontSize: 10, padding: 8, cursor: "pointer", marginBottom: masOpcionesPlan ? 6 : 14 }}>⚙️ Más opciones (compartir, plantilla, PDF) {masOpcionesPlan ? "▲" : "▼"}</button>
+          {masOpcionesPlan && (
+          <div style={{ background: "#15131A", border: "1px solid #26232F", borderRadius: 12, padding: 12, marginBottom: 14 }}>
+          <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+            <button onClick={() => setCopiandoPlan(!copiandoPlan)} className="font-body" style={{ flex: 1, background: "rgba(255,107,53,0.1)", border: "1px dashed #FF6B35", borderRadius: 8, color: "#FF6B35", fontWeight: 700, fontSize: 10, padding: 9, cursor: "pointer" }}>📄 Copiar a otro/a</button>
+            {coaches && coaches.length > 1 && (
+              <button onClick={() => setCompartiendoCoach(!compartiendoCoach)} className="font-body" style={{ flex: 1, background: "rgba(90,160,230,0.1)", border: "1px dashed #5AA0E6", borderRadius: 8, color: "#5AA0E6", fontWeight: 700, fontSize: 10, padding: 9, cursor: "pointer" }}>🤝 A otro coach</button>
+            )}
+          </div>
           <div style={{ marginBottom: 6 }}>
             <button onClick={() => setGuardandoPlantilla(!guardandoPlantilla)} className="font-body" style={{ width: "100%", background: "rgba(51,214,166,0.1)", border: "1px dashed #33D6A6", borderRadius: 8, color: "#33D6A6", fontWeight: 700, fontSize: 10, padding: 9, cursor: "pointer" }}>⭐ Guardar este plan como plantilla reutilizable</button>
           </div>
@@ -2607,11 +2810,6 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
                   <Avatar text={a.foto} size={22} /><span style={{ color: "#F4F1EA", fontSize: 11 }}>Copiar a {a.nombre}</span>
                 </button>
               ))}
-            </div>
-          )}
-          {coaches && coaches.length > 1 && (
-            <div style={{ marginBottom: 6 }}>
-              <button onClick={() => setCompartiendoCoach(!compartiendoCoach)} className="font-body" style={{ width: "100%", background: "rgba(90,160,230,0.1)", border: "1px dashed #5AA0E6", borderRadius: 8, color: "#5AA0E6", fontWeight: 700, fontSize: 10, padding: 9, cursor: "pointer" }}>🤝 Compartir con otro entrenador</button>
             </div>
           )}
           {compartiendoCoach && (
@@ -2648,12 +2846,8 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
             </div>
           )}
           <button onClick={() => descargarPlanPDF(alumno)} className="font-body" style={{ width: "100%", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, color: "#8B8698", fontWeight: 700, fontSize: 10, padding: 9, cursor: "pointer", marginBottom: 8 }}>⬇️ Descargar plan (PDF)</button>
-          <div className="font-body" style={{ fontSize: 9, color: "#6B6678", marginBottom: 10 }}>Se abre y guarda un archivo — tocá "Imprimir / Guardar como PDF" ahí adentro, y de ahí lo mandás por WhatsApp como cualquier otro archivo. Nota: esto necesita la app publicada (no funciona siempre en la vista previa del chat).</div>
-          {guardandoVersion && (
-            <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-              <input value={nombreVersion} onChange={(e) => setNombreVersion(e.target.value)} placeholder="Ej: Agosto, Pretemporada..." className="font-body" style={{ flex: 1, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, color: "#F4F1EA", padding: "8px 10px", fontSize: 12, boxSizing: "border-box" }} />
-              <button onClick={() => { if (!nombreVersion.trim()) return; onGuardarVersion(alumno.id, nombreVersion.trim()); setNombreVersion(""); setGuardandoVersion(false); }} className="font-body" style={{ background: "#7DD6C0", border: "none", borderRadius: 8, color: "#0B2A2E", fontWeight: 700, padding: "0 14px", cursor: "pointer" }}>Guardar</button>
-            </div>
+          <div className="font-body" style={{ fontSize: 9, color: "#6B6678" }}>Se abre y guarda un archivo — tocá "Imprimir / Guardar como PDF" ahí adentro, y de ahí lo mandás por WhatsApp como cualquier otro archivo. Nota: esto necesita la app publicada (no funciona siempre en la vista previa del chat).</div>
+          </div>
           )}
           {alumno.historialPlanes.length > 0 && (
             <div style={{ marginBottom: 14 }}>
@@ -2740,7 +2934,7 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
 
       {tab === "perfil" && (
         <div style={{ padding: "0 20px" }}>
-          <button onClick={() => descargarInformePDF(alumno)} className="font-body" style={{ width: "100%", background: "#FF6B35", border: "none", borderRadius: 10, color: "#121017", fontWeight: 700, fontSize: 12, padding: 11, cursor: "pointer", marginBottom: 6 }}>📄 Descargar informe prolijo (PDF)</button>
+          <button onClick={() => descargarInformePDF(alumno)} className="font-body" style={{ width: "100%", background: "#FF6B35", border: "none", borderRadius: 10, color: "#121017", fontWeight: 700, fontSize: 12, padding: 11, cursor: "pointer", marginBottom: 6 }}>📄 Descargar informe (PDF)</button>
           <div className="font-body" style={{ fontSize: 9, color: "#6B6678", textAlign: "center", marginBottom: 16 }}>Se abre y guarda un archivo — tocá "Imprimir / Guardar como PDF" ahí adentro, y de ahí lo podés mandar por WhatsApp como cualquier otro archivo.</div>
 
           {alumno.mesesArchivados && alumno.mesesArchivados.length > 0 && (
@@ -2759,6 +2953,15 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
             </div>
           )}
 
+          {plantelGrupos && plantelGrupos.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div className="font-body" style={{ fontSize: 11, color: "#FF6B35", fontWeight: 600, marginBottom: 6 }}>SUBGRUPO</div>
+              <select value={alumno.plantelGrupoId || ""} onChange={(e) => onAsignarPlantelGrupo(alumno.id, e.target.value || null)} className="font-body" style={{ width: "100%", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, color: "#F4F1EA", padding: "8px 10px", fontSize: 12, boxSizing: "border-box" }}>
+                <option value="">Sin grupo asignado</option>
+                {plantelGrupos.map((g) => <option key={g.id} value={g.id}>{g.nombre}</option>)}
+              </select>
+            </div>
+          )}
           <div className="font-body" style={{ fontSize: 11, color: "#FF6B35", fontWeight: 600, marginBottom: 8 }}>ACCESO A LA APP</div>
           <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
             <MiniInput label="Usuario" value={alumno.usuario} onChange={(v) => onUpdateAlumno(alumno.id, { usuario: v })} wide />
@@ -2774,13 +2977,33 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
             <MiniInput label="Lesiones" value={alumno.lesiones} onChange={(v) => onUpdateAlumno(alumno.id, { lesiones: v })} wide />
             <MiniInput label="Equipo" value={alumno.equipo} onChange={(v) => onUpdateAlumno(alumno.id, { equipo: v })} wide />
           </div>
-          <div className="font-body" style={{ fontSize: 11, color: "#FF6B35", fontWeight: 600, marginBottom: 8 }}>PRÓXIMA COMPETENCIA</div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-            <MiniInput label="Nombre" value={alumno.competencia?.nombre || ""} onChange={(v) => onUpdateAlumno(alumno.id, { competencia: { ...(alumno.competencia || {}), nombre: v } })} wide />
-            <div style={{ width: 78, flexShrink: 0 }}>
-              <div className="font-body" style={{ fontSize: 8, color: "#8B8698", marginBottom: 2 }}>Fecha</div>
-              <input type="date" value={alumno.competencia?.fecha || ""} onChange={(e) => onUpdateAlumno(alumno.id, { competencia: { ...(alumno.competencia || {}), fecha: e.target.value } })} className="font-body" style={{ width: "100%", background: "#26232F", border: "none", borderRadius: 6, color: "#F4F1EA", padding: "4px 5px", fontSize: 10, boxSizing: "border-box" }} />
-            </div>
+          <div className="font-body" style={{ fontSize: 11, color: "#FF6B35", fontWeight: 600, marginBottom: 8 }}>COMPETENCIAS</div>
+          <div style={{ marginBottom: 16 }}>
+            {(alumno.competencias || []).map((c) => (
+              <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 8, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 6 }}>
+                <div style={{ flex: 1 }}>
+                  <div className="font-body" style={{ color: "#F4F1EA", fontSize: 12, fontWeight: 600 }}>{c.nombre || "Sin nombre"}</div>
+                  <div className="font-body" style={{ color: "#8B8698", fontSize: 10 }}>{c.fecha ? mostrarFecha(c.fecha) : "Sin fecha"}</div>
+                </div>
+                <button onClick={() => onUpdateAlumno(alumno.id, { competencias: alumno.competencias.filter((x) => x.id !== c.id) })} className="font-body" style={{ background: "none", border: "none", color: "#E85D5D", fontSize: 10, cursor: "pointer" }}>Quitar</button>
+              </div>
+            ))}
+            {agregandoCompetencia ? (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+                <MiniInput label="Nombre" value={nombreCompNueva} onChange={setNombreCompNueva} wide />
+                <div style={{ width: 78, flexShrink: 0 }}>
+                  <div className="font-body" style={{ fontSize: 8, color: "#8B8698", marginBottom: 2 }}>Fecha</div>
+                  <input type="date" value={fechaCompNueva} onChange={(e) => setFechaCompNueva(e.target.value)} className="font-body" style={{ width: "100%", background: "#26232F", border: "none", borderRadius: 6, color: "#F4F1EA", padding: "4px 5px", fontSize: 10, boxSizing: "border-box" }} />
+                </div>
+                <button onClick={() => {
+                  if (!nombreCompNueva.trim()) return;
+                  onUpdateAlumno(alumno.id, { competencias: [...(alumno.competencias || []), { id: uid(), nombre: nombreCompNueva.trim(), fecha: fechaCompNueva }] });
+                  setNombreCompNueva(""); setFechaCompNueva(""); setAgregandoCompetencia(false);
+                }} className="font-body" style={{ background: "#FF6B35", border: "none", borderRadius: 6, color: "#121017", fontWeight: 700, fontSize: 11, padding: "8px 12px", cursor: "pointer" }}>Agregar</button>
+              </div>
+            ) : (
+              <button onClick={() => setAgregandoCompetencia(true)} className="font-body" style={{ width: "100%", background: "rgba(255,107,53,0.1)", border: "1px dashed #FF6B35", borderRadius: 8, color: "#FF6B35", fontWeight: 700, fontSize: 11, padding: 9, cursor: "pointer" }}>+ Agregar competencia</button>
+            )}
           </div>
           <div className="font-body" style={{ fontSize: 11, color: "#8B8698", fontWeight: 600, marginBottom: 8 }}>CALENDARIO DE ENTRENAMIENTOS</div>
           <CalendarioSesiones historialSesiones={alumno.historialSesiones} />
@@ -2914,9 +3137,11 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
   );
 }
 
-function CoachPlantillas({ templates, alumnos, onAsignar, onCrearPlantilla, onAddToLibrary, version, rolesPersonalizados, onAgregarRolPersonalizado, coachIdActual }) {
+function CoachPlantillas({ templates, alumnos, onAsignar, onCrearPlantilla, onEditarPlantilla, onAddToLibrary, version, rolesPersonalizados, onAgregarRolPersonalizado, coachIdActual }) {
   const [targetOpen, setTargetOpen] = useState(null);
   const [previewOpen, setPreviewOpen] = useState(null);
+  const [editandoId, setEditandoId] = useState(null);
+  const [planEnEdicion, setPlanEnEdicion] = useState(null);
   const [creando, setCreando] = useState(false);
   const [nombre, setNombre] = useState("");
   const [categoria, setCategoria] = useState("Hipertrofia");
@@ -2958,10 +3183,18 @@ function CoachPlantillas({ templates, alumnos, onAsignar, onCrearPlantilla, onAd
           <div key={t.id} style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 14, padding: 14 }}>
             <div className="font-display" style={{ color: "#F4F1EA", fontSize: 14, fontWeight: 600 }}>{t.nombre}</div>
             <div className="font-body" style={{ color: "#7DD6C0", fontSize: 11, marginTop: 2, fontWeight: 600 }}>{t.categoria} · {t.plan.dias.length} días</div>
-            <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
-              <button onClick={() => { setPreviewOpen(previewOpen === t.id ? null : t.id); setTargetOpen(null); }} className="font-body" style={{ background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, color: "#8B8698", fontWeight: 700, fontSize: 11, padding: "8px 12px", cursor: "pointer" }}>👁️ Ver ejercicios</button>
-              <button onClick={() => { setTargetOpen(targetOpen === t.id ? null : t.id); setPreviewOpen(null); }} className="font-body" style={{ background: "#FF6B35", border: "none", borderRadius: 8, color: "#121017", fontWeight: 700, fontSize: 11, padding: "8px 12px", cursor: "pointer" }}>Usar plantilla</button>
+            <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+              <button onClick={() => { setPreviewOpen(previewOpen === t.id ? null : t.id); setTargetOpen(null); setEditandoId(null); }} className="font-body" style={{ background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, color: "#8B8698", fontWeight: 700, fontSize: 11, padding: "8px 12px", cursor: "pointer" }}>👁️ Ver ejercicios</button>
+              <button onClick={() => { if (editandoId === t.id) { setEditandoId(null); } else { setEditandoId(t.id); setPlanEnEdicion(clonarPlan(t.plan)); setPreviewOpen(null); setTargetOpen(null); } }} className="font-body" style={{ background: "#26232F", border: "1px solid #7DD6C0", borderRadius: 8, color: "#7DD6C0", fontWeight: 700, fontSize: 11, padding: "8px 12px", cursor: "pointer" }}>✏️ Editar</button>
+              <button onClick={() => { setTargetOpen(targetOpen === t.id ? null : t.id); setPreviewOpen(null); setEditandoId(null); }} className="font-body" style={{ background: "#FF6B35", border: "none", borderRadius: 8, color: "#121017", fontWeight: 700, fontSize: 11, padding: "8px 12px", cursor: "pointer" }}>Usar plantilla</button>
             </div>
+            {editandoId === t.id && planEnEdicion && (
+              <div style={{ marginTop: 10, background: "#0F0E13", border: "1px solid #322E3D", borderRadius: 10, padding: 10 }}>
+                <div className="font-body" style={{ color: "#8B8698", fontSize: 9, marginBottom: 8 }}>Edición rápida — los cambios quedan guardados en esta plantilla, no afectan a nadie que ya la haya usado antes.</div>
+                <PlanEditor plan={planEnEdicion} onChange={setPlanEnEdicion} version={version} onAddToLibrary={onAddToLibrary} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={onAgregarRolPersonalizado} />
+                <button onClick={() => { onEditarPlantilla(t.id, planEnEdicion); setEditandoId(null); }} className="font-body" style={{ width: "100%", marginTop: 8, background: "#7DD6C0", border: "none", borderRadius: 10, color: "#0B2A2E", fontWeight: 700, fontSize: 12, padding: 11, cursor: "pointer" }}>Guardar cambios en la plantilla</button>
+              </div>
+            )}
             {previewOpen === t.id && (
               <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
                 {t.plan.calentamiento.length > 0 && (
@@ -3060,13 +3293,11 @@ function CoachEjercicios({ onAddExercise, version, onToggleFav, onEditVideo }) {
   useEffect(() => { setLimite(60); }, [filtro, busqueda]);
   const listaCompleta = useMemo(() => {
     let l = filtro === "★ Favoritos" ? EXERCISES.filter((e) => FAVORITOS_SET.has(e.id))
-      : filtro === "⚠ Sin video directo" ? EXERCISES.filter((e) => { const v = videoEfectivo(e); return v && v.includes("youtube.com/results"); })
       : filtro === "Todos" ? EXERCISES : EXERCISES.filter((e) => e.categoria === filtro);
-    if (busqueda.trim()) { const q = busqueda.toLowerCase(); l = l.filter((e) => e.nombre.toLowerCase().includes(q)); }
+    if (busqueda.trim()) { l = l.filter((e) => coincideBusqueda(e.nombre, busqueda)); }
     return l;
   }, [filtro, busqueda, version]);
   const lista = listaCompleta.slice(0, limite);
-  const sinVideoCount = useMemo(() => EXERCISES.filter((e) => { const v = videoEfectivo(e); return v && v.includes("youtube.com/results"); }).length, [version]);
   return (
     <div>
       <TopBar title="Ejercicios" subtitle={`${EXERCISES.length} en la biblioteca`} />
@@ -3075,7 +3306,6 @@ function CoachEjercicios({ onAddExercise, version, onToggleFav, onEditVideo }) {
       </div>
       <div style={{ display: "flex", gap: 8, padding: "0 20px 12px", overflowX: "auto" }}>
         <Pill active={filtro === "★ Favoritos"} onClick={() => setFiltro("★ Favoritos")} activeColor="#FFC94A">★ Favoritos</Pill>
-        <Pill active={filtro === "⚠ Sin video directo"} onClick={() => setFiltro("⚠ Sin video directo")} activeColor="#FF6B35">⚠ Sin video directo ({sinVideoCount})</Pill>
         {CATEGORIAS.map((c) => <Pill key={c} active={filtro === c} onClick={() => setFiltro(c)}>{c}</Pill>)}
       </div>
       <div className="font-body" style={{ padding: "0 20px", fontSize: 10, color: "#6B6678", marginBottom: 6 }}>{listaCompleta.length} resultados en "{filtro}"{listaCompleta.length > lista.length ? ` · mostrando ${lista.length}` : ""}</div>
@@ -3092,7 +3322,7 @@ function CoachEjercicios({ onAddExercise, version, onToggleFav, onEditVideo }) {
           const esBusqueda = videoEf && videoEf.includes("youtube.com/results");
           const editando = editandoId === e.id;
           return (
-            <div key={e.id} style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 12, padding: 10, width: "100%" }}>
+            <div key={e.id} style={{ background: "#1C1A24", border: `1.5px solid ${e.color}`, borderRadius: 12, padding: 10, width: "100%" }}>
               <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                 <button onClick={() => openVideo(videoEf)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", gap: 10, alignItems: "center", flex: 1, textAlign: "left" }}>
                   <div style={{ width: 34, height: 34, borderRadius: 8, background: `${e.color}22`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 16 }}>{e.emoji}</div>
@@ -3111,7 +3341,10 @@ function CoachEjercicios({ onAddExercise, version, onToggleFav, onEditVideo }) {
                   ) : (
                     <div className="font-body" style={{ fontSize: 10, color: "#33D6A6", fontWeight: 700, marginBottom: 6 }}>✓ Ya tiene un link cargado</div>
                   )}
-                  <div className="font-body" style={{ fontSize: 9, color: "#8B8698", marginBottom: 4 }}>Link de YouTube para este ejercicio (queda guardado para siempre, lo ve cualquier entrenador)</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+                    <div className="font-body" style={{ fontSize: 9, color: "#8B8698" }}>Link de YouTube (queda guardado para siempre, lo ve cualquier entrenador)</div>
+                    <a href={`https://www.youtube.com/results?search_query=${encodeURIComponent(e.nombre + " técnica")}`} target="_blank" rel="noopener noreferrer" className="font-body" style={{ fontSize: 9, color: "#7DD6C0", fontWeight: 700, textDecoration: "none", flexShrink: 0, marginLeft: 8 }}>🔍 Buscar en YouTube</a>
+                  </div>
                   <div style={{ display: "flex", gap: 6 }}>
                     <input value={valorEdicion} onChange={(ev) => setValorEdicion(ev.target.value)} placeholder="https://youtube.com/watch?v=..." className="font-body" style={{ flex: 1, background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "6px 8px", fontSize: 11, boxSizing: "border-box" }} />
                     <button onClick={() => { onEditVideo(e.id, valorEdicion.trim()); setEditandoId(null); }} className="font-body" style={{ background: "#7DD6C0", border: "none", borderRadius: 6, color: "#0B2A2E", fontWeight: 700, padding: "0 12px", cursor: "pointer", fontSize: 11 }}>Guardar</button>
@@ -3209,10 +3442,20 @@ function AthleteInicio({ alumno, goEntrenar, onCheckin }) {
   const hoy = todayISO();
   const checkinHoy = (alumno.wellness.checkins || []).find((c) => c.fecha === hoy);
   const [animoSel, setAnimoSel] = useState(5);
+  const racha = calcularRacha(alumno);
   return (
     <div>
       <TopBar title={`Hola, ${alumno.nombre} 👋`} subtitle={`Mesociclo ${alumno.plan.meta.mesociclo || "—"} · ${alumno.plan.meta.fecha || ""}`} />
       <div style={{ padding: "0 20px" }}>
+        {racha > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, background: "linear-gradient(135deg, rgba(255,107,53,0.15), rgba(255,201,74,0.08))", border: "1px solid #FF6B35", borderRadius: 14, padding: "12px 16px", marginBottom: 14 }}>
+            <span style={{ fontSize: 26 }}>🔥</span>
+            <div>
+              <div className="font-display" style={{ fontSize: 18, color: "#F4F1EA", fontWeight: 700 }}>{racha} entrenamiento{racha === 1 ? "" : "s"} seguidos</div>
+              <div className="font-body" style={{ fontSize: 11, color: "#8B8698" }}>No cortaste ni uno — ¡seguí así!</div>
+            </div>
+          </div>
+        )}
         {primerDia ? (
           <div style={{ background: "linear-gradient(135deg, #1C1A24, #26232F)", border: "1px solid #322E3D", borderRadius: 18, padding: 18 }}>
             <div className="font-body" style={{ fontSize: 11, color: "#FF6B35", fontWeight: 700 }}>{alumno.plan.dias.length} DÍA{alumno.plan.dias.length !== 1 ? "S" : ""} EN TU PLAN</div>
@@ -3246,7 +3489,9 @@ function AthleteInicio({ alumno, goEntrenar, onCheckin }) {
           )}
         </div>
 
-        <CompetitionCountdown competencia={alumno.competencia} />
+        <CalendarioSesiones historialSesiones={alumno.historialSesiones} />
+
+        <CompetitionCountdown competencias={alumno.competencias} />
       </div>
     </div>
   );
@@ -3498,8 +3743,12 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
             </>
           )}
         </div>
+      </div>
 
-        <button onClick={() => onFinalizar(alumno.id)} className="font-body" style={{ width: "100%", background: "#1C1A24", border: "1px solid #33D6A6", borderRadius: 12, color: "#33D6A6", fontWeight: 700, fontSize: 13, padding: "12px 0", cursor: "pointer", marginTop: 6, marginBottom: 12 }}>
+      {/* Barra fija abajo de la pantalla — siempre visible mientras scrolleás la lista de
+          ejercicios, para que nunca se pierda de vista cómo terminar el entrenamiento. */}
+      <div style={{ position: "sticky", bottom: 0, left: 0, right: 0, padding: "10px 20px calc(10px + env(safe-area-inset-bottom, 0px))", background: "linear-gradient(180deg, rgba(11,10,15,0) 0%, #0B0A0F 35%)", zIndex: 2 }}>
+        <button onClick={() => onFinalizar(alumno.id)} className="font-body" style={{ width: "100%", background: "#33D6A6", border: "none", borderRadius: 14, color: "#0B2A2E", fontWeight: 800, fontSize: 14, padding: "14px 0", cursor: "pointer", boxShadow: "0 6px 20px rgba(51,214,166,0.35)" }}>
           ✓ Finalizar entrenamiento
         </button>
       </div>
@@ -3627,29 +3876,34 @@ function CalendarioSesiones({ historialSesiones }) {
   );
 }
 
-function CompetitionCountdown({ competencia }) {
-  if (!competencia || !competencia.fecha) {
+function CompetitionCountdown({ competencias }) {
+  const hoy = new Date(todayISO() + "T00:00:00");
+  const futuras = (competencias || []).filter((c) => c.fecha).map((c) => ({ ...c, dias: Math.ceil((new Date(c.fecha + "T00:00:00") - hoy) / (1000 * 60 * 60 * 24)) })).filter((c) => c.dias >= 0).sort((a, b) => a.dias - b.dias);
+  if (futuras.length === 0) {
     return (
       <div style={{ background: "#1C1A24", border: "1px dashed #322E3D", borderRadius: 14, padding: 14, textAlign: "center" }}>
         <div className="font-body" style={{ color: "#8B8698", fontSize: 11 }}>Todavía no tenés una competencia cargada. Pedile a tu coach que la sume en tu perfil.</div>
       </div>
     );
   }
-  const hoy = new Date(todayISO() + "T00:00:00");
-  const fechaComp = new Date(competencia.fecha + "T00:00:00");
-  const dias = Math.ceil((fechaComp - hoy) / (1000 * 60 * 60 * 24));
-  const pasada = dias < 0;
+  const proxima = futuras[0];
   return (
-    <div style={{ background: "linear-gradient(135deg, #1C1A24, #26232F)", border: "1px solid #FF6B35", borderRadius: 14, padding: 16, textAlign: "center" }}>
-      <div className="font-body" style={{ color: "#FF6B35", fontSize: 11, fontWeight: 700, marginBottom: 4 }}>🏆 PRÓXIMA COMPETENCIA</div>
-      <div className="font-display" style={{ color: "#F4F1EA", fontSize: 16, fontWeight: 600, marginBottom: 8 }}>{competencia.nombre || "Sin nombre"}</div>
-      {pasada ? (
-        <div className="font-body" style={{ color: "#8B8698", fontSize: 12 }}>Ya pasó — pedile a tu coach que cargue la próxima.</div>
-      ) : (
-        <>
-          <div className="font-display" style={{ color: "#FF6B35", fontSize: 42, fontWeight: 700 }}>{dias}</div>
-          <div className="font-body" style={{ color: "#8B8698", fontSize: 11 }}>{dias === 1 ? "día restante" : "días restantes"}</div>
-        </>
+    <div>
+      <div style={{ background: "linear-gradient(135deg, #1C1A24, #26232F)", border: "1px solid #FF6B35", borderRadius: 14, padding: 16, textAlign: "center" }}>
+        <div className="font-body" style={{ color: "#FF6B35", fontSize: 11, fontWeight: 700, marginBottom: 4 }}>🏆 PRÓXIMA COMPETENCIA</div>
+        <div className="font-display" style={{ color: "#F4F1EA", fontSize: 16, fontWeight: 600, marginBottom: 8 }}>{proxima.nombre || "Sin nombre"}</div>
+        <div className="font-display" style={{ color: "#FF6B35", fontSize: 42, fontWeight: 700 }}>{proxima.dias}</div>
+        <div className="font-body" style={{ color: "#8B8698", fontSize: 11 }}>{proxima.dias === 1 ? "día restante" : "días restantes"}</div>
+      </div>
+      {futuras.length > 1 && (
+        <div style={{ marginTop: 8 }}>
+          {futuras.slice(1).map((c) => (
+            <div key={c.id} style={{ display: "flex", justifyContent: "space-between", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, padding: "8px 12px", marginBottom: 6 }}>
+              <span className="font-body" style={{ color: "#F4F1EA", fontSize: 12 }}>{c.nombre || "Sin nombre"}</span>
+              <span className="font-body" style={{ color: "#8B8698", fontSize: 11 }}>{c.dias === 1 ? "1 día" : `${c.dias} días`}</span>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -4048,9 +4302,9 @@ function BuscarGlobal({ alumnos, templates, version, onGoAlumno, onGoPlantillas 
   const [q, setQ] = useState("");
   const query = q.trim().toLowerCase();
 
-  const alumnosMatch = useMemo(() => (query ? alumnos.filter((a) => a.nombre.toLowerCase().includes(query)) : []), [query, alumnos]);
-  const ejerciciosMatch = useMemo(() => (query ? EXERCISES.filter((e) => e.nombre.toLowerCase().includes(query)).slice(0, 25) : []), [query, version]);
-  const plantillasMatch = useMemo(() => (query ? templates.filter((t) => t.nombre.toLowerCase().includes(query)) : []), [query, templates]);
+  const alumnosMatch = useMemo(() => (query ? alumnos.filter((a) => coincideBusqueda(a.nombre, query)) : []), [query, alumnos]);
+  const ejerciciosMatch = useMemo(() => (query ? EXERCISES.filter((e) => coincideBusqueda(e.nombre, query)).slice(0, 25) : []), [query, version]);
+  const plantillasMatch = useMemo(() => (query ? templates.filter((t) => coincideBusqueda(t.nombre, query)) : []), [query, templates]);
 
   const sinResultados = query && alumnosMatch.length === 0 && ejerciciosMatch.length === 0 && plantillasMatch.length === 0;
 
@@ -4308,7 +4562,7 @@ async function cargarGuardadoRemoto() {
 }
 async function guardarTodoRemoto(data) {
   try {
-    await fetch(SUPABASE_TABLE_URL, {
+    const res = await fetch(SUPABASE_TABLE_URL, {
       method: "PATCH",
       headers: {
         apikey: SUPABASE_KEY,
@@ -4318,8 +4572,18 @@ async function guardarTodoRemoto(data) {
       },
       body: JSON.stringify({ data, updated_at: new Date().toISOString() }),
     });
-  } catch {
+    // OJO: fetch() no tira error por códigos como 401/403/404 — hay que chequear res.ok a mano,
+    // si no, un guardado RECHAZADO por Supabase (ej: permisos) queda igual como "listo" y se
+    // pierde en silencio, aunque la app haya mostrado "Guardado".
+    if (!res.ok) {
+      let detalle = `HTTP ${res.status}`;
+      try { const cuerpo = await res.text(); if (cuerpo) detalle += ` — ${cuerpo.slice(0, 150)}`; } catch {}
+      return { ok: false, detalle };
+    }
+    return { ok: true };
+  } catch (e) {
     // sin internet: el cambio queda guardado localmente y se subirá en el próximo cambio con conexión
+    return { ok: false, detalle: `Sin red o bloqueado: ${e?.message || "error desconocido"}` };
   }
 }
 function cargarGuardado() {
@@ -4370,6 +4634,9 @@ function sanearAlumno(a) {
       // elija cuál ver.
       planesSecundarios: Array.isArray(a.planesSecundarios) ? a.planesSecundarios : [],
       competencia: a.competencia && typeof a.competencia === "object" ? a.competencia : { nombre: "", fecha: "" },
+      // Ahora puede haber varias competencias cargadas, no solo una — migramos automáticamente la
+      // vieja "competencia" (si tenía nombre cargado) a la primera de la lista, para no perderla.
+      competencias: Array.isArray(a.competencias) ? a.competencias : (a.competencia && a.competencia.nombre ? [{ id: uid(), nombre: a.competencia.nombre, fecha: a.competencia.fecha || "" }] : []),
       notasEjercicios: a.notasEjercicios && typeof a.notasEjercicios === "object" ? a.notasEjercicios : {},
       chat: Array.isArray(a.chat) ? a.chat : [],
       historialSesiones: Array.isArray(a.historialSesiones) ? a.historialSesiones : [],
@@ -4377,6 +4644,7 @@ function sanearAlumno(a) {
       // (así los alumnos que ya tenías cargados siguen visibles para todos, como antes). A partir
       // de ahora, un alumno nuevo queda privado del entrenador que lo crea, salvo que lo comparta.
       coachIds: Array.isArray(a.coachIds) ? a.coachIds : null,
+      plantelGrupoId: typeof a.plantelGrupoId === "string" ? a.plantelGrupoId : null,
       // Un alumno "de baja" no aparece en la lista normal, pero no se borra — conserva todo su
       // historial por si vuelve más adelante.
       activo: typeof a.activo === "boolean" ? a.activo : true,
@@ -4439,6 +4707,16 @@ export default function GymPlannerCoachApp() {
   // aparte (que no esté en ningún grupo tuyo, ej: le vendiste la app a otra persona) sigue sin ver
   // nada tuyo, salvo que se lo compartas puntualmente — el aislamiento de siempre no cambia.
   const [grupos, setGrupos] = useState(guardado.grupos || []);
+  // Subgrupos DENTRO de tu plantel (ej: "Plantel A", "Sub-18") — distinto de los "grupos" de
+  // arriba, que son de entrenadores. Cada alumno pertenece a uno solo, o a ninguno.
+  const [plantelGrupos, setPlantelGrupos] = useState(guardado.plantelGrupos || []);
+  const crearPlantelGrupo = (nombre) => setPlantelGrupos((prev) => [...prev, { id: uid(), nombre: nombre.trim() }]);
+  const renombrarPlantelGrupo = (id, nombre) => setPlantelGrupos((prev) => prev.map((g) => (g.id === id ? { ...g, nombre: nombre.trim() } : g)));
+  const eliminarPlantelGrupo = (id) => {
+    setPlantelGrupos((prev) => prev.filter((g) => g.id !== id));
+    setAlumnos((prev) => prev.map((a) => (a.plantelGrupoId === id ? { ...a, plantelGrupoId: null } : a)));
+  };
+  const asignarPlantelGrupo = (alumnoId, grupoId) => setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...a, plantelGrupoId: grupoId } : a)));
   const [videosGuardados, setVideosGuardados] = useState(guardado.videosGuardados || {});
   useEffect(() => { VIDEOS_GUARDADOS = videosGuardados; }, [videosGuardados]);
   const crearGrupo = (nombre, coachIds) => setGrupos((prev) => [...prev, { id: uid(), nombre, coachIds }]);
@@ -4458,6 +4736,7 @@ export default function GymPlannerCoachApp() {
   const [tab, setTab] = useState("dashboard");
   const [libVersion, setLibVersion] = useState(0);
   const [guardadoOk, setGuardadoOk] = useState(false);
+  const [errorGuardadoRemoto, setErrorGuardadoRemoto] = useState(null);
   // Esperamos a traer los datos compartidos de Supabase antes de dejar guardar,
   // así no pisamos lo que cargaron otros dispositivos con los datos iniciales de este.
   const [remotoListo, setRemotoListo] = useState(false);
@@ -4491,6 +4770,7 @@ export default function GymPlannerCoachApp() {
           if (typeof remoto.diasAvisoPlan === "number") setDiasAvisoPlan(remoto.diasAvisoPlan);
           if (Array.isArray(remoto.rolesPersonalizados)) setRolesPersonalizados(remoto.rolesPersonalizados);
           if (Array.isArray(remoto.grupos)) setGrupos(remoto.grupos);
+          if (Array.isArray(remoto.plantelGrupos)) setPlantelGrupos(remoto.plantelGrupos);
           if (remoto.videosGuardados && typeof remoto.videosGuardados === "object") setVideosGuardados(remoto.videosGuardados);
           if (Array.isArray(remoto.logActividad)) setLogActividad(remoto.logActividad);
           if (remoto.coaches) setCoaches(remoto.coaches);
@@ -4522,6 +4802,7 @@ export default function GymPlannerCoachApp() {
           if (typeof remoto.diasAvisoPlan === "number") setDiasAvisoPlan(remoto.diasAvisoPlan);
           if (Array.isArray(remoto.rolesPersonalizados)) setRolesPersonalizados(remoto.rolesPersonalizados);
           if (Array.isArray(remoto.grupos)) setGrupos(remoto.grupos);
+          if (Array.isArray(remoto.plantelGrupos)) setPlantelGrupos(remoto.plantelGrupos);
           if (remoto.videosGuardados && typeof remoto.videosGuardados === "object") setVideosGuardados(remoto.videosGuardados);
           if (Array.isArray(remoto.logActividad)) setLogActividad(remoto.logActividad);
           if (remoto.coaches) setCoaches(remoto.coaches);
@@ -4535,16 +4816,26 @@ export default function GymPlannerCoachApp() {
 
   useEffect(() => {
     if (!remotoListo) return; // todavía no trajimos lo compartido: no guardamos para no pisarlo
-    const data = { coachNombre, coaches, alumnos, templates, mensajeRecordatorio, modoPausa, diasAvisoPlan, rolesPersonalizados, logActividad, grupos, videosGuardados, _uidMax: _uid };
+    const data = { coachNombre, coaches, alumnos, templates, mensajeRecordatorio, modoPausa, diasAvisoPlan, rolesPersonalizados, logActividad, grupos, plantelGrupos, videosGuardados, _uidMax: _uid };
     guardarTodo(data); // copia local rápida (funciona siempre, con o sin internet)
+    let cancelado = false;
     if (remotoSincronizadoRef.current) {
-      guardarTodoRemoto(data); // solo subimos a la nube si confirmamos que arrancamos con la versión real compartida
+      // Guardado en la nube: si falla (aunque sea un error silencioso tipo permisos, que fetch()
+      // no detecta solo), lo mostramos como error real en vez de decir "Guardado" igual.
+      guardarTodoRemoto(data).then((r) => {
+        if (cancelado) return;
+        if (!r.ok) { setErrorGuardadoRemoto(r.detalle || "No se pudo guardar en la nube."); return; }
+        setErrorGuardadoRemoto(null);
+        setGuardadoOk(true);
+        setTimeout(() => setGuardadoOk(false), 1200);
+      });
+    } else {
+      setGuardadoOk(true);
+      setTimeout(() => setGuardadoOk(false), 1200);
     }
-    setGuardadoOk(true);
-    const t = setTimeout(() => setGuardadoOk(false), 1200);
-    return () => clearTimeout(t);
+    return () => { cancelado = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coachNombre, coaches, alumnos, templates, mensajeRecordatorio, modoPausa, diasAvisoPlan, rolesPersonalizados, logActividad, grupos, videosGuardados, remotoListo]);
+  }, [coachNombre, coaches, alumnos, templates, mensajeRecordatorio, modoPausa, diasAvisoPlan, rolesPersonalizados, logActividad, grupos, plantelGrupos, videosGuardados, remotoListo]);
 
   // Le avisa al coach por notificación push apenas aparece una alerta nueva (ánimo bajo, cumplimiento
   // bajo, etc.). Guardamos cuáles ya se avisaron en este dispositivo (no solo en la memoria de esta
@@ -4553,14 +4844,14 @@ export default function GymPlannerCoachApp() {
   if (alertasNotificadasRef.current === null) alertasNotificadasRef.current = cargarAlertasNotificadas();
   useEffect(() => {
     if (!remotoListo || !notificacionesActivas) return;
-    const alertasActuales = alumnos.flatMap((a) => generarAlertas(a).map((al) => ({ ...al, key: `${a.id}::${al.titulo}` })));
+    const alertasActuales = alumnos.flatMap((a) => generarAlertas(a).map((al) => ({ ...al, key: `${a.id}::${al.tipo}` })));
     const clavesActuales = new Set(alertasActuales.map((al) => al.key));
     let cambio = false;
     for (const al of alertasActuales) {
       if (!alertasNotificadasRef.current.has(al.key)) {
         alertasNotificadasRef.current.add(al.key);
         cambio = true;
-        enviarNotificacion("coach", al.titulo, al.detalle);
+        enviarNotificacion("coach", `${al.nombre} — ${al.tipo}`, al.detalle);
       }
     }
     // Si una alerta ya no está activa (se solucionó), la sacamos del historial — así, si el mismo
@@ -4711,7 +5002,14 @@ export default function GymPlannerCoachApp() {
     const iniciales = d.nombre.trim().split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase() || "??";
     const usuario = slugify(d.nombre.trim()) || `alumno${alumnos.length + 1}`;
     const password = Math.random().toString().slice(2, 6);
-    setAlumnos((prev) => [...prev, { id: uid(), nombre: d.nombre.trim(), usuario, password, edad: d.edad || "", peso: d.peso || "", altura: d.altura || "", objetivo: d.objetivo || "", deportes: d.deportes || "", nivel: d.nivel || "Intermedio", lesiones: "Ninguna", inicio: "", equipo: d.equipo || "", cumplimiento: 0, foto: iniciales, sesionesCompletadas: 0, plan: mkPlanVacio(), historialPeso: [], rmSentadilla: [], wellness: mkWellness(), historialPlanes: [], competencia: { nombre: "", fecha: "" }, notasEjercicios: {}, chat: [], coachIds: session?.coachId ? [session.coachId] : null }]);
+    // Si el coach eligió "usar el plan de..." al crearla, arranca con una copia de ese plan en vez
+    // de vacío — así no hay que crearla primero y recién después ir a buscarla para copiarle algo.
+    const planInicial = d.planBase ? clonarPlan(d.planBase) : mkPlanVacio();
+    // Pasa por sanearAlumno para que tenga TODOS los campos que espera el resto de la app (rutinas
+    // extra, meses archivados, etc.) — así una alumna recién creada nunca le falta algo que rompa
+    // la pantalla, ni ahora ni si se agregan más campos en el futuro.
+    const nuevo = sanearAlumno({ id: uid(), nombre: d.nombre.trim(), usuario, password, edad: d.edad || "", peso: d.peso || "", altura: d.altura || "", objetivo: d.objetivo || "", deportes: d.deportes || "", nivel: d.nivel || "Intermedio", lesiones: "Ninguna", inicio: "", equipo: d.equipo || "", cumplimiento: 0, foto: iniciales, sesionesCompletadas: 0, plan: planInicial, coachIds: session?.coachId ? [session.coachId] : null });
+    setAlumnos((prev) => [...prev, nuevo]);
     registrarActividad(`agregó a ${d.nombre.trim()}`);
     return { usuario, password };
   };
@@ -4751,6 +5049,7 @@ export default function GymPlannerCoachApp() {
     setAlumnos((prev) => prev.map((a) => (a.coachIds === null ? { ...a, coachIds: [coachIdQueReclama] } : a)));
   };
   const crearPlantilla = (tpl) => setTemplates((prev) => [...prev, tpl]);
+  const editarPlantilla = (id, nuevoPlan) => setTemplates((prev) => prev.map((t) => (t.id === id ? { ...t, plan: nuevoPlan } : t)));
   const sendMsg = (alumnoId, from, texto) => {
     setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...a, chat: [...a.chat, { from, texto, hora: "ahora" }] } : a)));
     if (from === "coach") {
@@ -4783,8 +5082,8 @@ export default function GymPlannerCoachApp() {
     // plantillas personalizadas, solo puede armar las suyas.
     const templatesVisibles = templates.filter((t) => t.coachIds == null || t.coachIds.includes(session.coachId));
     if (tab === "dashboard") body = <CoachDashboard alumnos={alumnosVisibles} goAlumnos={(id) => { setTab("alumnos"); setSelectedCoachAlumno(id); }} coachNombre={coachNombre} onUpdateCoach={setCoachNombre} coaches={coaches} onAddCoach={addCoach} onRemoveCoach={removeCoach} mensajeRecordatorio={mensajeRecordatorio} onUpdateMensajeRecordatorio={setMensajeRecordatorio} notificacionesActivas={notificacionesActivas} onToggleNotificaciones={setNotificacionesActivas} modoPausa={modoPausa} onToggleModoPausa={setModoPausa} diasAvisoPlan={diasAvisoPlan} onSetDiasAvisoPlan={setDiasAvisoPlan} coachId={session?.coachId} onCambiarPassword={cambiarPasswordCoach} onSetRecoveryPin={setRecoveryPin} onSetTelefono={setTelefonoCoach} onReclamarAlumnos={reclamarAlumnosSinDueño} logActividad={logActividad} grupos={grupos} onCrearGrupo={crearGrupo} onEliminarGrupo={eliminarGrupo} />;
-    else if (tab === "alumnos") body = <CoachAlumnos alumnos={alumnosVisibles} selectedId={selectedCoachAlumno} setSelectedId={setSelectedCoachAlumno} templates={templatesVisibles} onAsignarPlantilla={asignarPlantilla} onCopiarPlan={copiarPlan} onCopiarVersionAOtro={copiarVersionAOtro} onAgregarPlanSecundario={agregarPlanSecundario} onQuitarPlanSecundario={quitarPlanSecundario} onGuardarComoPlantilla={guardarComoPlantilla} onUpdatePlan={updatePlan} onUpdateAlumno={updateAlumno} onDeleteAlumno={deleteAlumno} onAddAlumno={addAlumno} onSendMsg={sendMsg} onGuardarVersion={guardarVersion} onRestaurarVersion={restaurarVersion} onGuardarHistorialRM={agregarHistorialRM} onAddToLibrary={addCustomExercise} version={libVersion} coaches={coaches} coachIdActual={session.coachId} onCompartirAlumno={compartirAlumnoConCoach} onDejarDeCompartir={dejarDeCompartirAlumno} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={agregarRolPersonalizado} grupos={grupos} onCompartirGrupo={compartirAlumnoConGrupo} />;
-    else if (tab === "plantillas") body = <CoachPlantillas templates={templatesVisibles} alumnos={alumnosVisibles} onAsignar={asignarPlantilla} onCrearPlantilla={crearPlantilla} onAddToLibrary={addCustomExercise} version={libVersion} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={agregarRolPersonalizado} coachIdActual={session.coachId} />;
+    else if (tab === "alumnos") body = <CoachAlumnos alumnos={alumnosVisibles} selectedId={selectedCoachAlumno} setSelectedId={setSelectedCoachAlumno} templates={templatesVisibles} onAsignarPlantilla={asignarPlantilla} onCopiarPlan={copiarPlan} onCopiarVersionAOtro={copiarVersionAOtro} onAgregarPlanSecundario={agregarPlanSecundario} onQuitarPlanSecundario={quitarPlanSecundario} onGuardarComoPlantilla={guardarComoPlantilla} onUpdatePlan={updatePlan} onUpdateAlumno={updateAlumno} onDeleteAlumno={deleteAlumno} onAddAlumno={addAlumno} onSendMsg={sendMsg} onGuardarVersion={guardarVersion} onRestaurarVersion={restaurarVersion} onGuardarHistorialRM={agregarHistorialRM} onAddToLibrary={addCustomExercise} version={libVersion} coaches={coaches} coachIdActual={session.coachId} onCompartirAlumno={compartirAlumnoConCoach} onDejarDeCompartir={dejarDeCompartirAlumno} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={agregarRolPersonalizado} grupos={grupos} onCompartirGrupo={compartirAlumnoConGrupo} plantelGrupos={plantelGrupos} onCrearPlantelGrupo={crearPlantelGrupo} onRenombrarPlantelGrupo={renombrarPlantelGrupo} onEliminarPlantelGrupo={eliminarPlantelGrupo} onAsignarPlantelGrupo={asignarPlantelGrupo} />;
+    else if (tab === "plantillas") body = <CoachPlantillas templates={templatesVisibles} alumnos={alumnosVisibles} onAsignar={asignarPlantilla} onCrearPlantilla={crearPlantilla} onEditarPlantilla={editarPlantilla} onAddToLibrary={addCustomExercise} version={libVersion} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={agregarRolPersonalizado} coachIdActual={session.coachId} />;
     else if (tab === "ejercicios") body = <CoachEjercicios onAddExercise={addCustomExercise} version={libVersion} onToggleFav={toggleFavorito} onEditVideo={editarVideoLibreria} />;
     else body = <BuscarGlobal alumnos={alumnosVisibles} templates={templatesVisibles} version={libVersion} onGoAlumno={(id) => { setTab("alumnos"); setSelectedCoachAlumno(id); }} onGoPlantillas={() => setTab("plantillas")} />;
   } else if (!athlete) {
@@ -4807,23 +5106,16 @@ export default function GymPlannerCoachApp() {
 
   // Detecta si estamos en una pantalla de celular real, para que ahí la app ocupe todo
   // (sin el marco decorativo de celular que solo tiene sentido viéndolo desde una compu)
-  const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.screen.width <= 640 : false));
-  useEffect(() => {
-    const check = () => setIsMobile(window.screen.width <= 640);
-    window.addEventListener("resize", check);
-    return () => window.removeEventListener("resize", check);
-  }, []);
-
   const appShell = (
-    <div style={{ width: isMobile ? "100%" : 375, height: isMobile ? "100%" : 720, background: "#121017", borderRadius: isMobile ? 0 : 36, border: isMobile ? "none" : "8px solid #1C1A24", boxShadow: isMobile ? "none" : "0 30px 60px rgba(0,0,0,0.5)", overflow: "hidden", display: "flex", flexDirection: "column", position: "relative", zIndex: 1 }}>
+    <div style={{ width: "100%", height: "100%", background: "#121017", borderRadius: 0, border: "none", boxShadow: "none", overflow: "hidden", display: "flex", flexDirection: "column", position: "relative", zIndex: 1 }}>
       {/* Patrón sutil de siluetas de gimnasio detrás del contenido, dentro de la app */}
       <div style={{ position: "absolute", inset: 0, backgroundImage: `url(${GYM_PATTERN_B64})`, backgroundRepeat: "repeat", backgroundSize: "150px 150px", opacity: 0.06, pointerEvents: "none", zIndex: 0 }} />
       {session && (
         <button onClick={logout} className="font-body" style={{ position: "absolute", top: "calc(14px + env(safe-area-inset-top, 0px))", right: 14, zIndex: 5, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 999, color: "#8B8698", fontSize: 10, fontWeight: 700, padding: "5px 10px", cursor: "pointer" }}>Cerrar sesión</button>
       )}
       {session && session.role === "coach" && (
-        <div className="font-body" style={{ position: "absolute", top: "calc(16px + env(safe-area-inset-top, 0px))", left: 14, right: 90, zIndex: 4, fontSize: 9, color: !remotoSincronizado ? "#FF6B35" : guardadoOk ? "#33D6A6" : "#4A4658", transition: "color 0.3s", pointerEvents: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {!remotoSincronizado ? `⚠ Sin conexión con la nube${detalleErrorSync ? ` · ${detalleErrorSync}` : ""}` : guardadoOk ? "✓ Guardado" : "●"}
+        <div className="font-body" style={{ position: "absolute", top: "calc(16px + env(safe-area-inset-top, 0px))", left: 14, right: 90, zIndex: 4, fontSize: 9, color: !remotoSincronizado || errorGuardadoRemoto ? "#FF6B35" : guardadoOk ? "#33D6A6" : "#4A4658", transition: "color 0.3s", pointerEvents: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {!remotoSincronizado ? `⚠ Sin conexión con la nube${detalleErrorSync ? ` · ${detalleErrorSync}` : ""}` : errorGuardadoRemoto ? `⚠ No se guardó en la nube · ${errorGuardadoRemoto}` : guardadoOk ? "✓ Guardado" : "●"}
         </div>
       )}
       <div style={{ flex: 1, overflowY: "auto", paddingBottom: 8, paddingTop: "env(safe-area-inset-top, 0px)", position: "relative", zIndex: 1 }}>{body}</div>
@@ -4846,16 +5138,12 @@ export default function GymPlannerCoachApp() {
     </div>
   );
 
-  // Una sola estructura de siempre (en vez de dos ramas distintas para celular/compu) — así,
-  // si "isMobile" llega a cambiar de valor mientras escribís (por ejemplo, el navegador dispara
-  // un evento de "resize" al abrirse el teclado del celular), React solo actualiza el estilo de
-  // este mismo div, en vez de reconstruir toda la pantalla de cero — que era lo que te perdía
-  // el scroll y te tiraba para abajo de todo mientras cargabas series y repeticiones.
+  // Antes acá se armaba distinto para celular y para compu (una versión angosta "flotando" con
+  // marco, como si fuera un celular dibujado en el medio de la pantalla). Ahora usamos siempre
+  // el mismo tamaño completo en las dos — así en la compu también se ve entera, ocupando toda
+  // la ventana, igual que en el celular.
   return (
-    <div style={isMobile
-      ? { width: "100vw", height: "100dvh", background: "#0B0A0F", overflow: "hidden" }
-      : { minHeight: "100vh", background: "#0B0A0F", display: "flex", flexDirection: "column", alignItems: "center", padding: 24, gap: 14, position: "relative", overflow: "hidden" }
-    }>
+    <div style={{ width: "100vw", height: "100dvh", background: "#0B0A0F", overflow: "hidden" }}>
       {FONTS}
       {appShell}
       <VideoModal />
