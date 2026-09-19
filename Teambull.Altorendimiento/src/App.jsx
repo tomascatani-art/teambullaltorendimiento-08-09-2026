@@ -2532,6 +2532,7 @@ function CoachAlumnos({ alumnos, selectedId, setSelectedId, templates, onAsignar
   const [verBajas, setVerBajas] = useState(false);
   const [filtroGrupo, setFiltroGrupo] = useState("todos"); // "todos" | id de plantelGrupo | "sin-grupo"
   const [editandoGrupos, setEditandoGrupos] = useState(false);
+  const [gestionandoMiembrosDe, setGestionandoMiembrosDe] = useState(null);
   const [seccionesExpandidas, setSeccionesExpandidas] = useState(() => new Set());
   const [nombreGrupoNuevo, setNombreGrupoNuevo] = useState("");
   const [renombrandoId, setRenombrandoId] = useState(null);
@@ -2569,18 +2570,36 @@ function CoachAlumnos({ alumnos, selectedId, setSelectedId, templates, onAsignar
           {editandoGrupos && (
             <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 12, padding: 12 }}>
               {plantelGrupos.map((g) => (
-                <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                  {renombrandoId === g.id ? (
-                    <>
-                      <input value={nombreRenombrar} onChange={(e) => setNombreRenombrar(e.target.value)} className="font-body" style={{ flex: 1, background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "6px 8px", fontSize: 11, boxSizing: "border-box" }} />
-                      <button onClick={() => { if (nombreRenombrar.trim()) onRenombrarPlantelGrupo(g.id, nombreRenombrar.trim()); setRenombrandoId(null); }} className="font-body" style={{ background: "#7DD6C0", border: "none", borderRadius: 6, color: "#0B2A2E", fontWeight: 700, fontSize: 10, padding: "6px 10px", cursor: "pointer" }}>OK</button>
-                    </>
-                  ) : (
-                    <>
-                      <span className="font-body" style={{ flex: 1, color: "#F4F1EA", fontSize: 12 }}>{g.nombre}</span>
-                      <button onClick={() => { setRenombrandoId(g.id); setNombreRenombrar(g.nombre); }} className="font-body" style={{ background: "none", border: "none", color: "#7DD6C0", fontSize: 10, cursor: "pointer" }}>Cambiar nombre</button>
-                      <button onClick={() => { if (filtroGrupo === g.id) setFiltroGrupo("todos"); onEliminarPlantelGrupo(g.id); }} className="font-body" style={{ background: "none", border: "none", color: "#E85D5D", fontSize: 10, cursor: "pointer" }}>Borrar</button>
-                    </>
+                <div key={g.id} style={{ marginBottom: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    {renombrandoId === g.id ? (
+                      <>
+                        <input value={nombreRenombrar} onChange={(e) => setNombreRenombrar(e.target.value)} className="font-body" style={{ flex: 1, background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "6px 8px", fontSize: 11, boxSizing: "border-box" }} />
+                        <button onClick={() => { if (nombreRenombrar.trim()) onRenombrarPlantelGrupo(g.id, nombreRenombrar.trim()); setRenombrandoId(null); }} className="font-body" style={{ background: "#7DD6C0", border: "none", borderRadius: 6, color: "#0B2A2E", fontWeight: 700, fontSize: 10, padding: "6px 10px", cursor: "pointer" }}>OK</button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-body" style={{ flex: 1, color: "#F4F1EA", fontSize: 12 }}>{g.nombre}</span>
+                        <button onClick={() => setGestionandoMiembrosDe(gestionandoMiembrosDe === g.id ? null : g.id)} className="font-body" style={{ background: "none", border: "none", color: "#FF6B35", fontSize: 10, cursor: "pointer" }}>👥 Alumnos</button>
+                        <button onClick={() => { setRenombrandoId(g.id); setNombreRenombrar(g.nombre); }} className="font-body" style={{ background: "none", border: "none", color: "#7DD6C0", fontSize: 10, cursor: "pointer" }}>Cambiar nombre</button>
+                        <button onClick={() => { if (filtroGrupo === g.id) setFiltroGrupo("todos"); onEliminarPlantelGrupo(g.id); }} className="font-body" style={{ background: "none", border: "none", color: "#E85D5D", fontSize: 10, cursor: "pointer" }}>Borrar</button>
+                      </>
+                    )}
+                  </div>
+                  {gestionandoMiembrosDe === g.id && (
+                    <div style={{ background: "#0F0E13", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginTop: 6 }}>
+                      <div className="font-body" style={{ color: "#8B8698", fontSize: 9, marginBottom: 6 }}>Tocá un nombre para sumarlo o sacarlo de "{g.nombre}":</div>
+                      {alumnos.filter((a) => a.activo !== false).map((a) => {
+                        const yaEsta = a.plantelGrupoId === g.id;
+                        return (
+                          <button key={a.id} onClick={() => onAsignarPlantelGrupo(a.id, yaEsta ? null : g.id)} className="font-body" style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: yaEsta ? "rgba(125,214,192,0.12)" : "#1C1A24", border: yaEsta ? "1px solid #7DD6C0" : "1px solid #322E3D", borderRadius: 8, padding: 8, cursor: "pointer", textAlign: "left", marginBottom: 4 }}>
+                            <span style={{ color: yaEsta ? "#7DD6C0" : "#8B8698", fontSize: 13, width: 16 }}>{yaEsta ? "✓" : ""}</span>
+                            <span style={{ color: "#F4F1EA", fontSize: 12, flex: 1 }}>{a.nombre}</span>
+                            {a.plantelGrupoId && a.plantelGrupoId !== g.id && <span style={{ color: "#8B8698", fontSize: 9 }}>en {plantelGrupos.find((x) => x.id === a.plantelGrupoId)?.nombre}</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
               ))}
