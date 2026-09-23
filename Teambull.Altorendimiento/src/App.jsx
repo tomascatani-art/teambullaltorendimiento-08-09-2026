@@ -738,6 +738,9 @@ const mkBloque = (nombre, ejercicios = []) => ({ id: uid(), nombre, ejercicios }
 const mkDia = (nombre, bloques = [], diaSemana = "") => ({ id: uid(), nombre, bloques, diaSemana });
 const mkWarm = (nombre, series = "", reps = "", video = null) => ({ id: uid(), nombre, series, reps, video });
 const DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+// Frases rápidas para que el/la alumno/a arme su nota con un toque, sin tener que escribir
+// siempre lo mismo. Igual puede escribir libremente en el mismo cuadro, o combinar ambas cosas.
+const NOTAS_RAPIDAS = ["Me sentí bien 💪", "Me costó 😓", "Me salió fácil 😌", "Con energía ⚡", "Cansado/a 🥱", "Dolor o molestia ⚠️"];
 const todayISO = () => new Date().toISOString().slice(0, 10);
 // Racha de constancia: cuántos días de entrenamiento PROGRAMADOS seguidos vino cumpliendo, sin
 // cortarse. Solo cuenta los días que realmente le tocaba entrenar (según el día de la semana
@@ -1406,6 +1409,36 @@ const clonarPlan = (p) => ({
   rm: p.rm.map((r) => ({ ...r, id: uid() })),
 });
 
+// Busca el 1RM base cargado (en la tabla de RM del plan) para un ejercicio por nombre —
+// sin importar mayúsculas ni espacios de más.
+function buscarRMBase(rmList, nombreEjercicio) {
+  if (!rmList || !nombreEjercicio) return null;
+  const norm = (s) => (s || "").trim().toLowerCase();
+  const encontrado = rmList.find((r) => norm(r.ejercicio) === norm(nombreEjercicio) && r.valor);
+  if (!encontrado) return null;
+  const val = parseFloat(String(encontrado.valor).replace(",", "."));
+  return Number.isFinite(val) && val > 0 ? val : null;
+}
+
+// Extrae el primer porcentaje que aparezca en el texto de prescripción (ej. "80% · RIR 2" -> 80).
+function extraerPorcentaje(texto) {
+  if (!texto) return null;
+  const m = String(texto).match(/(\d{1,3}(?:[.,]\d+)?)\s*%/);
+  if (!m) return null;
+  const val = parseFloat(m[1].replace(",", "."));
+  return Number.isFinite(val) && val > 0 ? val : null;
+}
+
+// Si la prescripción del ejercicio trae un % (ej. "80% · RIR 2") Y hay un RM base cargado para
+// ese mismo ejercicio en la tabla de RM del plan, calcula el peso a usar — redondeado a la media
+// unidad más cercana, que es lo práctico para cargar discos/mancuernas.
+function pesoSugerido(rmList, nombreEjercicio, textoRM) {
+  const pct = extraerPorcentaje(textoRM);
+  const base = buscarRMBase(rmList, nombreEjercicio);
+  if (!pct || !base) return null;
+  return Math.round(((base * pct) / 100) * 2) / 2;
+}
+
 /* ---------- Plantillas base ---------- */
 const TEMPLATES_INICIAL = [
   { id: "t1", nombre: "Hipertrofia — Push Pull Legs", categoria: "Hipertrofia", plan: {
@@ -1802,7 +1835,7 @@ function Stepper({ value, onChange, step = 1, min = 0, suffix = "" }) {
 /* =========================================================
    ARMADOR DE EJERCICIOS
    ========================================================= */
-function ExercisePicker({ onPick, onClose, version }) {
+function ExercisePicker({ onPick, onClose, version, onAddNew }) {
   const [busqueda, setBusqueda] = useState("");
   const [filtro, setFiltro] = useState("Todos");
   const [limite, setLimite] = useState(60);
@@ -1819,16 +1852,27 @@ function ExercisePicker({ onPick, onClose, version }) {
         <span className="font-body" style={{ color: "#FF6B35", fontSize: 11, fontWeight: 700 }}>Elegir de la biblioteca</span>
         <button onClick={onClose} style={{ background: "none", border: "none", color: "#8B8698", cursor: "pointer", fontSize: 13 }}>✕</button>
       </div>
-      <input value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder="Buscar..." className="font-body" style={{ width: "100%", background: "#26232F", border: "none", borderRadius: 8, color: "#F4F1EA", padding: "7px 10px", fontSize: 12, marginBottom: 8, boxSizing: "border-box" }} />
+      <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+        <input value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder="Buscar o escribir ejercicio nuevo..." className="font-body" style={{ flex: 1, minWidth: 0, background: "#26232F", border: "none", borderRadius: 8, color: "#F4F1EA", padding: "7px 10px", fontSize: 12, boxSizing: "border-box" }} />
+        {onAddNew && (
+          <button
+            onClick={() => { if (busqueda.trim()) { onAddNew(busqueda.trim()); setBusqueda(""); } }}
+            disabled={!busqueda.trim()}
+            title={busqueda.trim() ? `Agregar "${busqueda.trim()}" como ejercicio nuevo` : "Escribí un nombre para agregarlo"}
+            className="font-body"
+            style={{ flexShrink: 0, background: busqueda.trim() ? "#7DD6C0" : "#26232F", border: "1px solid #322E3D", borderRadius: 8, color: busqueda.trim() ? "#0B2A2E" : "#4A4658", fontWeight: 700, fontSize: 15, padding: "0 14px", cursor: busqueda.trim() ? "pointer" : "default" }}
+          >+</button>
+        )}
+      </div>
       <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 8 }}>
         {CATEGORIAS.map((c) => <Pill key={c} active={filtro === c} onClick={() => setFiltro(c)}>{c}</Pill>)}
       </div>
-      <div className="font-body" style={{ fontSize: 9, color: "#6B6678", marginBottom: 6 }}>{listaCompleta.length} resultados{listaCompleta.length > lista.length ? ` · mostrando ${lista.length}` : ""}</div>
+      <div className="font-body" style={{ fontSize: 9, color: "#6B6678", marginBottom: 6 }}>{listaCompleta.length} resultados{listaCompleta.length > lista.length ? ` · mostrando ${lista.length}` : ""}{onAddNew ? " · no está lo que buscás? tocá el + de arriba" : ""}</div>
       <div style={{ maxHeight: 220, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
         {lista.map((e) => {
           const sinVideo = videoEfectivo(e).includes("youtube.com/results");
           return (
-            <button key={e.id} onClick={() => onPick(e)} className="font-body" style={{ display: "flex", alignItems: "center", gap: 8, textAlign: "left", background: "#26232F", border: "none", borderRadius: 6, color: "#F4F1EA", fontSize: 11, padding: "7px 9px", cursor: "pointer" }}>
+            <button key={e.id} onClick={() => { onPick(e); setBusqueda(""); }} className="font-body" style={{ display: "flex", alignItems: "center", gap: 8, textAlign: "left", background: "#26232F", border: "none", borderRadius: 6, color: "#F4F1EA", fontSize: 11, padding: "7px 9px", cursor: "pointer" }}>
               <span style={{ fontSize: 14 }}>{e.emoji}</span>
               <span style={{ flex: 1 }}>{e.nombre}</span>
               {sinVideo && <span title="Sin video puntual cargado" style={{ color: "#FF6B35", fontSize: 10 }}>⚠</span>}
@@ -1966,11 +2010,10 @@ function FilaEjercicio({ fila, onChange, onRemove, onAddToLibrary, rolesPersonal
 
 function BloqueEditor({ bloque, onChange, onRemove, version, onAddToLibrary, rolesPersonalizados, onAgregarRolPersonalizado }) {
   const [picking, setPicking] = useState(false);
-  const [custom, setCustom] = useState("");
   const setFila = (f) => onChange({ ...bloque, ejercicios: bloque.ejercicios.map((x) => (x.id === f.id ? f : x)) });
   const removeFila = (id) => onChange({ ...bloque, ejercicios: bloque.ejercicios.filter((x) => x.id !== id) });
-  const addFromLibrary = (ex) => { onChange({ ...bloque, ejercicios: [...bloque.ejercicios, mkRow(ex.nombre, { video: videoEfectivo(ex), emoji: ex.emoji })] }); setPicking(false); };
-  const addCustom = () => { if (!custom.trim()) return; onChange({ ...bloque, ejercicios: [...bloque.ejercicios, mkRow(custom.trim())] }); setCustom(""); };
+  const addFromLibrary = (ex) => { onChange({ ...bloque, ejercicios: [...bloque.ejercicios, mkRow(ex.nombre, { video: videoEfectivo(ex), emoji: ex.emoji })] }); };
+  const addNewFromPicker = (nombre) => { onChange({ ...bloque, ejercicios: [...bloque.ejercicios, mkRow(nombre)] }); };
   // Mueve un ejercicio una posición hacia arriba o abajo dentro del bloque, sin borrar ni perder nada.
   const moverFila = (index, direccion) => {
     const nuevoIndex = index + direccion;
@@ -2004,14 +2047,10 @@ function BloqueEditor({ bloque, onChange, onRemove, version, onAddToLibrary, rol
         </div>
       ))}
       {picking ? (
-        <ExercisePicker onPick={addFromLibrary} onClose={() => setPicking(false)} version={version} />
+        <ExercisePicker onPick={addFromLibrary} onClose={() => setPicking(false)} version={version} onAddNew={addNewFromPicker} />
       ) : (
-        <button onClick={() => setPicking(true)} className="font-body" style={{ width: "100%", background: "rgba(255,107,53,0.1)", border: "1px dashed #FF6B35", borderRadius: 8, color: "#FF6B35", fontWeight: 700, fontSize: 10, padding: 7, cursor: "pointer", marginBottom: 6 }}>+ De la biblioteca</button>
+        <button onClick={() => setPicking(true)} className="font-body" style={{ width: "100%", background: "rgba(255,107,53,0.1)", border: "1px dashed #FF6B35", borderRadius: 8, color: "#FF6B35", fontWeight: 700, fontSize: 10, padding: 7, cursor: "pointer", marginBottom: 6 }}>+ Agregar ejercicio</button>
       )}
-      <div style={{ display: "flex", gap: 6 }}>
-        <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="O escribí un ejercicio propio..." className="font-body" style={{ flex: 1, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, color: "#F4F1EA", padding: "6px 8px", fontSize: 11, boxSizing: "border-box" }} />
-        <button onClick={addCustom} className="font-body" style={{ background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, color: "#F4F1EA", padding: "0 12px", cursor: "pointer", fontSize: 11 }}>+</button>
-      </div>
     </div>
   );
 }
@@ -2091,18 +2130,29 @@ function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibr
 
       <div className="font-body" style={{ fontSize: 11, color: "#7DD6C0", fontWeight: 700, marginBottom: 8 }}>ENTRADA EN CALOR</div>
       {plan.calentamiento.map((w) => (
-        <div key={w.id} style={{ display: "flex", alignItems: "center", gap: 6, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 6 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <input value={w.nombre} onChange={(e) => updateWarm(w.id, { nombre: e.target.value })} className="font-body" style={{ width: "100%", background: "transparent", border: "none", color: "#F4F1EA", fontSize: 11 }} />
-            {w.video && <button onClick={() => openVideo(w.video)} style={{ background: "none", border: "none", color: "#7DD6C0", fontSize: 9, cursor: "pointer", padding: 0 }}>▶ ver video</button>}
+        <div key={w.id} style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <input value={w.nombre} onChange={(e) => updateWarm(w.id, { nombre: e.target.value })} className="font-body" style={{ width: "100%", background: "transparent", border: "none", color: "#F4F1EA", fontSize: 11 }} />
+            </div>
+            <MiniInput label="Series" value={w.series} onChange={(v) => updateWarm(w.id, { series: v })} />
+            <MiniInput label="Reps" value={w.reps} onChange={(v) => updateWarm(w.id, { reps: v })} />
+            <button onClick={() => removeWarm(w.id)} style={{ background: "none", border: "none", color: "#8B8698", cursor: "pointer", flexShrink: 0 }}>✕</button>
           </div>
-          <MiniInput label="Series" value={w.series} onChange={(v) => updateWarm(w.id, { series: v })} />
-          <MiniInput label="Reps" value={w.reps} onChange={(v) => updateWarm(w.id, { reps: v })} />
-          <button onClick={() => removeWarm(w.id)} style={{ background: "none", border: "none", color: "#8B8698", cursor: "pointer", flexShrink: 0 }}>✕</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
+            <input
+              value={w.video || ""}
+              onChange={(e) => { const v = e.target.value.trim(); updateWarm(w.id, { video: v || null }); }}
+              placeholder="Pegar link de YouTube (opcional)"
+              className="font-body"
+              style={{ flex: 1, minWidth: 0, background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "5px 8px", fontSize: 10, boxSizing: "border-box" }}
+            />
+            {w.video && <button onClick={() => openVideo(w.video)} className="font-body" style={{ background: "none", border: "none", color: "#7DD6C0", fontSize: 9, fontWeight: 700, cursor: "pointer", padding: 0, whiteSpace: "nowrap" }}>▶ ver video</button>}
+          </div>
         </div>
       ))}
       {warmPicking ? (
-        <ExercisePicker onPick={(ex) => { addWarm(ex.nombre, videoEfectivo(ex)); setWarmPicking(false); }} onClose={() => setWarmPicking(false)} version={version} />
+        <ExercisePicker onPick={(ex) => { addWarm(ex.nombre, videoEfectivo(ex)); }} onClose={() => setWarmPicking(false)} version={version} onAddNew={(nombre) => { addWarm(nombre); }} />
       ) : (
         <div style={{ display: "flex", gap: 6, marginBottom: 20 }}>
           <button onClick={() => setWarmPicking(true)} className="font-body" style={{ flex: 1, background: "rgba(125,214,192,0.1)", border: "1px dashed #7DD6C0", borderRadius: 8, color: "#7DD6C0", fontWeight: 700, fontSize: 10, padding: 8, cursor: "pointer" }}>+ Buscar en la biblioteca (con video)</button>
@@ -2111,12 +2161,16 @@ function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibr
       )}
 
       <div className="font-body" style={{ fontSize: 11, color: "#FF6B35", fontWeight: 700, marginBottom: 4 }}>DÍAS DE ENTRENAMIENTO</div>
-      <div className="font-body" style={{ fontSize: 9, color: "#6B6678", marginBottom: 10 }}>Arrastrá el ⠿ para reordenar. Elegí un día de la semana para que el nombre pase a ser ese (ej: "Martes" en vez de "DÍA 1") — o tocá el nombre directamente para escribir el que quieras.</div>
+      <div className="font-body" style={{ fontSize: 9, color: "#6B6678", marginBottom: 10 }}>Tocá ▲▼ para subir o bajar un día completo (o arrastrá el ⠿ en pantallas grandes). Elegí un día de la semana para que el nombre pase a ser ese (ej: "Martes" en vez de "DÍA 1") — o tocá el nombre directamente para escribir el que quieras.</div>
       {plan.dias.map((d, idx) => (
         <div key={d.id} draggable onDragStart={() => setDragIdx(idx)} onDragOver={(e) => e.preventDefault()} onDrop={() => { moverDia(dragIdx, idx); setDragIdx(null); }}
           style={{ border: dragIdx === idx ? "1px dashed #FF6B35" : "1px solid transparent", borderRadius: 10, opacity: dragIdx !== null && dragIdx !== idx ? 0.85 : 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
             <span style={{ cursor: "grab", color: "#8B8698", fontSize: 15 }}>⠿</span>
+            <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+              <button onClick={() => moverDia(idx, idx - 1)} disabled={idx === 0} className="font-body" style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 4, color: idx === 0 ? "#3A3745" : "#F4F1EA", fontSize: 9, padding: "1px 6px", cursor: idx === 0 ? "default" : "pointer", lineHeight: 1.4 }} title="Subir este día">▲</button>
+              <button onClick={() => moverDia(idx, idx + 1)} disabled={idx === plan.dias.length - 1} className="font-body" style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 4, color: idx === plan.dias.length - 1 ? "#3A3745" : "#F4F1EA", fontSize: 9, padding: "1px 6px", cursor: idx === plan.dias.length - 1 ? "default" : "pointer", lineHeight: 1.4 }} title="Bajar este día">▼</button>
+            </div>
             <select value={d.diaSemana || ""} onChange={(e) => { const nuevoDia = e.target.value; updateDia(d.id, { ...d, diaSemana: nuevoDia, nombre: nuevoDia || d.nombre }); }} className="font-body" style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 6, color: "#7DD6C0", fontSize: 10, padding: "4px 6px" }}>
               <option value="">Sin día fijo</option>
               {DIAS_SEMANA.map((ds) => <option key={ds} value={ds}>{ds}</option>)}
@@ -2131,9 +2185,13 @@ function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibr
       </div>
 
       <div className="font-body" style={{ fontSize: 11, color: "#8B8698", fontWeight: 700, marginBottom: 8 }}>VALORES DE RM</div>
+      <div className="font-body" style={{ fontSize: 9, color: "#6B6678", marginBottom: 8 }}>Usá el mismo nombre exacto que el ejercicio (elegilo de la lista que aparece al escribir) para que, si le ponés un % en el ejercicio (ej: "80% · RIR 2"), la app le calcule el peso solo/a al alumno/a durante el entrenamiento.</div>
+      <datalist id="rm-nombres-ejercicios">
+        {[...new Set(plan.dias.flatMap((d) => d.bloques.flatMap((b) => b.ejercicios.map((f) => f.nombre))).filter(Boolean))].map((n) => <option key={n} value={n} />)}
+      </datalist>
       {plan.rm.map((r) => (
         <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 6, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 6 }}>
-          <input value={r.ejercicio} onChange={(e) => updateRm(r.id, { ejercicio: e.target.value })} placeholder="Ejercicio" className="font-body" style={{ flex: 1, background: "transparent", border: "none", color: "#F4F1EA", fontSize: 11, minWidth: 0 }} />
+          <input value={r.ejercicio} onChange={(e) => updateRm(r.id, { ejercicio: e.target.value })} list="rm-nombres-ejercicios" placeholder="Ejercicio" className="font-body" style={{ flex: 1, background: "transparent", border: "none", color: "#F4F1EA", fontSize: 11, minWidth: 0 }} />
           <input
             value={r.valor}
             onChange={(e) => updateRm(r.id, { valor: e.target.value })}
@@ -2526,7 +2584,7 @@ function NuevaAlumnaForm({ onCrear, onCancelar, alumnos }) {
   );
 }
 
-function CoachAlumnos({ alumnos, selectedId, setSelectedId, templates, onAsignarPlantilla, onCopiarPlan, onCopiarVersionAOtro, onGuardarComoPlantilla, onUpdatePlan, onUpdateAlumno, onDeleteAlumno, onAddAlumno, onSendMsg, onGuardarVersion, onRestaurarVersion, onGuardarHistorialRM, onAddToLibrary, version, coaches, coachIdActual, onCompartirAlumno, onDejarDeCompartir, rolesPersonalizados, onAgregarRolPersonalizado, grupos, onCompartirGrupo, onAgregarPlanSecundario, onQuitarPlanSecundario, plantelGrupos, onCrearPlantelGrupo, onRenombrarPlantelGrupo, onEliminarPlantelGrupo, onAsignarPlantelGrupo }) {
+function CoachAlumnos({ alumnos, selectedId, setSelectedId, templates, onAsignarPlantilla, onCopiarPlan, onCopiarVersionAOtro, onCopiarSoloCalentamiento, onGuardarComoPlantilla, onUpdatePlan, onUpdateAlumno, onDeleteAlumno, onAddAlumno, onSendMsg, onGuardarVersion, onRestaurarVersion, onGuardarHistorialRM, onAddToLibrary, version, coaches, coachIdActual, onCompartirAlumno, onDejarDeCompartir, rolesPersonalizados, onAgregarRolPersonalizado, grupos, onCompartirGrupo, onAgregarPlanSecundario, onQuitarPlanSecundario, plantelGrupos, onCrearPlantelGrupo, onRenombrarPlantelGrupo, onEliminarPlantelGrupo, onAsignarPlantelGrupo }) {
   const [creando, setCreando] = useState(false);
   const [credencialesNuevas, setCredencialesNuevas] = useState(null);
   const [verBajas, setVerBajas] = useState(false);
@@ -2569,6 +2627,10 @@ function CoachAlumnos({ alumnos, selectedId, setSelectedId, templates, onAsignar
           )}
           {editandoGrupos && (
             <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 12, padding: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <span className="font-body" style={{ color: "#8B8698", fontWeight: 700, fontSize: 11 }}>EDITANDO GRUPOS</span>
+                <button onClick={() => { setEditandoGrupos(false); setGestionandoMiembrosDe(null); setRenombrandoId(null); }} className="font-body" style={{ background: "#7DD6C0", border: "none", borderRadius: 6, color: "#0B2A2E", fontWeight: 700, fontSize: 11, padding: "6px 14px", cursor: "pointer" }}>Listo</button>
+              </div>
               {plantelGrupos.map((g) => (
                 <div key={g.id} style={{ marginBottom: 6 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -2663,10 +2725,10 @@ function CoachAlumnos({ alumnos, selectedId, setSelectedId, templates, onAsignar
       </div>
     );
   }
-  return <AlumnoDetalle alumno={alumno} alumnos={alumnos} templates={templates} onBack={() => setSelectedId(null)} onAsignarPlantilla={onAsignarPlantilla} onCopiarPlan={onCopiarPlan} onCopiarVersionAOtro={onCopiarVersionAOtro} onGuardarComoPlantilla={onGuardarComoPlantilla} onUpdatePlan={onUpdatePlan} onUpdateAlumno={onUpdateAlumno} onDeleteAlumno={() => { onDeleteAlumno(alumno.id); setSelectedId(null); }} onSendMsg={onSendMsg} onGuardarVersion={onGuardarVersion} onRestaurarVersion={onRestaurarVersion} onGuardarHistorialRM={onGuardarHistorialRM} onAddToLibrary={onAddToLibrary} version={version} coaches={coaches} coachIdActual={coachIdActual} onCompartirAlumno={onCompartirAlumno} onDejarDeCompartir={onDejarDeCompartir} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={onAgregarRolPersonalizado} grupos={grupos} onCompartirGrupo={onCompartirGrupo} onAgregarPlanSecundario={onAgregarPlanSecundario} onQuitarPlanSecundario={onQuitarPlanSecundario} plantelGrupos={plantelGrupos} onAsignarPlantelGrupo={onAsignarPlantelGrupo} />;
+  return <AlumnoDetalle alumno={alumno} alumnos={alumnos} templates={templates} onBack={() => setSelectedId(null)} onAsignarPlantilla={onAsignarPlantilla} onCopiarPlan={onCopiarPlan} onCopiarVersionAOtro={onCopiarVersionAOtro} onCopiarSoloCalentamiento={onCopiarSoloCalentamiento} onGuardarComoPlantilla={onGuardarComoPlantilla} onUpdatePlan={onUpdatePlan} onUpdateAlumno={onUpdateAlumno} onDeleteAlumno={() => { onDeleteAlumno(alumno.id); setSelectedId(null); }} onSendMsg={onSendMsg} onGuardarVersion={onGuardarVersion} onRestaurarVersion={onRestaurarVersion} onGuardarHistorialRM={onGuardarHistorialRM} onAddToLibrary={onAddToLibrary} version={version} coaches={coaches} coachIdActual={coachIdActual} onCompartirAlumno={onCompartirAlumno} onDejarDeCompartir={onDejarDeCompartir} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={onAgregarRolPersonalizado} grupos={grupos} onCompartirGrupo={onCompartirGrupo} onAgregarPlanSecundario={onAgregarPlanSecundario} onQuitarPlanSecundario={onQuitarPlanSecundario} plantelGrupos={plantelGrupos} onAsignarPlantelGrupo={onAsignarPlantelGrupo} />;
 }
 
-function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla, onCopiarPlan, onCopiarVersionAOtro, onGuardarComoPlantilla, onUpdatePlan, onUpdateAlumno, onDeleteAlumno, onSendMsg, onGuardarVersion, onRestaurarVersion, onGuardarHistorialRM, onAddToLibrary, version, coaches, coachIdActual, onCompartirAlumno, onDejarDeCompartir, rolesPersonalizados, onAgregarRolPersonalizado, grupos, onCompartirGrupo, onAgregarPlanSecundario, onQuitarPlanSecundario, plantelGrupos, onAsignarPlantelGrupo }) {
+function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla, onCopiarPlan, onCopiarVersionAOtro, onCopiarSoloCalentamiento, onGuardarComoPlantilla, onUpdatePlan, onUpdateAlumno, onDeleteAlumno, onSendMsg, onGuardarVersion, onRestaurarVersion, onGuardarHistorialRM, onAddToLibrary, version, coaches, coachIdActual, onCompartirAlumno, onDejarDeCompartir, rolesPersonalizados, onAgregarRolPersonalizado, grupos, onCompartirGrupo, onAgregarPlanSecundario, onQuitarPlanSecundario, plantelGrupos, onAsignarPlantelGrupo }) {
   const [tab, setTab] = useState("plan");
   const [msg, setMsg] = useState("");
   const [busquedaChat, setBusquedaChat] = useState("");
@@ -2700,6 +2762,7 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [alumno.id, ejerciciosConHistorialCoach.join(",")]);
   const [copiandoPlan, setCopiandoPlan] = useState(false);
+  const [copiandoCalentamiento, setCopiandoCalentamiento] = useState(false);
   const [compartiendoCoach, setCompartiendoCoach] = useState(false);
   const [guardandoPlantilla, setGuardandoPlantilla] = useState(false);
   const [nombrePlantillaNueva, setNombrePlantillaNueva] = useState("");
@@ -2808,6 +2871,22 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
               <button onClick={() => setCompartiendoCoach(!compartiendoCoach)} className="font-body" style={{ flex: 1, background: "rgba(90,160,230,0.1)", border: "1px dashed #5AA0E6", borderRadius: 8, color: "#5AA0E6", fontWeight: 700, fontSize: 10, padding: 9, cursor: "pointer" }}>🤝 A otro coach</button>
             )}
           </div>
+          {onCopiarSoloCalentamiento && (
+            <div style={{ marginBottom: 6 }}>
+              <button onClick={() => setCopiandoCalentamiento(!copiandoCalentamiento)} className="font-body" style={{ width: "100%", background: "rgba(125,214,192,0.1)", border: "1px dashed #7DD6C0", borderRadius: 8, color: "#7DD6C0", fontWeight: 700, fontSize: 10, padding: 9, cursor: "pointer" }}>🔥 Pasar solo la entrada en calor a otro/a</button>
+            </div>
+          )}
+          {copiandoCalentamiento && (
+            <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 10 }}>
+              <div className="font-body" style={{ color: "#8B8698", fontSize: 10, marginBottom: 6 }}>Elegí a quién pasarle solo la entrada en calor (reemplaza la suya, el resto de su plan no se toca):</div>
+              {alumnos.filter((a) => a.id !== alumno.id).length === 0 && <div className="font-body" style={{ color: "#8B8698", fontSize: 11 }}>No hay otros/as alumnos/as todavía.</div>}
+              {alumnos.filter((a) => a.id !== alumno.id).map((a) => (
+                <button key={a.id} onClick={() => { onCopiarSoloCalentamiento(alumno.id, a.id); setCopiandoCalentamiento(false); }} className="font-body" style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, padding: 8, cursor: "pointer", textAlign: "left", marginBottom: 4 }}>
+                  <Avatar text={a.foto} size={22} /><span style={{ color: "#F4F1EA", fontSize: 11 }}>Pasarle a {a.nombre}</span>
+                </button>
+              ))}
+            </div>
+          )}
           <div style={{ marginBottom: 6 }}>
             <button onClick={() => setGuardandoPlantilla(!guardandoPlantilla)} className="font-body" style={{ width: "100%", background: "rgba(51,214,166,0.1)", border: "1px dashed #33D6A6", borderRadius: 8, color: "#33D6A6", fontWeight: 700, fontSize: 10, padding: 9, cursor: "pointer" }}>⭐ Guardar este plan como plantilla reutilizable</button>
           </div>
@@ -2918,7 +2997,7 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
             {alumno.planesSecundarios.map((p) => (
               <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 6 }}>
                 <span className="font-body" style={{ flex: 1, color: "#7DD6C0", fontSize: 12, fontWeight: 600 }}>{p.nombre}</span>
-                <button onClick={() => onQuitarPlanSecundario(alumno.id, p.id)} className="font-body" style={{ background: "none", border: "none", color: "#E85D5D", fontSize: 10, cursor: "pointer" }}>Quitar</button>
+                <button onClick={() => { if (window.confirm(`¿Eliminar la planificación "${p.nombre}"? Esta acción no se puede deshacer.`)) onQuitarPlanSecundario(alumno.id, p.id); }} className="font-body" style={{ background: "none", border: "none", color: "#E85D5D", fontSize: 14, cursor: "pointer", padding: "0 2px", lineHeight: 1 }}>✕</button>
               </div>
             ))}
             {agregandoSecundaria ? (
@@ -3156,7 +3235,7 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
   );
 }
 
-function CoachPlantillas({ templates, alumnos, onAsignar, onCrearPlantilla, onEditarPlantilla, onAddToLibrary, version, rolesPersonalizados, onAgregarRolPersonalizado, coachIdActual }) {
+function CoachPlantillas({ templates, alumnos, onAsignar, onCrearPlantilla, onEditarPlantilla, onEliminarPlantilla, onAddToLibrary, version, rolesPersonalizados, onAgregarRolPersonalizado, coachIdActual }) {
   const [targetOpen, setTargetOpen] = useState(null);
   const [previewOpen, setPreviewOpen] = useState(null);
   const [editandoId, setEditandoId] = useState(null);
@@ -3199,8 +3278,9 @@ function CoachPlantillas({ templates, alumnos, onAsignar, onCrearPlantilla, onEd
       <div style={{ padding: "0 20px", display: "flex", flexDirection: "column", gap: 10 }}>
         <button onClick={() => setCreando(true)} className="font-body" style={{ background: "rgba(255,107,53,0.1)", border: "1px dashed #FF6B35", borderRadius: 14, padding: 14, color: "#FF6B35", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>+ Crear plantilla desde cero</button>
         {templates.map((t) => (
-          <div key={t.id} style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 14, padding: 14 }}>
-            <div className="font-display" style={{ color: "#F4F1EA", fontSize: 14, fontWeight: 600 }}>{t.nombre}</div>
+          <div key={t.id} style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 14, padding: 14, position: "relative" }}>
+            <button onClick={() => { if (window.confirm(`¿Eliminar la plantilla "${t.nombre}"? Esta acción no se puede deshacer.`)) onEliminarPlantilla(t.id); }} className="font-body" style={{ position: "absolute", top: 10, right: 10, background: "none", border: "none", color: "#E85D5D", fontSize: 15, cursor: "pointer", padding: 4, lineHeight: 1 }}>✕</button>
+            <div className="font-display" style={{ color: "#F4F1EA", fontSize: 14, fontWeight: 600, paddingRight: 24 }}>{t.nombre}</div>
             <div className="font-body" style={{ color: "#7DD6C0", fontSize: 11, marginTop: 2, fontWeight: 600 }}>{t.categoria} · {t.plan.dias.length} días</div>
             <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
               <button onClick={() => { setPreviewOpen(previewOpen === t.id ? null : t.id); setTargetOpen(null); setEditandoId(null); }} className="font-body" style={{ background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, color: "#8B8698", fontWeight: 700, fontSize: 11, padding: "8px 12px", cursor: "pointer" }}>👁️ Ver ejercicios</button>
@@ -3618,6 +3698,7 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
   const iconoBg = activePE.color || "#FF6B35";
   const activeVideo = videoDe(activePE);
   const activeEsBusqueda = activeVideo.includes("youtube.com/results");
+  const pesoSug = pesoSugerido(planActivo.rm, activePE.nombre, activePE.rm);
 
   return (
     <div>
@@ -3688,7 +3769,10 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
                         <button onClick={(e) => { e.stopPropagation(); if (activeId === pe.id) { openVideo(videoFila); } else { setActiveId(pe.id); } }} className="font-body" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left", display: "block", color: done ? "#33D6A6" : "#F4F1EA", fontWeight: 600, fontSize: 13 }}>
                           {done ? "✓ " : ""}{pe.nombre}
                         </button>
-                        <div className="font-body" style={{ color: "#8B8698", fontSize: 11, marginTop: 2 }}>{formatObjetivo(obj)}{pe.rm && ` · ${pe.rm}`}</div>
+                        <div className="font-body" style={{ color: "#8B8698", fontSize: 11, marginTop: 2 }}>
+                          {formatObjetivo(obj)}{pe.rm && ` · ${pe.rm}`}
+                          {(() => { const sug = pesoSugerido(planActivo.rm, pe.nombre, pe.rm); return sug ? <span style={{ color: "#7DD6C0", fontWeight: 700 }}> · {sug}kg</span> : null; })()}
+                        </div>
                       </div>
                       {rolPE && <span className="font-body" style={{ fontSize: 8, fontWeight: 700, color: rolPE.color, background: `${rolPE.color}22`, borderRadius: 999, padding: "3px 7px", flexShrink: 0 }}>{rolPE.label}</span>}
                       {activeId === pe.id && <span className="font-body" style={{ fontSize: 8, color: "#FF6B35", flexShrink: 0 }}>▶ tocá de nuevo</span>}
@@ -3726,6 +3810,12 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
                   <div className="font-body" style={{ color: "#8B8698", fontSize: 10 }}>{maxSemanas > 1 ? `Objetivo — semana ${semana + 1}` : "Objetivo"}</div>
                   <div className="font-display" style={{ color: "#F4F1EA", fontSize: 18, fontWeight: 700 }}>{formatObjetivo(objetivo)}</div>
                 </div>
+                {pesoSug != null && (
+                  <div style={{ background: "rgba(125,214,192,0.12)", border: "1px solid #7DD6C0", borderRadius: 12, padding: "10px 14px" }}>
+                    <div className="font-body" style={{ color: "#7DD6C0", fontSize: 10, fontWeight: 700 }}>PESO A USAR ({activePE.rm})</div>
+                    <div className="font-display" style={{ color: "#F4F1EA", fontSize: 20, fontWeight: 700 }}>{pesoSug}kg</div>
+                  </div>
+                )}
                 <div style={{ display: "flex", gap: 8 }}>
                   <div style={{ flex: 1, background: "#151319", border: "1px solid #26232F", borderRadius: 12, padding: "10px 14px" }}>
                     <div className="font-body" style={{ color: "#8B8698", fontSize: 10 }}>Descanso</div>
@@ -3747,6 +3837,20 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
               </div>
 
               <div className="font-body" style={{ color: "#7DD6C0", fontSize: 11, fontWeight: 700, marginTop: 14, marginBottom: 6 }}>TU NOTA (peso, cómo te sentiste, etc.)</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                {NOTAS_RAPIDAS.map((frase) => (
+                  <button
+                    key={frase}
+                    onClick={() => {
+                      const actual = getNota(activePE.id);
+                      const nuevo = actual && actual.trim() ? `${actual.trim()}. ${frase}` : frase;
+                      onUpdateNota(activePE.id, activePE.nombre, nuevo, claveNota(activePE.id, semana));
+                    }}
+                    className="font-body"
+                    style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 999, color: "#7DD6C0", fontSize: 10, fontWeight: 600, padding: "6px 10px", cursor: "pointer" }}
+                  >{frase}</button>
+                ))}
+              </div>
               <textarea
                 value={getNota(activePE.id)}
                 onChange={(e) => onUpdateNota(activePE.id, activePE.nombre, e.target.value, claveNota(activePE.id, semana))}
@@ -3754,7 +3858,7 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
                 className="font-body"
                 style={{ width: "100%", minHeight: 60, background: "#151319", border: "1px solid #26232F", borderRadius: 12, color: "#F4F1EA", padding: 12, fontSize: 13, boxSizing: "border-box", resize: "vertical" }}
               />
-              <div className="font-body" style={{ color: "#6B6678", fontSize: 9, marginTop: 4 }}>Tu coach ve esto cuando finalizás el entrenamiento.</div>
+              <div className="font-body" style={{ color: "#6B6678", fontSize: 9, marginTop: 4 }}>Tocá una opción para agregarla rápido, o escribí lo que quieras. Tu coach ve esto cuando finalizás el entrenamiento.</div>
 
               <button onClick={() => setRestTimer(parseInt(activePE.descanso) || 90)} className="font-body" style={{ width: "100%", marginTop: 14, background: "#FF6B35", color: "#121017", border: "none", borderRadius: 14, padding: "14px 0", fontWeight: 700, fontSize: 15, cursor: "pointer" }}>
                 {restTimer !== null ? `⏱ Descansando: ${restTimer}s` : "▶ Iniciar descanso"}
@@ -4950,19 +5054,49 @@ export default function GymPlannerCoachApp() {
     return { ok: true };
   };
 
+  // Deshacer: antes de pisar el plan de un/a alumno/a por una copia/asignación, guardamos acá
+  // una foto de cómo estaba antes. El botón flotante (siempre visible, no hay que scrollear)
+  // permite revertir esa última acción con un toque.
+  const [lastUndo, setLastUndo] = useState(null);
+  const guardarParaDeshacer = (alumnoId, label) => {
+    const actual = alumnos.find((a) => a.id === alumnoId);
+    if (!actual) return;
+    setLastUndo({ alumnoId, planAnterior: actual.plan, label });
+  };
+  const deshacerUltimaAccion = () => {
+    if (!lastUndo) return;
+    setAlumnos((prev) => prev.map((a) => (a.id === lastUndo.alumnoId ? { ...a, plan: lastUndo.planAnterior } : a)));
+    setLastUndo(null);
+  };
+
   const asignarPlantilla = (alumnoId, templateId) => {
     const tpl = templates.find((t) => t.id === templateId);
+    guardarParaDeshacer(alumnoId, `Asignaste la plantilla "${tpl?.nombre || ""}" a ${alumnos.find((a) => a.id === alumnoId)?.nombre || "un/a alumno/a"}`);
     setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...a, plan: clonarPlan(tpl.plan) } : a)));
   };
   const copiarPlan = (origenId, destinoId) => {
     const origen = alumnos.find((a) => a.id === origenId);
     if (!origen) return;
+    const destino = alumnos.find((a) => a.id === destinoId);
+    guardarParaDeshacer(destinoId, `Copiaste el plan de ${origen.nombre} a ${destino?.nombre || "un/a alumno/a"}`);
     setAlumnos((prev) => prev.map((a) => (a.id === destinoId ? { ...a, plan: clonarPlan(origen.plan) } : a)));
   };
   // Igual que copiarPlan, pero para pasarle a otro/a alumno/a una VERSIÓN GUARDADA puntual
   // (no el plan actual en uso) — por ejemplo, una rutina vieja que quedó archivada.
   const copiarVersionAOtro = (planOrigen, destinoId) => {
+    const destino = alumnos.find((a) => a.id === destinoId);
+    guardarParaDeshacer(destinoId, `Pasaste una versión guardada a ${destino?.nombre || "un/a alumno/a"}`);
     setAlumnos((prev) => prev.map((a) => (a.id === destinoId ? { ...a, plan: clonarPlan(planOrigen) } : a)));
+  };
+  // Copia SOLO la entrada en calor de un/a alumno/a a otro/a, sin tocar el resto de su plan
+  // (días, bloques, ejercicios, RM). Reemplaza la entrada en calor que ya tenía el/la destino/a.
+  const copiarSoloCalentamiento = (origenId, destinoId) => {
+    const origen = alumnos.find((a) => a.id === origenId);
+    if (!origen) return;
+    const destino = alumnos.find((a) => a.id === destinoId);
+    guardarParaDeshacer(destinoId, `Pasaste la entrada en calor de ${origen.nombre} a ${destino?.nombre || "un/a alumno/a"}`);
+    const calentamientoClonado = origen.plan.calentamiento.map((w) => ({ ...w, id: uid() }));
+    setAlumnos((prev) => prev.map((a) => (a.id === destinoId ? { ...a, plan: { ...a.plan, calentamiento: calentamientoClonado } } : a)));
   };
   // Suma una rutina extra (además de la principal) — ej: una de flexibilidad para hacer en casa.
   // La alumna la va a poder ver aparte, sin que le pise el plan de entrenamiento activo.
@@ -5069,6 +5203,7 @@ export default function GymPlannerCoachApp() {
   };
   const crearPlantilla = (tpl) => setTemplates((prev) => [...prev, tpl]);
   const editarPlantilla = (id, nuevoPlan) => setTemplates((prev) => prev.map((t) => (t.id === id ? { ...t, plan: nuevoPlan } : t)));
+  const eliminarPlantilla = (id) => setTemplates((prev) => prev.filter((t) => t.id !== id));
   const sendMsg = (alumnoId, from, texto) => {
     setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...a, chat: [...a.chat, { from, texto, hora: "ahora" }] } : a)));
     if (from === "coach") {
@@ -5101,8 +5236,8 @@ export default function GymPlannerCoachApp() {
     // plantillas personalizadas, solo puede armar las suyas.
     const templatesVisibles = templates.filter((t) => t.coachIds == null || t.coachIds.includes(session.coachId));
     if (tab === "dashboard") body = <CoachDashboard alumnos={alumnosVisibles} goAlumnos={(id) => { setTab("alumnos"); setSelectedCoachAlumno(id); }} coachNombre={coachNombre} onUpdateCoach={setCoachNombre} coaches={coaches} onAddCoach={addCoach} onRemoveCoach={removeCoach} mensajeRecordatorio={mensajeRecordatorio} onUpdateMensajeRecordatorio={setMensajeRecordatorio} notificacionesActivas={notificacionesActivas} onToggleNotificaciones={setNotificacionesActivas} modoPausa={modoPausa} onToggleModoPausa={setModoPausa} diasAvisoPlan={diasAvisoPlan} onSetDiasAvisoPlan={setDiasAvisoPlan} coachId={session?.coachId} onCambiarPassword={cambiarPasswordCoach} onSetRecoveryPin={setRecoveryPin} onSetTelefono={setTelefonoCoach} onReclamarAlumnos={reclamarAlumnosSinDueño} logActividad={logActividad} grupos={grupos} onCrearGrupo={crearGrupo} onEliminarGrupo={eliminarGrupo} />;
-    else if (tab === "alumnos") body = <CoachAlumnos alumnos={alumnosVisibles} selectedId={selectedCoachAlumno} setSelectedId={setSelectedCoachAlumno} templates={templatesVisibles} onAsignarPlantilla={asignarPlantilla} onCopiarPlan={copiarPlan} onCopiarVersionAOtro={copiarVersionAOtro} onAgregarPlanSecundario={agregarPlanSecundario} onQuitarPlanSecundario={quitarPlanSecundario} onGuardarComoPlantilla={guardarComoPlantilla} onUpdatePlan={updatePlan} onUpdateAlumno={updateAlumno} onDeleteAlumno={deleteAlumno} onAddAlumno={addAlumno} onSendMsg={sendMsg} onGuardarVersion={guardarVersion} onRestaurarVersion={restaurarVersion} onGuardarHistorialRM={agregarHistorialRM} onAddToLibrary={addCustomExercise} version={libVersion} coaches={coaches} coachIdActual={session.coachId} onCompartirAlumno={compartirAlumnoConCoach} onDejarDeCompartir={dejarDeCompartirAlumno} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={agregarRolPersonalizado} grupos={grupos} onCompartirGrupo={compartirAlumnoConGrupo} plantelGrupos={plantelGrupos} onCrearPlantelGrupo={crearPlantelGrupo} onRenombrarPlantelGrupo={renombrarPlantelGrupo} onEliminarPlantelGrupo={eliminarPlantelGrupo} onAsignarPlantelGrupo={asignarPlantelGrupo} />;
-    else if (tab === "plantillas") body = <CoachPlantillas templates={templatesVisibles} alumnos={alumnosVisibles} onAsignar={asignarPlantilla} onCrearPlantilla={crearPlantilla} onEditarPlantilla={editarPlantilla} onAddToLibrary={addCustomExercise} version={libVersion} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={agregarRolPersonalizado} coachIdActual={session.coachId} />;
+    else if (tab === "alumnos") body = <CoachAlumnos alumnos={alumnosVisibles} selectedId={selectedCoachAlumno} setSelectedId={setSelectedCoachAlumno} templates={templatesVisibles} onAsignarPlantilla={asignarPlantilla} onCopiarPlan={copiarPlan} onCopiarVersionAOtro={copiarVersionAOtro} onCopiarSoloCalentamiento={copiarSoloCalentamiento} onAgregarPlanSecundario={agregarPlanSecundario} onQuitarPlanSecundario={quitarPlanSecundario} onGuardarComoPlantilla={guardarComoPlantilla} onUpdatePlan={updatePlan} onUpdateAlumno={updateAlumno} onDeleteAlumno={deleteAlumno} onAddAlumno={addAlumno} onSendMsg={sendMsg} onGuardarVersion={guardarVersion} onRestaurarVersion={restaurarVersion} onGuardarHistorialRM={agregarHistorialRM} onAddToLibrary={addCustomExercise} version={libVersion} coaches={coaches} coachIdActual={session.coachId} onCompartirAlumno={compartirAlumnoConCoach} onDejarDeCompartir={dejarDeCompartirAlumno} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={agregarRolPersonalizado} grupos={grupos} onCompartirGrupo={compartirAlumnoConGrupo} plantelGrupos={plantelGrupos} onCrearPlantelGrupo={crearPlantelGrupo} onRenombrarPlantelGrupo={renombrarPlantelGrupo} onEliminarPlantelGrupo={eliminarPlantelGrupo} onAsignarPlantelGrupo={asignarPlantelGrupo} />;
+    else if (tab === "plantillas") body = <CoachPlantillas templates={templatesVisibles} alumnos={alumnosVisibles} onAsignar={asignarPlantilla} onCrearPlantilla={crearPlantilla} onEditarPlantilla={editarPlantilla} onEliminarPlantilla={eliminarPlantilla} onAddToLibrary={addCustomExercise} version={libVersion} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={agregarRolPersonalizado} coachIdActual={session.coachId} />;
     else if (tab === "ejercicios") body = <CoachEjercicios onAddExercise={addCustomExercise} version={libVersion} onToggleFav={toggleFavorito} onEditVideo={editarVideoLibreria} />;
     else body = <BuscarGlobal alumnos={alumnosVisibles} templates={templatesVisibles} version={libVersion} onGoAlumno={(id) => { setTab("alumnos"); setSelectedCoachAlumno(id); }} onGoPlantillas={() => setTab("plantillas")} />;
   } else if (!athlete) {
@@ -5138,6 +5273,13 @@ export default function GymPlannerCoachApp() {
         </div>
       )}
       <div style={{ flex: 1, overflowY: "auto", paddingBottom: 8, paddingTop: "env(safe-area-inset-top, 0px)", position: "relative", zIndex: 1 }}>{body}</div>
+      {session?.role === "coach" && lastUndo && (
+        <div style={{ position: "absolute", left: 10, right: 10, bottom: "calc(64px + env(safe-area-inset-bottom, 0px))", zIndex: 8, background: "#1C1A24", border: "1px solid #FF6B35", borderRadius: 10, padding: "8px 10px", display: "flex", alignItems: "center", gap: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.5)" }}>
+          <span className="font-body" style={{ flex: 1, color: "#F4F1EA", fontSize: 10, lineHeight: 1.3 }}>{lastUndo.label}</span>
+          <button onClick={deshacerUltimaAccion} className="font-body" style={{ background: "#FF6B35", border: "none", borderRadius: 6, color: "#1C1A24", fontWeight: 700, fontSize: 10, padding: "6px 10px", cursor: "pointer", whiteSpace: "nowrap" }}>↩ Deshacer</button>
+          <button onClick={() => setLastUndo(null)} style={{ background: "none", border: "none", color: "#8B8698", fontSize: 13, cursor: "pointer", padding: "0 2px" }}>✕</button>
+        </div>
+      )}
       {session && (
         <div style={{ display: "flex", borderTop: "1px solid #26232F", background: "#151319", padding: "8px 4px calc(8px + env(safe-area-inset-bottom, 0px))", position: "relative", zIndex: 1 }}>
           {tabs.map((t) => {
