@@ -3137,7 +3137,7 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               <label className="font-body" style={{ background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, color: "#7DD6C0", fontWeight: 700, fontSize: 10, padding: "7px 12px", cursor: "pointer", textAlign: "center" }}>
                 {alumno.fotoPerfil ? "Cambiar foto" : "+ Agregar foto"}
-                <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={async (e) => {
+                <input type="file" accept="image/*" style={{ display: "none" }} onChange={async (e) => {
                   const file = e.target.files && e.target.files[0]; e.target.value = "";
                   if (!file) return;
                   const dataUrl = await archivoADataURL(file, 500, 0.85);
@@ -3158,7 +3158,7 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
               <div className="font-body" style={{ fontSize: 11, color: "#FF6B35", fontWeight: 600 }}>📸 FOTOS DE MEDICIONES</div>
               <label className="font-body" style={{ background: "rgba(255,107,53,0.1)", border: "1px dashed #FF6B35", borderRadius: 8, color: "#FF6B35", fontWeight: 700, fontSize: 10, padding: "6px 10px", cursor: "pointer" }}>
                 + Agregar
-                <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={async (e) => {
+                <input type="file" accept="image/*" style={{ display: "none" }} onChange={async (e) => {
                   const file = e.target.files && e.target.files[0]; e.target.value = "";
                   if (!file) return;
                   const dataUrl = await archivoADataURL(file, 1000, 0.8);
@@ -3722,7 +3722,7 @@ function AthleteInicio({ alumno, goEntrenar, onCheckin, onUpdateFoto }) {
         right={onUpdateFoto && (
           <label style={{ cursor: "pointer" }}>
             <Avatar text={alumno.foto} foto={alumno.fotoPerfil} size={40} />
-            <input type="file" accept="image/*" capture="user" style={{ display: "none" }} onChange={async (e) => {
+            <input type="file" accept="image/*" style={{ display: "none" }} onChange={async (e) => {
               const file = e.target.files && e.target.files[0]; e.target.value = "";
               if (!file) return;
               const dataUrl = await archivoADataURL(file, 500, 0.85);
