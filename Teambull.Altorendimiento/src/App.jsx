@@ -1733,8 +1733,35 @@ function Pill({ active, onClick, children, activeColor = "#FF6B35" }) {
     <button onClick={onClick} className="font-body" style={{ whiteSpace: "nowrap", padding: "6px 11px", borderRadius: 999, fontSize: 10, fontWeight: 600, cursor: "pointer", border: active ? `1px solid ${activeColor}` : "1px solid #322E3D", background: active ? activeColor : "transparent", color: active ? "#121017" : "#8B8698" }}>{children}</button>
   );
 }
-function Avatar({ text, size = 32 }) {
+function Avatar({ text, size = 32, foto }) {
+  if (foto) {
+    return <img src={foto} alt="" style={{ width: size, height: size, borderRadius: size / 2, objectFit: "cover", flexShrink: 0 }} />;
+  }
   return <div className="font-display" style={{ width: size, height: size, borderRadius: size / 2, background: "linear-gradient(135deg,#FF6B35,#7DD6C0)", display: "flex", alignItems: "center", justifyContent: "center", color: "#121017", fontWeight: 700, fontSize: size * 0.4, flexShrink: 0 }}>{text}</div>;
+}
+// Lee un archivo de imagen elegido por el usuario y lo devuelve como data-URL (base64), redimensionado
+// para no guardar fotos enormes (que harían la app lenta y el guardado pesado). maxDim es el lado
+// más largo en píxeles; calidad es de 0 a 1 para la compresión JPEG.
+function archivoADataURL(file, maxDim = 700, calidad = 0.82) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error);
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("No se pudo leer la imagen"));
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height && width > maxDim) { height = Math.round((height * maxDim) / width); width = maxDim; }
+        else if (height > maxDim) { width = Math.round((width * maxDim) / height); height = maxDim; }
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", calidad));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 function MiniChart({ data, color = "#FF6B35", unidad = "" }) {
   const gradId = useMemo(() => `mc-grad-${Math.random().toString(36).slice(2)}`, []);
@@ -2481,7 +2508,7 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
             {alumnosParaRecordatorio.length === 0 && <div className="font-body" style={{ color: "#6B6678", fontSize: 11, padding: "8px 0" }}>Nadie tiene entrenamiento programado para hoy.</div>}
             {alumnosParaRecordatorio.map((a) => (
               <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 6 }}>
-                <Avatar text={a.foto} size={26} />
+                <Avatar text={a.foto} foto={a.fotoPerfil} size={26} />
                 <span className="font-body" style={{ flex: 1, color: "#F4F1EA", fontSize: 12 }}>{a.nombre}</span>
                 <button onClick={() => {
                   const mensaje = mensajeRecordatorio.replaceAll("{nombre}", a.nombre);
@@ -2553,7 +2580,7 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
           {(verTodoRanking ? ranking : ranking.slice(0, 5)).map((a, i) => (
             <button key={a.id} onClick={() => goAlumnos(a.id)} style={{ display: "flex", alignItems: "center", gap: 10, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 12, padding: 10, cursor: "pointer", width: "100%", textAlign: "left" }}>
               <span className="font-display" style={{ color: "#8B8698", fontSize: 13, width: 16 }}>{i + 1}</span>
-              <Avatar text={a.foto} />
+              <Avatar text={a.foto} foto={a.fotoPerfil} />
               <div style={{ flex: 1 }}>
                 <div className="font-body" style={{ color: "#F4F1EA", fontSize: 12, fontWeight: 600 }}>{a.nombre}</div>
                 <div className="font-body" style={{ color: "#8B8698", fontSize: 10 }}>{a.objetivo}</div>
@@ -2767,7 +2794,7 @@ function CoachAlumnos({ alumnos, selectedId, setSelectedId, templates, onAsignar
               )}
               {(!sec.nombre || expandida) && sec.items.map((a) => (
                 <button key={a.id} onClick={() => { onUpdateAlumno(a.id, { ultimoAcceso: new Date().toISOString() }); setSelectedId(a.id); }} style={{ display: "flex", alignItems: "center", gap: 10, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 14, padding: 12, cursor: "pointer", width: "100%", textAlign: "left", marginBottom: 8, marginLeft: sec.nombre ? 12 : 0, maxWidth: sec.nombre ? "calc(100% - 12px)" : "100%" }}>
-                  <Avatar text={a.foto} size={38} />
+                  <Avatar text={a.foto} foto={a.fotoPerfil} size={38} />
                   <div style={{ flex: 1 }}>
                     <div className="font-display" style={{ color: "#F4F1EA", fontSize: 14, fontWeight: 600 }}>{a.nombre}</div>
                     <div className="font-body" style={{ color: "#8B8698", fontSize: 11 }}>{a.equipo || "Sin equipo"} · {a.objetivo || "Sin objetivo"}</div>
@@ -2783,7 +2810,7 @@ function CoachAlumnos({ alumnos, selectedId, setSelectedId, templates, onAsignar
               <button onClick={() => setVerBajas(!verBajas)} className="font-body" style={{ background: "none", border: "none", color: "#8B8698", fontSize: 11, cursor: "pointer", padding: "6px 0", textAlign: "left" }}>{verBajas ? "▲" : "▼"} {bajas.length} de baja</button>
               {verBajas && bajas.map((a) => (
                 <button key={a.id} onClick={() => setSelectedId(a.id)} style={{ display: "flex", alignItems: "center", gap: 10, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 14, padding: 12, cursor: "pointer", width: "100%", textAlign: "left", opacity: 0.55 }}>
-                  <Avatar text={a.foto} size={38} />
+                  <Avatar text={a.foto} foto={a.fotoPerfil} size={38} />
                   <div style={{ flex: 1 }}>
                     <div className="font-display" style={{ color: "#F4F1EA", fontSize: 14, fontWeight: 600 }}>{a.nombre}</div>
                     <div className="font-body" style={{ color: "#8B8698", fontSize: 11 }}>De baja</div>
@@ -2867,7 +2894,7 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
     <div>
       <div style={{ padding: "20px 20px 8px", display: "flex", alignItems: "center", gap: 10 }}>
         <button onClick={onBack} style={{ background: "none", border: "none", color: "#F4F1EA", fontSize: 18, cursor: "pointer" }}>←</button>
-        <Avatar text={alumno.foto} size={36} />
+        <Avatar text={alumno.foto} foto={alumno.fotoPerfil} size={36} />
         <div>
           <div className="font-display" style={{ fontSize: 16, color: "#F4F1EA", fontWeight: 600 }}>{alumno.nombre}</div>
           <div className="font-body" style={{ fontSize: 10, color: "#8B8698" }}>{alumno.edad} años · {alumno.nivel}</div>
@@ -2954,7 +2981,7 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
               {alumnos.filter((a) => a.id !== alumno.id).length === 0 && <div className="font-body" style={{ color: "#8B8698", fontSize: 11 }}>No hay otros/as alumnos/as todavía.</div>}
               {alumnos.filter((a) => a.id !== alumno.id).map((a) => (
                 <button key={a.id} onClick={() => { onCopiarSoloCalentamiento(alumno.id, a.id); setCopiandoCalentamiento(false); }} className="font-body" style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, padding: 8, cursor: "pointer", textAlign: "left", marginBottom: 4 }}>
-                  <Avatar text={a.foto} size={22} /><span style={{ color: "#F4F1EA", fontSize: 11 }}>Pasarle a {a.nombre}</span>
+                  <Avatar text={a.foto} foto={a.fotoPerfil} size={22} /><span style={{ color: "#F4F1EA", fontSize: 11 }}>Pasarle a {a.nombre}</span>
                 </button>
               ))}
             </div>
@@ -2977,7 +3004,7 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
               {alumnos.filter((a) => a.id !== alumno.id).length === 0 && <div className="font-body" style={{ color: "#8B8698", fontSize: 11 }}>No hay otros/as alumnos/as todavía.</div>}
               {alumnos.filter((a) => a.id !== alumno.id).map((a) => (
                 <button key={a.id} onClick={() => { onCopiarPlan(alumno.id, a.id); setCopiandoPlan(false); }} className="font-body" style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, padding: 8, cursor: "pointer", textAlign: "left", marginBottom: 4 }}>
-                  <Avatar text={a.foto} size={22} /><span style={{ color: "#F4F1EA", fontSize: 11 }}>Copiar a {a.nombre}</span>
+                  <Avatar text={a.foto} foto={a.fotoPerfil} size={22} /><span style={{ color: "#F4F1EA", fontSize: 11 }}>Copiar a {a.nombre}</span>
                 </button>
               ))}
             </div>
@@ -3040,7 +3067,7 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
                       {alumnos.filter((a) => a.id !== alumno.id).length === 0 && <div className="font-body" style={{ color: "#8B8698", fontSize: 11 }}>No hay otros/as alumnos/as todavía.</div>}
                       {alumnos.filter((a) => a.id !== alumno.id).map((a) => (
                         <button key={a.id} onClick={() => { onCopiarVersionAOtro(v.plan, a.id); setPasandoVersion(null); }} className="font-body" style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, padding: 8, cursor: "pointer", textAlign: "left", marginBottom: 4 }}>
-                          <Avatar text={a.foto} size={20} /><span style={{ color: "#F4F1EA", fontSize: 11 }}>{a.nombre}</span>
+                          <Avatar text={a.foto} foto={a.fotoPerfil} size={20} /><span style={{ color: "#F4F1EA", fontSize: 11 }}>{a.nombre}</span>
                         </button>
                       ))}
                     </div>
@@ -3105,8 +3132,63 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
 
       {tab === "perfil" && (
         <div style={{ padding: "0 20px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18 }}>
+            <Avatar text={alumno.foto} foto={alumno.fotoPerfil} size={64} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <label className="font-body" style={{ background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, color: "#7DD6C0", fontWeight: 700, fontSize: 10, padding: "7px 12px", cursor: "pointer", textAlign: "center" }}>
+                {alumno.fotoPerfil ? "Cambiar foto" : "+ Agregar foto"}
+                <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={async (e) => {
+                  const file = e.target.files && e.target.files[0]; e.target.value = "";
+                  if (!file) return;
+                  const dataUrl = await archivoADataURL(file, 500, 0.85);
+                  onUpdateAlumno(alumno.id, { fotoPerfil: dataUrl });
+                }} />
+              </label>
+              {alumno.fotoPerfil && (
+                <button onClick={() => { if (window.confirm("¿Sacar la foto de perfil?")) onUpdateAlumno(alumno.id, { fotoPerfil: null }); }} className="font-body" style={{ background: "none", border: "none", color: "#E85D5D", fontSize: 10, cursor: "pointer", padding: 0 }}>Sacar foto</button>
+              )}
+            </div>
+          </div>
+
           <button onClick={() => descargarInformePDF(alumno)} className="font-body" style={{ width: "100%", background: "#FF6B35", border: "none", borderRadius: 10, color: "#121017", fontWeight: 700, fontSize: 12, padding: 11, cursor: "pointer", marginBottom: 6 }}>📄 Descargar informe (PDF)</button>
           <div className="font-body" style={{ fontSize: 9, color: "#6B6678", textAlign: "center", marginBottom: 16 }}>Se abre y guarda un archivo — tocá "Imprimir / Guardar como PDF" ahí adentro, y de ahí lo podés mandar por WhatsApp como cualquier otro archivo.</div>
+
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <div className="font-body" style={{ fontSize: 11, color: "#FF6B35", fontWeight: 600 }}>📸 FOTOS DE MEDICIONES</div>
+              <label className="font-body" style={{ background: "rgba(255,107,53,0.1)", border: "1px dashed #FF6B35", borderRadius: 8, color: "#FF6B35", fontWeight: 700, fontSize: 10, padding: "6px 10px", cursor: "pointer" }}>
+                + Agregar
+                <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={async (e) => {
+                  const file = e.target.files && e.target.files[0]; e.target.value = "";
+                  if (!file) return;
+                  const dataUrl = await archivoADataURL(file, 1000, 0.8);
+                  const nueva = { id: uid(), dataUrl, nota: "", fecha: todayISO() };
+                  onUpdateAlumno(alumno.id, { fotosMediciones: [nueva, ...(alumno.fotosMediciones || [])] });
+                }} />
+              </label>
+            </div>
+            {(!alumno.fotosMediciones || alumno.fotosMediciones.length === 0) && (
+              <div className="font-body" style={{ color: "#6B6678", fontSize: 10 }}>Todavía no hay fotos cargadas.</div>
+            )}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {(alumno.fotosMediciones || []).map((f) => (
+                <div key={f.id} style={{ display: "flex", gap: 10, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, padding: 8 }}>
+                  <img src={f.dataUrl} alt="" onClick={() => window.open(f.dataUrl, "_blank")} style={{ width: 64, height: 64, borderRadius: 8, objectFit: "cover", flexShrink: 0, cursor: "pointer" }} />
+                  <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+                    <div className="font-body" style={{ color: "#8B8698", fontSize: 9 }}>{new Date(f.fecha + "T00:00:00").toLocaleDateString("es-AR")}</div>
+                    <input
+                      value={f.nota}
+                      onChange={(e) => onUpdateAlumno(alumno.id, { fotosMediciones: alumno.fotosMediciones.map((x) => (x.id === f.id ? { ...x, nota: e.target.value } : x)) })}
+                      placeholder="Nota (ej: -2kg desde la última, mejoró postura...)"
+                      className="font-body"
+                      style={{ width: "100%", background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "5px 8px", fontSize: 10, boxSizing: "border-box" }}
+                    />
+                  </div>
+                  <button onClick={() => { if (window.confirm("¿Eliminar esta foto?")) onUpdateAlumno(alumno.id, { fotosMediciones: alumno.fotosMediciones.filter((x) => x.id !== f.id) }); }} style={{ background: "none", border: "none", color: "#E85D5D", fontSize: 13, cursor: "pointer", alignSelf: "flex-start", padding: "0 2px" }}>✕</button>
+                </div>
+              ))}
+            </div>
+          </div>
 
           {alumno.mesesArchivados && alumno.mesesArchivados.length > 0 && (
             <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, padding: 12, marginBottom: 16 }}>
@@ -3396,7 +3478,7 @@ function CoachPlantillas({ templates, alumnos, onAsignar, onCrearPlantilla, onEd
               <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
                 {alumnos.map((a) => (
                   <button key={a.id} onClick={() => { onAsignar(a.id, t.id); setTargetOpen(null); }} className="font-body" style={{ display: "flex", alignItems: "center", gap: 8, background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, padding: 8, cursor: "pointer", textAlign: "left" }}>
-                    <Avatar text={a.foto} size={22} /><span style={{ color: "#F4F1EA", fontSize: 11 }}>Asignar a {a.nombre}</span>
+                    <Avatar text={a.foto} foto={a.fotoPerfil} size={22} /><span style={{ color: "#F4F1EA", fontSize: 11 }}>Asignar a {a.nombre}</span>
                   </button>
                 ))}
               </div>
@@ -3619,7 +3701,7 @@ function EncuestaSemanalModal({ onSubmit, onClose }) {
   );
 }
 
-function AthleteInicio({ alumno, goEntrenar, onCheckin }) {
+function AthleteInicio({ alumno, goEntrenar, onCheckin, onUpdateFoto }) {
   const primerDia = alumno.plan.dias[0];
   const total = flatEjercicios(primerDia).length;
   const hoy = todayISO();
@@ -3628,7 +3710,21 @@ function AthleteInicio({ alumno, goEntrenar, onCheckin }) {
   const racha = calcularRacha(alumno);
   return (
     <div>
-      <TopBar title={`Hola, ${alumno.nombre} 👋`} subtitle={`Mesociclo ${alumno.plan.meta.mesociclo || "—"} · ${alumno.plan.meta.fecha || ""}`} />
+      <TopBar
+        title={`Hola, ${alumno.nombre} 👋`}
+        subtitle={`Mesociclo ${alumno.plan.meta.mesociclo || "—"} · ${alumno.plan.meta.fecha || ""}`}
+        right={onUpdateFoto && (
+          <label style={{ cursor: "pointer" }}>
+            <Avatar text={alumno.foto} foto={alumno.fotoPerfil} size={40} />
+            <input type="file" accept="image/*" capture="user" style={{ display: "none" }} onChange={async (e) => {
+              const file = e.target.files && e.target.files[0]; e.target.value = "";
+              if (!file) return;
+              const dataUrl = await archivoADataURL(file, 500, 0.85);
+              onUpdateFoto(dataUrl);
+            }} />
+          </label>
+        )}
+      />
       <div style={{ padding: "0 20px" }}>
         {racha > 0 && (
           <div style={{ display: "flex", alignItems: "center", gap: 10, background: "linear-gradient(135deg, rgba(255,107,53,0.15), rgba(255,201,74,0.08))", border: "1px solid #FF6B35", borderRadius: 14, padding: "12px 16px", marginBottom: 14 }}>
@@ -4541,7 +4637,7 @@ function BuscarGlobal({ alumnos, templates, version, onGoAlumno, onGoPlantillas 
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {alumnosMatch.map((a) => (
                 <button key={a.id} onClick={() => onGoAlumno(a.id)} className="font-body" style={{ display: "flex", alignItems: "center", gap: 10, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, padding: 10, cursor: "pointer", textAlign: "left" }}>
-                  <Avatar text={a.foto} size={28} />
+                  <Avatar text={a.foto} foto={a.fotoPerfil} size={28} />
                   <div style={{ flex: 1 }}>
                     <div style={{ color: "#F4F1EA", fontSize: 12, fontWeight: 600 }}>{a.nombre}</div>
                     <div style={{ color: "#8B8698", fontSize: 10 }}>{a.equipo || "Sin equipo"}</div>
@@ -4873,6 +4969,10 @@ function sanearAlumno(a) {
       // y el informe en sí se arma al toque con los datos reales de ese mes (siempre están
       // guardados, nunca se borran) — así nunca queda desactualizado.
       mesesArchivados: Array.isArray(a.mesesArchivados) ? a.mesesArchivados : [],
+      // Foto de perfil del/de la alumno/a (opcional) y fotos de mediciones con nota, para ir
+      // registrando la evolución física a lo largo del tiempo.
+      fotoPerfil: typeof a.fotoPerfil === "string" ? a.fotoPerfil : null,
+      fotosMediciones: Array.isArray(a.fotosMediciones) ? a.fotosMediciones : [],
     };
   } catch {
     return a;
@@ -5379,12 +5479,12 @@ export default function GymPlannerCoachApp() {
   } else if (athlete.wellness.encuestaPendiente && tab !== "entrenar") {
     body = (
       <div style={{ position: "relative", minHeight: "100%" }}>
-        <AthleteInicio alumno={athlete} goEntrenar={() => setTab("entrenar")} onCheckin={registrarCheckin} />
+        <AthleteInicio alumno={athlete} goEntrenar={() => setTab("entrenar")} onCheckin={registrarCheckin} onUpdateFoto={(dataUrl) => updateAlumno(athlete.id, { fotoPerfil: dataUrl })} />
         <EncuestaSemanalModal onClose={() => updateAlumno(athlete.id, { wellness: { ...athlete.wellness, encuestaPendiente: false } })} onSubmit={(data) => enviarEncuestaSemanal(athlete.id, data)} />
       </div>
     );
   } else {
-    if (tab === "inicio") body = <AthleteInicio alumno={athlete} goEntrenar={() => setTab("entrenar")} onCheckin={registrarCheckin} />;
+    if (tab === "inicio") body = <AthleteInicio alumno={athlete} goEntrenar={() => setTab("entrenar")} onCheckin={registrarCheckin} onUpdateFoto={(dataUrl) => updateAlumno(athlete.id, { fotoPerfil: dataUrl })} />;
     else if (tab === "entrenar") body = <AthleteEntrenar alumno={athlete} onFinalizar={(id) => { finalizarEntrenamiento(id); setTab("inicio"); }} onUpdateNota={(exId, exNombre, texto, claveNota) => updateNota(athlete.id, exId, exNombre, texto, claveNota)} rolesPersonalizados={rolesPersonalizados} />;
     else if (tab === "progreso") body = <AthleteProgreso alumno={athlete} onGuardarHistorialRM={(ejercicio, valor) => agregarHistorialRM(athlete.id, ejercicio, valor)} />;
     else if (tab === "nutricion") body = <CalculadoraScreen alumno={athlete} />;
