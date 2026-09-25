@@ -3670,10 +3670,16 @@ function estimarSesion(dia, pesoKg) {
 
 function EscalaSelector({ value, onChange, color = "#FF6B35" }) {
   return (
-    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-      {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-        <button key={n} onClick={() => onChange(n)} className="font-display" style={{ width: 26, height: 26, borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer", border: value === n ? `1px solid ${color}` : "1px solid #322E3D", background: value === n ? color : "#26232F", color: value === n ? "#121017" : "#8B8698" }}>{n}</button>
-      ))}
+    <div>
+      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+        {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+          <button key={n} onClick={() => onChange(n)} className="font-display" style={{ width: 26, height: 26, borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer", border: value === n ? `1px solid ${color}` : "1px solid #322E3D", background: value === n ? color : "#26232F", color: value === n ? "#121017" : "#8B8698" }}>{n}</button>
+        ))}
+      </div>
+      <div className="font-body" style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#6B6678", marginTop: 3 }}>
+        <span>1 = más bajo</span>
+        <span>10 = más alto</span>
+      </div>
     </div>
   );
 }
