@@ -102,8 +102,9 @@ const rolDe = (id) => ROLES_EJERCICIO.find((r) => r.id === id);
 const CATEGORIA_COLOR = Object.fromEntries(CATALOGO.map((c) => [c.categoria, c.color]));
 const CATEGORIA_EMOJI = Object.fromEntries(CATALOGO.map((c) => [c.categoria, c.emoji]));
 // Grupo muscular: es un segundo filtro opcional además de la categoría (ej: "Fuerza · Hombro"),
-// para encontrar ejercicios más rápido por músculo puntual sin depender del nombre.
-const GRUPOS_MUSCULARES = ["Hombro", "Pecho", "Espalda", "Pierna", "Glúteo", "Brazo", "Core", "Cuerpo completo"];
+// para encontrar ejercicios más rápido por músculo puntual sin depender del nombre. Esta es la
+// lista base; el coach puede sumar los que le falten desde "Nuevo ejercicio" (igual que los roles).
+const GRUPOS_MUSCULARES = ["Hombro", "Pecho", "Espalda", "Lumbar", "Cuádriceps", "Isquiotibiales", "Gemelos", "Glúteo", "Aductores", "Brazo", "Antebrazo", "Core", "Cuerpo completo"];
 
 const FLEXIBILIDAD_EXTRA_NOMBRES = [
   "Lizard stretch", "Pigeon stretch", "Butterfly stretch", "Prone bent arm stretch", "Sphinx stretch",
@@ -662,6 +663,7 @@ function VideoModal() {
   }, []);
   if (!url) return null;
   const videoId = extraerYoutubeId(url);
+  const esBusqueda = !videoId && url.includes("youtube.com/results");
   return (
     <div onClick={() => setUrl(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", zIndex: 9999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 480, background: "#121017", borderRadius: 16, overflow: "hidden", position: "relative" }}>
@@ -676,6 +678,13 @@ function VideoModal() {
               title="Video del ejercicio"
             />
           </div>
+        ) : esBusqueda ? (
+          <div style={{ padding: 30, textAlign: "center" }}>
+            <div style={{ fontSize: 28, marginBottom: 8 }}>🔍</div>
+            <div className="font-body" style={{ color: "#F4F1EA", fontSize: 14, fontWeight: 700, marginBottom: 4 }}>Todavía no tiene un video puntual cargado</div>
+            <div className="font-body" style={{ color: "#8B8698", fontSize: 11, marginBottom: 16 }}>Abrí la búsqueda en YouTube, elegí el video que quieras y pegá el link en el ejercicio.</div>
+            <a href={url} target="_blank" rel="noopener noreferrer" className="font-body" style={{ display: "inline-block", background: "#7DD6C0", border: "none", borderRadius: 999, color: "#0B2A2E", fontWeight: 700, fontSize: 12, padding: "10px 20px", textDecoration: "none" }}>🔍 Abrir búsqueda en YouTube</a>
+          </div>
         ) : (
           <div style={{ padding: 30, textAlign: "center" }}>
             <div style={{ fontSize: 28, marginBottom: 8 }}>🎬</div>
@@ -689,6 +698,9 @@ function VideoModal() {
 
 const slugify = (s) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
 const FAVORITOS_SET = new Set();
+// Ejercicios que el coach decidió borrar de su biblioteca (no le sirven) — se ocultan de las
+// búsquedas y del listado, en vez de borrarlos del catálogo compartido de raíz.
+const EJERCICIOS_OCULTOS_SET = new Set();
 // El link que le pones a un ejercicio de la biblioteca se guarda de forma simple y compartida
 // (como pediste, como estaba antes) — lo ve cualquier entrenador que use la app, y esta vez sí
 // queda guardado de verdad entre sesiones (antes se perdía al cerrar la app).
@@ -1298,6 +1310,21 @@ function generarHTMLInforme(alumno, mesFiltro) {
 
         ${mesFiltro && !checkins.length && !encuestas.length && !diasConNotas.length ? `<div style="color:#8B8698;font-size:13px;padding:20px 0;text-align:center;">Sin actividad registrada este mes.</div>` : ""}
 
+        ${(() => {
+          const fotosMediciones = (alumno.fotosMediciones || []).filter((f) => enMes(f.fecha));
+          if (!fotosMediciones.length) return "";
+          return `<h2 class="seccion">📸 Fotos de mediciones <span style="font-weight:400;text-transform:none;letter-spacing:0;opacity:0.7;">(${fotosMediciones.length} registro${fotosMediciones.length === 1 ? "" : "s"})</span></h2>
+          <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:6px;">
+            ${fotosMediciones.map((f) => `<div style="width:150px;background:#F8F6F1;border:1px solid #E8E3D8;border-radius:10px;overflow:hidden;">
+              <img src="${f.dataUrl}" style="width:100%;height:150px;object-fit:cover;display:block;" />
+              <div style="padding:8px 10px;">
+                <div style="font-size:9.5px;color:#8B8698;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;margin-bottom:3px;">${mostrarFecha(f.fecha)}</div>
+                ${f.nota && f.nota.trim() ? `<div style="font-size:11px;color:#333;">${f.nota}</div>` : `<div style="font-size:10px;color:#B8B4A8;font-style:italic;">Sin nota</div>`}
+              </div>
+            </div>`).join("")}
+          </div>`;
+        })()}
+
         <div class="analisis">
           <h3>🔎 Análisis final</h3>
           ${analisis.map((p) => `<p>${p}</p>`).join("")}
@@ -1848,11 +1875,11 @@ function MiniChart({ data, color = "#FF6B35", unidad = "" }) {
     </div>
   );
 }
-function MiniInput({ label, value, onChange, wide }) {
+function MiniInput({ label, value, onChange, wide, placeholder }) {
   return (
     <div style={{ width: wide ? 78 : 40, flexShrink: 0 }}>
       <div className="font-body" style={{ fontSize: 8, color: "#8B8698", marginBottom: 2 }}>{label}</div>
-      <input value={value} onChange={(e) => onChange(e.target.value)} className="font-body" style={{ width: "100%", background: "#26232F", border: "none", borderRadius: 6, color: "#F4F1EA", padding: "4px 5px", fontSize: 10, boxSizing: "border-box" }} />
+      <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="font-body" style={{ width: "100%", background: "#26232F", border: "none", borderRadius: 6, color: "#F4F1EA", padding: "4px 5px", fontSize: 10, boxSizing: "border-box" }} />
     </div>
   );
 }
@@ -1884,6 +1911,7 @@ function ExercisePicker({ onPick, onClose, version, onAddNew }) {
   useEffect(() => { setLimite(60); }, [busqueda, filtro]);
   const listaCompleta = useMemo(() => {
     let l = filtro === "Todos" ? EXERCISES : EXERCISES.filter((e) => e.categoria === filtro);
+    l = l.filter((e) => !EJERCICIOS_OCULTOS_SET.has(e.id));
     if (busqueda.trim()) { l = l.filter((e) => coincideBusqueda(e.nombre, busqueda) || (e.grupoMuscular && coincideBusqueda(e.grupoMuscular, busqueda))); }
     return l;
   }, [busqueda, filtro, version]);
@@ -2210,7 +2238,11 @@ function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibr
               className="font-body"
               style={{ flex: 1, minWidth: 0, background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "5px 8px", fontSize: 10, boxSizing: "border-box" }}
             />
-            {w.video && <button onClick={() => openVideo(w.video)} className="font-body" style={{ background: "none", border: "none", color: "#7DD6C0", fontSize: 9, fontWeight: 700, cursor: "pointer", padding: 0, whiteSpace: "nowrap" }}>▶ ver video</button>}
+            {w.video ? (
+              <button onClick={() => openVideo(w.video)} className="font-body" style={{ background: "none", border: "none", color: "#7DD6C0", fontSize: 9, fontWeight: 700, cursor: "pointer", padding: 0, whiteSpace: "nowrap" }}>▶ ver video</button>
+            ) : (
+              <a href={`https://www.youtube.com/results?search_query=${encodeURIComponent(w.nombre + " técnica")}`} target="_blank" rel="noopener noreferrer" className="font-body" style={{ fontSize: 9, color: "#7DD6C0", fontWeight: 700, textDecoration: "none", whiteSpace: "nowrap" }}>🔍 Buscar en YouTube</a>
+            )}
           </div>
           <input
             value={w.nota || ""}
@@ -2646,7 +2678,7 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
 }
 
 function NuevaAlumnaForm({ onCrear, onCancelar, alumnos }) {
-  const [d, setD] = useState({ nombre: "", edad: "", peso: "", altura: "", objetivo: "", deportes: "", nivel: "Intermedio", equipo: "" });
+  const [d, setD] = useState({ nombre: "", edad: "", peso: "", altura: "", objetivo: "", deportes: "", pruebasNatacion: "", nivel: "Intermedio", equipo: "" });
   const [planBaseId, setPlanBaseId] = useState("");
   const set = (k) => (v) => setD((p) => ({ ...p, [k]: v }));
   const crear = () => {
@@ -2664,6 +2696,7 @@ function NuevaAlumnaForm({ onCrear, onCancelar, alumnos }) {
         <MiniInput label="Altura (cm)" value={d.altura} onChange={set("altura")} />
         <MiniInput label="Objetivo" value={d.objetivo} onChange={set("objetivo")} wide />
         <MiniInput label="Deporte" value={d.deportes} onChange={set("deportes")} wide />
+        <MiniInput label="Estilos/pruebas que nada" placeholder='Ej: Espalda 200m / Medley 400m' value={d.pruebasNatacion} onChange={set("pruebasNatacion")} wide />
         <MiniInput label="Equipo" value={d.equipo} onChange={set("equipo")} wide />
       </div>
       {alumnos && alumnos.length > 0 && (
@@ -2827,6 +2860,61 @@ function CoachAlumnos({ alumnos, selectedId, setSelectedId, templates, onAsignar
   return <AlumnoDetalle alumno={alumno} alumnos={alumnos} templates={templates} onBack={() => setSelectedId(null)} onAsignarPlantilla={onAsignarPlantilla} onCopiarPlan={onCopiarPlan} onCopiarVersionAOtro={onCopiarVersionAOtro} onCopiarSoloCalentamiento={onCopiarSoloCalentamiento} onGuardarComoPlantilla={onGuardarComoPlantilla} onUpdatePlan={onUpdatePlan} onUpdateAlumno={onUpdateAlumno} onDeleteAlumno={() => { onDeleteAlumno(alumno.id); setSelectedId(null); }} onSendMsg={onSendMsg} onGuardarVersion={onGuardarVersion} onRestaurarVersion={onRestaurarVersion} onEliminarVersion={onEliminarVersion} onGuardarHistorialRM={onGuardarHistorialRM} onAddToLibrary={onAddToLibrary} version={version} coaches={coaches} coachIdActual={coachIdActual} onCompartirAlumno={onCompartirAlumno} onDejarDeCompartir={onDejarDeCompartir} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={onAgregarRolPersonalizado} grupos={grupos} onCompartirGrupo={onCompartirGrupo} onAgregarPlanSecundario={onAgregarPlanSecundario} onQuitarPlanSecundario={onQuitarPlanSecundario} plantelGrupos={plantelGrupos} onAsignarPlantelGrupo={onAsignarPlantelGrupo} />;
 }
 
+// Carpeta de mediciones: modal a pantalla completa con todas las fotos guardadas, cada una con su
+// nota y fecha, para no mezclarlas con el resto del perfil — como pediste, "estilo una carpeta".
+function CarpetaMediciones({ alumno, onUpdateAlumno, onClose }) {
+  const fotos = alumno.fotosMediciones || [];
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "#121017", zIndex: 500, display: "flex", flexDirection: "column" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid #26232F", flexShrink: 0 }}>
+        <div>
+          <div className="font-display" style={{ color: "#F4F1EA", fontSize: 16, fontWeight: 700 }}>📁 Carpeta de mediciones</div>
+          <div className="font-body" style={{ color: "#8B8698", fontSize: 11 }}>{alumno.nombre} · {fotos.length} foto{fotos.length === 1 ? "" : "s"}</div>
+        </div>
+        <button onClick={onClose} className="font-body" style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 999, color: "#F4F1EA", width: 32, height: 32, fontSize: 15, cursor: "pointer" }}>✕</button>
+      </div>
+      <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+        <label className="font-body" style={{ display: "block", width: "100%", background: "rgba(255,107,53,0.1)", border: "1px dashed #FF6B35", borderRadius: 10, color: "#FF6B35", fontWeight: 700, fontSize: 12, padding: 12, cursor: "pointer", textAlign: "center", marginBottom: 14, boxSizing: "border-box" }}>
+          + Agregar foto de medición
+          <input type="file" accept="image/*" style={{ display: "none" }} onChange={async (e) => {
+            const file = e.target.files && e.target.files[0]; e.target.value = "";
+            if (!file) return;
+            const dataUrl = await archivoADataURL(file, 1000, 0.8);
+            const nueva = { id: uid(), dataUrl, nota: "", fecha: todayISO() };
+            onUpdateAlumno(alumno.id, { fotosMediciones: [nueva, ...fotos] });
+          }} />
+        </label>
+        {fotos.length === 0 && (
+          <div className="font-body" style={{ color: "#6B6678", fontSize: 12, textAlign: "center", padding: "30px 0" }}>Todavía no hay fotos guardadas.<br />Se van a ir archivando acá, una por una, con fecha y nota.</div>
+        )}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          {fotos.map((f) => (
+            <div key={f.id} style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 12, overflow: "hidden" }}>
+              <div style={{ position: "relative" }}>
+                <img src={f.dataUrl} alt="" onClick={() => window.open(f.dataUrl, "_blank")} style={{ width: "100%", height: 140, objectFit: "cover", display: "block", cursor: "pointer" }} />
+                <button onClick={() => { if (window.confirm("¿Eliminar esta foto?")) onUpdateAlumno(alumno.id, { fotosMediciones: fotos.filter((x) => x.id !== f.id) }); }} style={{ position: "absolute", top: 6, right: 6, background: "rgba(18,16,23,0.75)", border: "none", borderRadius: 999, color: "#F4F1EA", width: 22, height: 22, fontSize: 12, cursor: "pointer" }}>✕</button>
+                <div className="font-display" style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "linear-gradient(0deg, rgba(0,0,0,0.7), transparent)", color: "#F4F1EA", fontSize: 9, fontWeight: 700, padding: "12px 8px 4px" }}>{mostrarFecha(f.fecha)}</div>
+              </div>
+              <div style={{ padding: 8 }}>
+                <input
+                  value={f.nota}
+                  onChange={(e) => onUpdateAlumno(alumno.id, { fotosMediciones: fotos.map((x) => (x.id === f.id ? { ...x, nota: e.target.value } : x)) })}
+                  placeholder="Nota (ej: -2kg, mejoró postura...)"
+                  className="font-body"
+                  style={{ width: "100%", background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "6px 7px", fontSize: 10.5, boxSizing: "border-box" }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+        {fotos.length > 0 && (
+          <div className="font-body" style={{ color: "#6B6678", fontSize: 10, textAlign: "center", marginTop: 16 }}>Estas fotos ya se incluyen automáticamente en "📄 Descargar informe (PDF)" del perfil.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla, onCopiarPlan, onCopiarVersionAOtro, onCopiarSoloCalentamiento, onGuardarComoPlantilla, onUpdatePlan, onUpdateAlumno, onDeleteAlumno, onSendMsg, onGuardarVersion, onRestaurarVersion, onEliminarVersion, onGuardarHistorialRM, onAddToLibrary, version, coaches, coachIdActual, onCompartirAlumno, onDejarDeCompartir, rolesPersonalizados, onAgregarRolPersonalizado, grupos, onCompartirGrupo, onAgregarPlanSecundario, onQuitarPlanSecundario, plantelGrupos, onAsignarPlantelGrupo }) {
   const [tab, setTab] = useState("plan");
   const [msg, setMsg] = useState("");
@@ -2838,6 +2926,7 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
   const [nombreNuevaPlanificacion, setNombreNuevaPlanificacion] = useState("");
   const [diaNotasAbierto, setDiaNotasAbierto] = useState(null);
   const [verInformesMensuales, setVerInformesMensuales] = useState(false);
+  const [carpetaMedicionesAbierta, setCarpetaMedicionesAbierta] = useState(false);
   const [masOpcionesPlan, setMasOpcionesPlan] = useState(false);
   const [guardandoVersion, setGuardandoVersion] = useState(false);
   // Historial de "Deshacer": guarda una copia del plan justo antes de cada cambio, para poder
@@ -3153,42 +3242,22 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
           <button onClick={() => descargarInformePDF(alumno)} className="font-body" style={{ width: "100%", background: "#FF6B35", border: "none", borderRadius: 10, color: "#121017", fontWeight: 700, fontSize: 12, padding: 11, cursor: "pointer", marginBottom: 6 }}>📄 Descargar informe (PDF)</button>
           <div className="font-body" style={{ fontSize: 9, color: "#6B6678", textAlign: "center", marginBottom: 16 }}>Se abre y guarda un archivo — tocá "Imprimir / Guardar como PDF" ahí adentro, y de ahí lo podés mandar por WhatsApp como cualquier otro archivo.</div>
 
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <div className="font-body" style={{ fontSize: 11, color: "#FF6B35", fontWeight: 600 }}>📸 FOTOS DE MEDICIONES</div>
-              <label className="font-body" style={{ background: "rgba(255,107,53,0.1)", border: "1px dashed #FF6B35", borderRadius: 8, color: "#FF6B35", fontWeight: 700, fontSize: 10, padding: "6px 10px", cursor: "pointer" }}>
-                + Agregar
-                <input type="file" accept="image/*" style={{ display: "none" }} onChange={async (e) => {
-                  const file = e.target.files && e.target.files[0]; e.target.value = "";
-                  if (!file) return;
-                  const dataUrl = await archivoADataURL(file, 1000, 0.8);
-                  const nueva = { id: uid(), dataUrl, nota: "", fecha: todayISO() };
-                  onUpdateAlumno(alumno.id, { fotosMediciones: [nueva, ...(alumno.fotosMediciones || [])] });
-                }} />
-              </label>
+          <button onClick={() => setCarpetaMedicionesAbierta(true)} className="font-body" style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 12, padding: 12, cursor: "pointer", marginBottom: 16, textAlign: "left" }}>
+            <div style={{ width: 44, height: 44, borderRadius: 10, background: "rgba(255,107,53,0.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0, position: "relative" }}>
+              📁
+              {alumno.fotosMediciones && alumno.fotosMediciones.length > 0 && (
+                <div className="font-display" style={{ position: "absolute", bottom: -4, right: -4, background: "#FF6B35", color: "#121017", borderRadius: 999, minWidth: 18, height: 18, padding: "0 4px", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid #121017" }}>{alumno.fotosMediciones.length}</div>
+              )}
             </div>
-            {(!alumno.fotosMediciones || alumno.fotosMediciones.length === 0) && (
-              <div className="font-body" style={{ color: "#6B6678", fontSize: 10 }}>Todavía no hay fotos cargadas.</div>
-            )}
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {(alumno.fotosMediciones || []).map((f) => (
-                <div key={f.id} style={{ display: "flex", gap: 10, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, padding: 8 }}>
-                  <img src={f.dataUrl} alt="" onClick={() => window.open(f.dataUrl, "_blank")} style={{ width: 64, height: 64, borderRadius: 8, objectFit: "cover", flexShrink: 0, cursor: "pointer" }} />
-                  <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
-                    <div className="font-body" style={{ color: "#8B8698", fontSize: 9 }}>{new Date(f.fecha + "T00:00:00").toLocaleDateString("es-AR")}</div>
-                    <input
-                      value={f.nota}
-                      onChange={(e) => onUpdateAlumno(alumno.id, { fotosMediciones: alumno.fotosMediciones.map((x) => (x.id === f.id ? { ...x, nota: e.target.value } : x)) })}
-                      placeholder="Nota (ej: -2kg desde la última, mejoró postura...)"
-                      className="font-body"
-                      style={{ width: "100%", background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "5px 8px", fontSize: 10, boxSizing: "border-box" }}
-                    />
-                  </div>
-                  <button onClick={() => { if (window.confirm("¿Eliminar esta foto?")) onUpdateAlumno(alumno.id, { fotosMediciones: alumno.fotosMediciones.filter((x) => x.id !== f.id) }); }} style={{ background: "none", border: "none", color: "#E85D5D", fontSize: 13, cursor: "pointer", alignSelf: "flex-start", padding: "0 2px" }}>✕</button>
-                </div>
-              ))}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="font-body" style={{ color: "#F4F1EA", fontWeight: 700, fontSize: 12 }}>Carpeta de mediciones</div>
+              <div className="font-body" style={{ color: "#8B8698", fontSize: 10, marginTop: 1 }}>{alumno.fotosMediciones && alumno.fotosMediciones.length > 0 ? `${alumno.fotosMediciones.length} foto${alumno.fotosMediciones.length === 1 ? "" : "s"} guardada${alumno.fotosMediciones.length === 1 ? "" : "s"}` : "Todavía no hay fotos — tocá para agregar la primera"}</div>
             </div>
-          </div>
+            <span style={{ color: "#8B8698", fontSize: 14 }}>›</span>
+          </button>
+          {carpetaMedicionesAbierta && (
+            <CarpetaMediciones alumno={alumno} onUpdateAlumno={onUpdateAlumno} onClose={() => setCarpetaMedicionesAbierta(false)} />
+          )}
 
           {alumno.mesesArchivados && alumno.mesesArchivados.length > 0 && (
             <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, padding: 12, marginBottom: 16 }}>
@@ -3226,6 +3295,7 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
             <MiniInput label="Peso (kg)" value={alumno.peso} onChange={(v) => onUpdateAlumno(alumno.id, { peso: v })} />
             <MiniInput label="Altura (cm)" value={alumno.altura} onChange={(v) => onUpdateAlumno(alumno.id, { altura: v })} />
             <MiniInput label="Deporte" value={alumno.deportes} onChange={(v) => onUpdateAlumno(alumno.id, { deportes: v })} wide />
+            <MiniInput label="Estilos/pruebas que nada" placeholder='Ej: Espalda 200m / Pecho 200m - Medley 400m' value={alumno.pruebasNatacion} onChange={(v) => onUpdateAlumno(alumno.id, { pruebasNatacion: v })} wide />
             <MiniInput label="Objetivo" value={alumno.objetivo} onChange={(v) => onUpdateAlumno(alumno.id, { objetivo: v })} wide />
             <MiniInput label="Lesiones" value={alumno.lesiones} onChange={(v) => onUpdateAlumno(alumno.id, { lesiones: v })} wide />
             <MiniInput label="Equipo" value={alumno.equipo} onChange={(v) => onUpdateAlumno(alumno.id, { equipo: v })} wide />
@@ -3291,7 +3361,7 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
             {alumno.wellness.encuestas.length === 0 && <div className="font-body" style={{ color: "#8B8698", fontSize: 11 }}>Todavía no respondió ninguna.</div>}
             {alumno.wellness.encuestas.map((e, i) => (
               <div key={i} style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, padding: 10, marginBottom: 6 }}>
-                <div className="font-body" style={{ color: "#8B8698", fontSize: 9, fontWeight: 600, marginBottom: 4 }}>{e.fecha.toUpperCase()}</div>
+                <div className="font-body" style={{ color: "#8B8698", fontSize: 9, fontWeight: 600, marginBottom: 4 }}>{mostrarFecha(e.fecha).toUpperCase()}</div>
                 <div className="font-body" style={{ color: "#F4F1EA", fontSize: 11 }}>Fatiga {e.fatiga} · Sueño {e.sueno} · Dolor {e.dolorMuscular} · Motivación {e.motivacion}</div>
                 {e.comentario && <div className="font-body" style={{ color: "#8B8698", fontSize: 11, marginTop: 4, fontStyle: "italic" }}>"{e.comentario}"</div>}
               </div>
@@ -3490,13 +3560,23 @@ function CoachPlantillas({ templates, alumnos, onAsignar, onCrearPlantilla, onEd
   );
 }
 
-function NuevoEjercicioForm({ onCrear, onCancelar }) {
+function NuevoEjercicioForm({ onCrear, onCancelar, gruposMuscularesPersonalizados, onAgregarGrupoMuscularPersonalizado }) {
   const [nombre, setNombre] = useState("");
   const [categoria, setCategoria] = useState(CATEGORIAS.find((c) => c !== "Todos") || "Fuerza");
   const [grupoMuscular, setGrupoMuscular] = useState("");
   const [material, setMaterial] = useState("");
   const [dificultad, setDificultad] = useState("Intermedio");
   const [video, setVideo] = useState("");
+  const [creandoGrupo, setCreandoGrupo] = useState(false);
+  const [nombreGrupoNuevo, setNombreGrupoNuevo] = useState("");
+  const crearGrupoNuevo = () => {
+    const n = nombreGrupoNuevo.trim();
+    if (!n) return;
+    onAgregarGrupoMuscularPersonalizado(n);
+    setGrupoMuscular(n);
+    setNombreGrupoNuevo("");
+    setCreandoGrupo(false);
+  };
 
   const crear = () => {
     if (!nombre.trim()) return;
@@ -3515,9 +3595,18 @@ function NuevoEjercicioForm({ onCrear, onCancelar }) {
         {CATEGORIAS.filter((c) => c !== "Todos").map((c) => <Pill key={c} active={categoria === c} onClick={() => setCategoria(c)} activeColor="#7DD6C0">{CATEGORIA_EMOJI[c] || "⭐"} {c}</Pill>)}
       </div>
       <div className="font-body" style={{ fontSize: 9, color: "#8B8698", marginBottom: 4 }}>Grupo muscular (opcional)</div>
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-        {GRUPOS_MUSCULARES.map((g) => <Pill key={g} active={grupoMuscular === g} onClick={() => setGrupoMuscular(grupoMuscular === g ? "" : g)} activeColor="#5AA0E6">{g}</Pill>)}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: creandoGrupo ? 6 : 10 }}>
+        {[...GRUPOS_MUSCULARES, ...(gruposMuscularesPersonalizados || [])].map((g) => <Pill key={g} active={grupoMuscular === g} onClick={() => setGrupoMuscular(grupoMuscular === g ? "" : g)} activeColor="#5AA0E6">{g}</Pill>)}
+        {onAgregarGrupoMuscularPersonalizado && (
+          <button onClick={() => setCreandoGrupo(!creandoGrupo)} className="font-body" style={{ flexShrink: 0, background: "#26232F", border: "1px dashed #8B8698", borderRadius: 999, color: "#8B8698", fontWeight: 700, fontSize: 9, padding: "4px 9px", cursor: "pointer" }}>+ Nuevo</button>
+        )}
       </div>
+      {creandoGrupo && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+          <input value={nombreGrupoNuevo} onChange={(e) => setNombreGrupoNuevo(e.target.value)} placeholder="Ej: Isquiotibiales" className="font-body" style={{ flex: 1, background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "6px 8px", fontSize: 11, boxSizing: "border-box" }} />
+          <button onClick={crearGrupoNuevo} className="font-body" style={{ background: "#7DD6C0", border: "none", borderRadius: 6, color: "#0B2A2E", fontWeight: 700, padding: "0 12px", cursor: "pointer", fontSize: 11 }}>Crear</button>
+        </div>
+      )}
       <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
         <div style={{ flex: 1 }}>
           <div className="font-body" style={{ fontSize: 9, color: "#8B8698", marginBottom: 3 }}>Material</div>
@@ -3542,7 +3631,7 @@ function NuevoEjercicioForm({ onCrear, onCancelar }) {
   );
 }
 
-function CoachEjercicios({ onAddExercise, version, onToggleFav, onEditVideo }) {
+function CoachEjercicios({ onAddExercise, version, onToggleFav, onEditVideo, onEliminarExercise, gruposMuscularesPersonalizados, onAgregarGrupoMuscularPersonalizado }) {
   const [filtro, setFiltro] = useState("Todos");
   const [filtroGrupo, setFiltroGrupo] = useState("Todos");
   const [busqueda, setBusqueda] = useState("");
@@ -3554,6 +3643,7 @@ function CoachEjercicios({ onAddExercise, version, onToggleFav, onEditVideo }) {
   const listaCompleta = useMemo(() => {
     let l = filtro === "★ Favoritos" ? EXERCISES.filter((e) => FAVORITOS_SET.has(e.id))
       : filtro === "Todos" ? EXERCISES : EXERCISES.filter((e) => e.categoria === filtro);
+    l = l.filter((e) => !EJERCICIOS_OCULTOS_SET.has(e.id));
     if (filtroGrupo !== "Todos") l = l.filter((e) => e.grupoMuscular === filtroGrupo);
     if (busqueda.trim()) { l = l.filter((e) => coincideBusqueda(e.nombre, busqueda) || (e.grupoMuscular && coincideBusqueda(e.grupoMuscular, busqueda))); }
     return l;
@@ -3571,13 +3661,13 @@ function CoachEjercicios({ onAddExercise, version, onToggleFav, onEditVideo }) {
       </div>
       <div style={{ display: "flex", gap: 8, padding: "0 20px 12px", overflowX: "auto" }}>
         <Pill active={filtroGrupo === "Todos"} onClick={() => setFiltroGrupo("Todos")} activeColor="#5AA0E6">Cualquier músculo</Pill>
-        {GRUPOS_MUSCULARES.map((g) => <Pill key={g} active={filtroGrupo === g} onClick={() => setFiltroGrupo(g)} activeColor="#5AA0E6">{g}</Pill>)}
+        {[...GRUPOS_MUSCULARES, ...(gruposMuscularesPersonalizados || [])].map((g) => <Pill key={g} active={filtroGrupo === g} onClick={() => setFiltroGrupo(g)} activeColor="#5AA0E6">{g}</Pill>)}
       </div>
       <div className="font-body" style={{ padding: "0 20px", fontSize: 10, color: "#6B6678", marginBottom: 6 }}>{listaCompleta.length} resultados en "{filtro}"{listaCompleta.length > lista.length ? ` · mostrando ${lista.length}` : ""}</div>
       <div className="font-body" style={{ padding: "0 20px", fontSize: 9, color: "#6B6678", marginBottom: 8 }}>Tocá el ✏️ de cualquier ejercicio para poner el link exacto de YouTube — le va a quedar guardado para siempre, en cualquier plan donde lo uses.</div>
       <div style={{ padding: "0 20px", display: "flex", flexDirection: "column", gap: 8 }}>
         {creando ? (
-          <NuevoEjercicioForm onCancelar={() => setCreando(false)} onCrear={(ex) => { onAddExercise(ex); setCreando(false); }} />
+          <NuevoEjercicioForm onCancelar={() => setCreando(false)} onCrear={(ex) => { onAddExercise(ex); setCreando(false); }} gruposMuscularesPersonalizados={gruposMuscularesPersonalizados} onAgregarGrupoMuscularPersonalizado={onAgregarGrupoMuscularPersonalizado} />
         ) : (
           <button onClick={() => setCreando(true)} className="font-body" style={{ background: "rgba(125,214,192,0.12)", border: "1px dashed #7DD6C0", borderRadius: 12, padding: 12, color: "#7DD6C0", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>+ Crear ejercicio propio</button>
         )}
@@ -3598,6 +3688,7 @@ function CoachEjercicios({ onAddExercise, version, onToggleFav, onEditVideo }) {
                 </button>
                 <button onClick={() => { setEditandoId(editando ? null : e.id); setValorEdicion(!esBusqueda ? videoEf : ""); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: editando ? "#7DD6C0" : "#8B8698", flexShrink: 0 }}>✏️</button>
                 <button onClick={() => onToggleFav(e.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: FAVORITOS_SET.has(e.id) ? "#FFC94A" : "#3A3646", flexShrink: 0 }}>★</button>
+                <button onClick={() => { if (window.confirm(`¿Eliminar "${e.nombre}" de la biblioteca? Esta acción no se puede deshacer.`)) onEliminarExercise(e.id); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "#E85D5D", flexShrink: 0, padding: "0 2px" }}>✕</button>
               </div>
               {editando && (
                 <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #322E3D" }}>
@@ -3670,16 +3761,14 @@ function estimarSesion(dia, pesoKg) {
 
 function EscalaSelector({ value, onChange, color = "#FF6B35" }) {
   return (
-    <div>
-      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-        {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-          <button key={n} onClick={() => onChange(n)} className="font-display" style={{ width: 26, height: 26, borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer", border: value === n ? `1px solid ${color}` : "1px solid #322E3D", background: value === n ? color : "#26232F", color: value === n ? "#121017" : "#8B8698" }}>{n}</button>
-        ))}
-      </div>
-      <div className="font-body" style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#6B6678", marginTop: 3 }}>
-        <span>1 = más bajo</span>
-        <span>10 = más alto</span>
-      </div>
+    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+      {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+        <div key={n} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, width: 26 }}>
+          <button onClick={() => onChange(n)} className="font-display" style={{ width: 26, height: 26, borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer", border: value === n ? `1px solid ${color}` : "1px solid #322E3D", background: value === n ? color : "#26232F", color: value === n ? "#121017" : "#8B8698" }}>{n}</button>
+          {n === 1 && <span className="font-body" style={{ fontSize: 8, color: "#6B6678", whiteSpace: "nowrap" }}>más bajo</span>}
+          {n === 10 && <span className="font-body" style={{ fontSize: 8, color: "#6B6678", whiteSpace: "nowrap" }}>más alto</span>}
+        </div>
+      ))}
     </div>
   );
 }
@@ -4979,6 +5068,7 @@ function sanearAlumno(a) {
       // registrando la evolución física a lo largo del tiempo.
       fotoPerfil: typeof a.fotoPerfil === "string" ? a.fotoPerfil : null,
       fotosMediciones: Array.isArray(a.fotosMediciones) ? a.fotosMediciones : [],
+      pruebasNatacion: typeof a.pruebasNatacion === "string" ? a.pruebasNatacion : "",
     };
   } catch {
     return a;
@@ -5012,6 +5102,10 @@ export default function GymPlannerCoachApp() {
       const idsExistentes = new Set(EXERCISES.map((e) => e.id));
       guardados.forEach((ex) => { if (ex && ex.id && !idsExistentes.has(ex.id)) { EXERCISES.push(ex); idsExistentes.add(ex.id); } });
     }
+    // Favoritos y ejercicios ocultos (borrados de la biblioteca): antes vivían solo en memoria y se
+    // perdían siempre al recargar. Se restauran acá igual que los ejercicios custom.
+    (guardadoRef.current.favoritosIds || []).forEach((id) => FAVORITOS_SET.add(id));
+    (guardadoRef.current.ejerciciosOcultosIds || []).forEach((id) => EJERCICIOS_OCULTOS_SET.add(id));
   }
   const guardado = guardadoRef.current;
 
@@ -5036,6 +5130,9 @@ export default function GymPlannerCoachApp() {
   const [modoPausa, setModoPausa] = useState(guardado.modoPausa || false);
   const [diasAvisoPlan, setDiasAvisoPlan] = useState(guardado.diasAvisoPlan || 7);
   const [rolesPersonalizados, setRolesPersonalizados] = useState(guardado.rolesPersonalizados || []);
+  const [gruposMuscularesPersonalizados, setGruposMuscularesPersonalizados] = useState(guardado.gruposMuscularesPersonalizados || []);
+  const [favoritosIds, setFavoritosIds] = useState(guardado.favoritosIds || Array.from(FAVORITOS_SET));
+  const [ejerciciosOcultosIds, setEjerciciosOcultosIds] = useState(guardado.ejerciciosOcultosIds || Array.from(EJERCICIOS_OCULTOS_SET));
   // Grupos de entrenadores: un coach puede armar "equipos" (ej: "Mis ayudantes") y compartirles
   // alumnos a todos los del grupo de una sola vez, en vez de uno por uno. Un entrenador que creaste
   // aparte (que no esté en ningún grupo tuyo, ej: le vendiste la app a otra persona) sigue sin ver
@@ -5064,6 +5161,7 @@ export default function GymPlannerCoachApp() {
     setLogActividad((prev) => [{ id: uid(), texto, coach: nombreCoach, coachId: session?.coachId || null, fecha: new Date().toISOString() }, ...prev].slice(0, 50));
   };
   const agregarRolPersonalizado = (label, color) => setRolesPersonalizados((prev) => [...prev, { id: `custom_${uid()}`, label, color }]);
+  const agregarGrupoMuscularPersonalizado = (nombre) => setGruposMuscularesPersonalizados((prev) => (prev.includes(nombre) ? prev : [...prev, nombre]));
   const [alumnos, setAlumnos] = useState(sanearAlumnos(guardado.alumnos) || sanearAlumnos(ALUMNOS_INICIAL));
   const [templates, setTemplates] = useState(guardado.templates || TEMPLATES_INICIAL);
   const [selectedCoachAlumno, setSelectedCoachAlumno] = useState(null);
@@ -5107,6 +5205,9 @@ export default function GymPlannerCoachApp() {
           if (typeof remoto.modoPausa === "boolean") setModoPausa(remoto.modoPausa);
           if (typeof remoto.diasAvisoPlan === "number") setDiasAvisoPlan(remoto.diasAvisoPlan);
           if (Array.isArray(remoto.rolesPersonalizados)) setRolesPersonalizados(remoto.rolesPersonalizados);
+          if (Array.isArray(remoto.gruposMuscularesPersonalizados)) setGruposMuscularesPersonalizados(remoto.gruposMuscularesPersonalizados);
+          if (Array.isArray(remoto.favoritosIds)) { remoto.favoritosIds.forEach((id) => FAVORITOS_SET.add(id)); setFavoritosIds(Array.from(FAVORITOS_SET)); }
+          if (Array.isArray(remoto.ejerciciosOcultosIds)) { remoto.ejerciciosOcultosIds.forEach((id) => EJERCICIOS_OCULTOS_SET.add(id)); setEjerciciosOcultosIds(Array.from(EJERCICIOS_OCULTOS_SET)); setLibVersion((v) => v + 1); }
           if (Array.isArray(remoto.grupos)) setGrupos(remoto.grupos);
           if (Array.isArray(remoto.plantelGrupos)) setPlantelGrupos(remoto.plantelGrupos);
           if (remoto.videosGuardados && typeof remoto.videosGuardados === "object") setVideosGuardados(remoto.videosGuardados);
@@ -5140,6 +5241,9 @@ export default function GymPlannerCoachApp() {
           if (typeof remoto.modoPausa === "boolean") setModoPausa(remoto.modoPausa);
           if (typeof remoto.diasAvisoPlan === "number") setDiasAvisoPlan(remoto.diasAvisoPlan);
           if (Array.isArray(remoto.rolesPersonalizados)) setRolesPersonalizados(remoto.rolesPersonalizados);
+          if (Array.isArray(remoto.gruposMuscularesPersonalizados)) setGruposMuscularesPersonalizados(remoto.gruposMuscularesPersonalizados);
+          if (Array.isArray(remoto.favoritosIds)) { remoto.favoritosIds.forEach((id) => FAVORITOS_SET.add(id)); setFavoritosIds(Array.from(FAVORITOS_SET)); }
+          if (Array.isArray(remoto.ejerciciosOcultosIds)) { remoto.ejerciciosOcultosIds.forEach((id) => EJERCICIOS_OCULTOS_SET.add(id)); setEjerciciosOcultosIds(Array.from(EJERCICIOS_OCULTOS_SET)); setLibVersion((v) => v + 1); }
           if (Array.isArray(remoto.grupos)) setGrupos(remoto.grupos);
           if (Array.isArray(remoto.plantelGrupos)) setPlantelGrupos(remoto.plantelGrupos);
           if (remoto.videosGuardados && typeof remoto.videosGuardados === "object") setVideosGuardados(remoto.videosGuardados);
@@ -5156,7 +5260,7 @@ export default function GymPlannerCoachApp() {
 
   useEffect(() => {
     if (!remotoListo) return; // todavía no trajimos lo compartido: no guardamos para no pisarlo
-    const data = { coachNombre, coaches, alumnos, templates, mensajeRecordatorio, modoPausa, diasAvisoPlan, rolesPersonalizados, logActividad, grupos, plantelGrupos, videosGuardados, ejerciciosCustom, _uidMax: _uid };
+    const data = { coachNombre, coaches, alumnos, templates, mensajeRecordatorio, modoPausa, diasAvisoPlan, rolesPersonalizados, gruposMuscularesPersonalizados, logActividad, grupos, plantelGrupos, videosGuardados, ejerciciosCustom, favoritosIds, ejerciciosOcultosIds, _uidMax: _uid };
     guardarTodo(data); // copia local rápida (funciona siempre, con o sin internet)
     let cancelado = false;
     if (remotoSincronizadoRef.current) {
@@ -5175,7 +5279,7 @@ export default function GymPlannerCoachApp() {
     }
     return () => { cancelado = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coachNombre, coaches, alumnos, templates, mensajeRecordatorio, modoPausa, diasAvisoPlan, rolesPersonalizados, logActividad, grupos, plantelGrupos, videosGuardados, ejerciciosCustom, remotoListo]);
+  }, [coachNombre, coaches, alumnos, templates, mensajeRecordatorio, modoPausa, diasAvisoPlan, rolesPersonalizados, gruposMuscularesPersonalizados, logActividad, grupos, plantelGrupos, videosGuardados, ejerciciosCustom, favoritosIds, ejerciciosOcultosIds, remotoListo]);
 
   // Le avisa al coach por notificación push apenas aparece una alerta nueva (ánimo bajo, cumplimiento
   // bajo, etc.). Guardamos cuáles ya se avisaron en este dispositivo (no solo en la memoria de esta
@@ -5239,7 +5343,19 @@ export default function GymPlannerCoachApp() {
       return [...prev, ...nuevosDeLaNube];
     });
   };
-  const toggleFavorito = (id) => { FAVORITOS_SET.has(id) ? FAVORITOS_SET.delete(id) : FAVORITOS_SET.add(id); setLibVersion((v) => v + 1); };
+  const toggleFavorito = (id) => {
+    FAVORITOS_SET.has(id) ? FAVORITOS_SET.delete(id) : FAVORITOS_SET.add(id);
+    setLibVersion((v) => v + 1);
+    setFavoritosIds(Array.from(FAVORITOS_SET));
+  };
+  // Borra un ejercicio de la biblioteca (no le sirve al coach) — no lo saca del catálogo compartido
+  // de raíz, lo oculta de las búsquedas y listados, con confirmación antes de hacerlo.
+  const eliminarExercise = (id) => {
+    EJERCICIOS_OCULTOS_SET.add(id);
+    if (FAVORITOS_SET.has(id)) { FAVORITOS_SET.delete(id); setFavoritosIds(Array.from(FAVORITOS_SET)); }
+    setLibVersion((v) => v + 1);
+    setEjerciciosOcultosIds(Array.from(EJERCICIOS_OCULTOS_SET));
+  };
   // Edita el video de un ejercicio de la biblioteca, de forma simple y compartida (como pediste):
   // lo ve cualquier entrenador, y esta vez sí queda guardado de verdad entre sesiones.
   const editarVideoLibreria = (id, video) => {
@@ -5390,7 +5506,7 @@ export default function GymPlannerCoachApp() {
   const finalizarEntrenamiento = (alumnoId) => {
     setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...a, sesionesCompletadas: (a.sesionesCompletadas || 0) + 1, historialSesiones: [...(a.historialSesiones || []), todayISO()], wellness: { ...a.wellness, encuestaPendiente: true } } : a)));
   };
-  const enviarEncuestaSemanal = (alumnoId, data) => setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...a, wellness: { ...a.wellness, encuestas: [{ fecha: "hoy", ...data }, ...a.wellness.encuestas], encuestaPendiente: false } } : a)));
+  const enviarEncuestaSemanal = (alumnoId, data) => setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...a, wellness: { ...a.wellness, encuestas: [{ fecha: todayISO(), ...data }, ...a.wellness.encuestas], encuestaPendiente: false } } : a)));
   const addAlumno = (d) => {
     const iniciales = d.nombre.trim().split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase() || "??";
     const usuario = slugify(d.nombre.trim()) || `alumno${alumnos.length + 1}`;
@@ -5401,7 +5517,7 @@ export default function GymPlannerCoachApp() {
     // Pasa por sanearAlumno para que tenga TODOS los campos que espera el resto de la app (rutinas
     // extra, meses archivados, etc.) — así una alumna recién creada nunca le falta algo que rompa
     // la pantalla, ni ahora ni si se agregan más campos en el futuro.
-    const nuevo = sanearAlumno({ id: uid(), nombre: d.nombre.trim(), usuario, password, edad: d.edad || "", peso: d.peso || "", altura: d.altura || "", objetivo: d.objetivo || "", deportes: d.deportes || "", nivel: d.nivel || "Intermedio", lesiones: "Ninguna", inicio: "", equipo: d.equipo || "", cumplimiento: 0, foto: iniciales, sesionesCompletadas: 0, plan: planInicial, coachIds: session?.coachId ? [session.coachId] : null });
+    const nuevo = sanearAlumno({ id: uid(), nombre: d.nombre.trim(), usuario, password, edad: d.edad || "", peso: d.peso || "", altura: d.altura || "", objetivo: d.objetivo || "", deportes: d.deportes || "", pruebasNatacion: d.pruebasNatacion || "", nivel: d.nivel || "Intermedio", lesiones: "Ninguna", inicio: "", equipo: d.equipo || "", cumplimiento: 0, foto: iniciales, sesionesCompletadas: 0, plan: planInicial, coachIds: session?.coachId ? [session.coachId] : null });
     setAlumnos((prev) => [...prev, nuevo]);
     registrarActividad(`agregó a ${d.nombre.trim()}`);
     return { usuario, password };
@@ -5478,7 +5594,7 @@ export default function GymPlannerCoachApp() {
     if (tab === "dashboard") body = <CoachDashboard alumnos={alumnosVisibles} goAlumnos={(id) => { setTab("alumnos"); setSelectedCoachAlumno(id); }} coachNombre={coachNombre} onUpdateCoach={setCoachNombre} coaches={coaches} onAddCoach={addCoach} onRemoveCoach={removeCoach} mensajeRecordatorio={mensajeRecordatorio} onUpdateMensajeRecordatorio={setMensajeRecordatorio} notificacionesActivas={notificacionesActivas} onToggleNotificaciones={setNotificacionesActivas} modoPausa={modoPausa} onToggleModoPausa={setModoPausa} diasAvisoPlan={diasAvisoPlan} onSetDiasAvisoPlan={setDiasAvisoPlan} coachId={session?.coachId} onCambiarPassword={cambiarPasswordCoach} onSetRecoveryPin={setRecoveryPin} onSetTelefono={setTelefonoCoach} onReclamarAlumnos={reclamarAlumnosSinDueño} logActividad={logActividad} grupos={grupos} onCrearGrupo={crearGrupo} onEliminarGrupo={eliminarGrupo} />;
     else if (tab === "alumnos") body = <CoachAlumnos alumnos={alumnosVisibles} selectedId={selectedCoachAlumno} setSelectedId={setSelectedCoachAlumno} templates={templatesVisibles} onAsignarPlantilla={asignarPlantilla} onCopiarPlan={copiarPlan} onCopiarVersionAOtro={copiarVersionAOtro} onCopiarSoloCalentamiento={copiarSoloCalentamiento} onAgregarPlanSecundario={agregarPlanSecundario} onQuitarPlanSecundario={quitarPlanSecundario} onGuardarComoPlantilla={guardarComoPlantilla} onUpdatePlan={updatePlan} onUpdateAlumno={updateAlumno} onDeleteAlumno={deleteAlumno} onAddAlumno={addAlumno} onSendMsg={sendMsg} onGuardarVersion={guardarVersion} onRestaurarVersion={restaurarVersion} onEliminarVersion={eliminarVersion} onGuardarHistorialRM={agregarHistorialRM} onAddToLibrary={addCustomExercise} version={libVersion} coaches={coaches} coachIdActual={session.coachId} onCompartirAlumno={compartirAlumnoConCoach} onDejarDeCompartir={dejarDeCompartirAlumno} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={agregarRolPersonalizado} grupos={grupos} onCompartirGrupo={compartirAlumnoConGrupo} plantelGrupos={plantelGrupos} onCrearPlantelGrupo={crearPlantelGrupo} onRenombrarPlantelGrupo={renombrarPlantelGrupo} onEliminarPlantelGrupo={eliminarPlantelGrupo} onAsignarPlantelGrupo={asignarPlantelGrupo} />;
     else if (tab === "plantillas") body = <CoachPlantillas templates={templatesVisibles} alumnos={alumnosVisibles} onAsignar={asignarPlantilla} onCrearPlantilla={crearPlantilla} onEditarPlantilla={editarPlantilla} onEliminarPlantilla={eliminarPlantilla} onAddToLibrary={addCustomExercise} version={libVersion} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={agregarRolPersonalizado} coachIdActual={session.coachId} />;
-    else if (tab === "ejercicios") body = <CoachEjercicios onAddExercise={addCustomExercise} version={libVersion} onToggleFav={toggleFavorito} onEditVideo={editarVideoLibreria} />;
+    else if (tab === "ejercicios") body = <CoachEjercicios onAddExercise={addCustomExercise} version={libVersion} onToggleFav={toggleFavorito} onEditVideo={editarVideoLibreria} onEliminarExercise={eliminarExercise} gruposMuscularesPersonalizados={gruposMuscularesPersonalizados} onAgregarGrupoMuscularPersonalizado={agregarGrupoMuscularPersonalizado} />;
     else body = <BuscarGlobal alumnos={alumnosVisibles} templates={templatesVisibles} version={libVersion} onGoAlumno={(id) => { setTab("alumnos"); setSelectedCoachAlumno(id); }} onGoPlantillas={() => setTab("plantillas")} />;
   } else if (!athlete) {
     body = <div className="font-body" style={{ color: "#8B8698", fontSize: 13, textAlign: "center", padding: "40px 20px" }}>Tu cuenta ya no está activa. Consultá con tu entrenador.</div>;
