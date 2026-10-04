@@ -1485,34 +1485,40 @@ const clonarPlan = (p) => ({
   rm: p.rm.map((r) => ({ ...r, id: uid() })),
 });
 
-// Busca el 1RM base cargado (en la tabla de RM del plan) para un ejercicio por nombre —
-// sin importar mayúsculas ni espacios de más.
+// Busca el 1RM base cargado (en la tabla de RM del plan) para un ejercicio por nombre — ignora
+// mayúsculas, acentos y espacios de más (ej. "Press De Bánca" = "press de banca"), para que no
+// haga falta que quede escrito carácter por carácter igual.
 function buscarRMBase(rmList, nombreEjercicio) {
   if (!rmList || !nombreEjercicio) return null;
-  const norm = (s) => (s || "").trim().toLowerCase();
+  const norm = (s) => normalizarTexto(s || "").trim().replace(/\s+/g, " ");
   const encontrado = rmList.find((r) => norm(r.ejercicio) === norm(nombreEjercicio) && r.valor);
   if (!encontrado) return null;
   const val = parseFloat(String(encontrado.valor).replace(",", "."));
   return Number.isFinite(val) && val > 0 ? val : null;
 }
 
-// Extrae el primer porcentaje que aparezca en el texto de prescripción (ej. "80% · RIR 2" -> 80).
-function extraerPorcentaje(texto) {
-  if (!texto) return null;
-  const m = String(texto).match(/(\d{1,3}(?:[.,]\d+)?)\s*%/);
-  if (!m) return null;
-  const val = parseFloat(m[1].replace(",", "."));
-  return Number.isFinite(val) && val > 0 ? val : null;
+// Extrae TODOS los porcentajes que aparezcan en el texto de prescripción (ej. "80% 85% 100%" o
+// "80% · RIR 2 / 85%" -> [80, 85, 100]), para poder calcular una serie progresiva de pesos.
+function extraerPorcentajes(texto) {
+  if (!texto) return [];
+  const coincidencias = String(texto).matchAll(/(\d{1,3}(?:[.,]\d+)?)\s*%/g);
+  const valores = [];
+  for (const m of coincidencias) {
+    const val = parseFloat(m[1].replace(",", "."));
+    if (Number.isFinite(val) && val > 0) valores.push(val);
+  }
+  return valores;
 }
 
-// Si la prescripción del ejercicio trae un % (ej. "80% · RIR 2") Y hay un RM base cargado para
-// ese mismo ejercicio en la tabla de RM del plan, calcula el peso a usar — redondeado a la media
-// unidad más cercana, que es lo práctico para cargar discos/mancuernas.
-function pesoSugerido(rmList, nombreEjercicio, textoRM) {
-  const pct = extraerPorcentaje(textoRM);
+// Si la prescripción del ejercicio trae uno o más % (ej. "80% · RIR 2" o "80% 85% 100%" para una
+// serie progresiva) Y hay un RM base cargado para ese mismo ejercicio en la tabla de RM del plan,
+// calcula el peso (o los pesos) a usar — redondeado a la media unidad más cercana, que es lo
+// práctico para cargar discos/mancuernas. Devuelve un array (uno o varios pesos) o null.
+function pesosSugeridos(rmList, nombreEjercicio, textoRM) {
+  const pcts = extraerPorcentajes(textoRM);
   const base = buscarRMBase(rmList, nombreEjercicio);
-  if (!pct || !base) return null;
-  return Math.round(((base * pct) / 100) * 2) / 2;
+  if (!pcts.length || !base) return null;
+  return pcts.map((pct) => Math.round(((base * pct) / 100) * 2) / 2);
 }
 
 /* ---------- Plantillas base ---------- */
@@ -2222,6 +2228,7 @@ function DiaEditor({ dia, onChange, onRemove, version, onAddToLibrary, rolesPers
 function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibrary, rolesPersonalizados, onAgregarRolPersonalizado, historialRMAlumno }) {
   const [warmPicking, setWarmPicking] = useState(false);
   const [dragIdx, setDragIdx] = useState(null);
+  const [seleccionandoRM, setSeleccionandoRM] = useState(null);
   const setMeta = (field) => (v) => onChange({ ...plan, meta: { ...plan.meta, [field]: v } });
   const updateWarm = (id, patch) => onChange({ ...plan, calentamiento: plan.calentamiento.map((w) => (w.id === id ? { ...w, ...patch } : w)) });
   const removeWarm = (id) => onChange({ ...plan, calentamiento: plan.calentamiento.filter((w) => w.id !== id) });
@@ -2338,7 +2345,7 @@ function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibr
       </div>
 
       <div className="font-body" style={{ fontSize: 11, color: "#8B8698", fontWeight: 700, marginBottom: 8 }}>VALORES DE RM</div>
-      <div className="font-body" style={{ fontSize: 9, color: "#6B6678", marginBottom: 8 }}>Usá el mismo nombre exacto que el ejercicio (elegilo de la lista que aparece al escribir) para que, si le ponés un % en el ejercicio (ej: "80% · RIR 2"), la app le calcule el peso solo/a al alumno/a durante el entrenamiento.</div>
+      <div className="font-body" style={{ fontSize: 9, color: "#6B6678", marginBottom: 8 }}>El nombre no hace falta que quede idéntico letra por letra (ignora mayúsculas, acentos y espacios de más) — igual conviene elegirlo de la lista que aparece al escribir. Si le ponés uno o varios % en el campo RM/RIR del ejercicio (ej: "80% · RIR 2" o "80% 85% 100%" para una serie progresiva), la app le calcula el peso o los pesos solo/a al alumno/a durante el entrenamiento.</div>
       {(() => {
         if (!historialRMAlumno) return null;
         // RM que el/la alumno/a cargó por su cuenta (en "Progreso" → "+ Registrar RM") y todavía
@@ -2368,23 +2375,46 @@ function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibr
           </div>
         );
       })()}
-      <datalist id="rm-nombres-ejercicios">
-        {[...new Set(plan.dias.flatMap((d) => d.bloques.flatMap((b) => b.ejercicios.map((f) => f.nombre))).filter(Boolean))].map((n) => <option key={n} value={n} />)}
-      </datalist>
-      {plan.rm.map((r) => (
-        <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 6, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 6 }}>
-          <input value={r.ejercicio} onChange={(e) => updateRm(r.id, { ejercicio: e.target.value })} list="rm-nombres-ejercicios" placeholder="Ejercicio" className="font-body" style={{ flex: 1, background: "transparent", border: "none", color: "#F4F1EA", fontSize: 11, minWidth: 0 }} />
-          <input
-            value={r.valor}
-            onChange={(e) => updateRm(r.id, { valor: e.target.value })}
-            onBlur={() => { if (r.ejercicio && r.valor && !isNaN(parseFloat(r.valor)) && onGuardarHistorialRM) onGuardarHistorialRM(r.ejercicio, parseFloat(r.valor)); }}
-            placeholder="Valor"
-            className="font-body"
-            style={{ width: 70, background: "#26232F", border: "none", borderRadius: 6, color: "#F4F1EA", fontSize: 11, padding: "5px 6px", flexShrink: 0 }}
-          />
-          <button onClick={() => removeRm(r.id)} style={{ background: "none", border: "none", color: "#8B8698", cursor: "pointer", flexShrink: 0 }}>✕</button>
-        </div>
-      ))}
+      {(() => {
+        const nombresDelPlan = [...new Set(plan.dias.flatMap((d) => d.bloques.flatMap((b) => b.ejercicios.map((f) => f.nombre))).filter(Boolean))];
+        return plan.rm.map((r) => (
+          <div key={r.id} style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 6 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <button
+                onClick={() => setSeleccionandoRM(seleccionandoRM === r.id ? null : r.id)}
+                className="font-body"
+                style={{ flex: 1, minWidth: 0, textAlign: "left", background: "transparent", border: "none", color: r.ejercicio ? "#F4F1EA" : "#6B6678", fontSize: 11, padding: "4px 0", cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+              >{r.ejercicio || "Tocá para elegir el ejercicio"} {seleccionandoRM === r.id ? "▲" : "▼"}</button>
+              <input
+                value={r.valor}
+                onChange={(e) => updateRm(r.id, { valor: e.target.value })}
+                onBlur={() => { if (r.ejercicio && r.valor && !isNaN(parseFloat(r.valor)) && onGuardarHistorialRM) onGuardarHistorialRM(r.ejercicio, parseFloat(r.valor)); }}
+                placeholder="Valor"
+                className="font-body"
+                style={{ width: 70, background: "#26232F", border: "none", borderRadius: 6, color: "#F4F1EA", fontSize: 11, padding: "5px 6px", flexShrink: 0 }}
+              />
+              <button onClick={() => removeRm(r.id)} style={{ background: "none", border: "none", color: "#8B8698", cursor: "pointer", flexShrink: 0 }}>✕</button>
+            </div>
+            {seleccionandoRM === r.id && (
+              <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #322E3D" }}>
+                {nombresDelPlan.length === 0 && <div className="font-body" style={{ color: "#6B6678", fontSize: 10 }}>Todavía no cargaste ejercicios en ningún día de este plan.</div>}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                  {nombresDelPlan.map((n) => (
+                    <button key={n} onClick={() => { updateRm(r.id, { ejercicio: n }); setSeleccionandoRM(null); }} className="font-body" style={{ background: r.ejercicio === n ? "#7DD6C0" : "#26232F", border: "1px solid #322E3D", borderRadius: 999, color: r.ejercicio === n ? "#0B2A2E" : "#F4F1EA", fontWeight: 600, fontSize: 10.5, padding: "6px 11px", cursor: "pointer" }}>{n}</button>
+                  ))}
+                </div>
+                <input
+                  value={r.ejercicio}
+                  onChange={(e) => updateRm(r.id, { ejercicio: e.target.value })}
+                  placeholder="...o escribí otro nombre a mano"
+                  className="font-body"
+                  style={{ width: "100%", background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", fontSize: 10.5, padding: "6px 8px", boxSizing: "border-box" }}
+                />
+              </div>
+            )}
+          </div>
+        ));
+      })()}
       <button onClick={addRm} className="font-body" style={{ width: "100%", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, color: "#8B8698", fontWeight: 700, fontSize: 10, padding: 7, cursor: "pointer" }}>+ Agregar valor de RM</button>
     </div>
   );
@@ -3432,7 +3462,7 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
             {alumno.wellness.encuestas.length === 0 && <div className="font-body" style={{ color: "#8B8698", fontSize: 11 }}>Todavía no respondió ninguna.</div>}
             {alumno.wellness.encuestas.map((e, i) => (
               <div key={i} style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, padding: 10, marginBottom: 6 }}>
-                <div className="font-body" style={{ color: "#8B8698", fontSize: 9, fontWeight: 600, marginBottom: 4 }}>{mostrarFecha(e.fecha).toUpperCase()}</div>
+                <div className="font-body" style={{ color: "#8B8698", fontSize: 9, fontWeight: 600, marginBottom: 4 }}>{e.fecha === "hoy" ? "FECHA NO REGISTRADA (encuesta vieja)" : mostrarFecha(e.fecha).toUpperCase()}</div>
                 <div className="font-body" style={{ color: "#F4F1EA", fontSize: 11 }}>Fatiga {e.fatiga} · Sueño {e.sueno} · Dolor {e.dolorMuscular} · Motivación {e.motivacion}</div>
                 {e.comentario && <div className="font-body" style={{ color: "#8B8698", fontSize: 11, marginTop: 4, fontStyle: "italic" }}>"{e.comentario}"</div>}
               </div>
@@ -4053,7 +4083,7 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
   const iconoBg = activePE.color || "#FF6B35";
   const activeVideo = videoDe(activePE);
   const activeEsBusqueda = activeVideo.includes("youtube.com/results");
-  const pesoSug = pesoSugerido(planActivo.rm, activePE.nombre, rmDeSemana(activePE, semana));
+  const pesosSug = pesosSugeridos(planActivo.rm, activePE.nombre, rmDeSemana(activePE, semana));
 
   return (
     <div>
@@ -4129,7 +4159,7 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
                         </button>
                         <div className="font-body" style={{ color: "#8B8698", fontSize: 11, marginTop: 2 }}>
                           {formatObjetivo(obj)}{rmDeSemana(pe, semana) && ` · ${rmDeSemana(pe, semana)}`}
-                          {(() => { const sug = pesoSugerido(planActivo.rm, pe.nombre, rmDeSemana(pe, semana)); return sug ? <span style={{ color: "#7DD6C0", fontWeight: 700 }}> · {sug}kg</span> : null; })()}
+                          {(() => { const sug = pesosSugeridos(planActivo.rm, pe.nombre, rmDeSemana(pe, semana)); return sug && sug.length ? <span style={{ color: "#7DD6C0", fontWeight: 700 }}> · {sug.map((p) => `${p}kg`).join("/")}</span> : null; })()}
                         </div>
                       </div>
                       {rolPE && <span className="font-body" style={{ fontSize: 8, fontWeight: 700, color: rolPE.color, background: `${rolPE.color}22`, borderRadius: 999, padding: "3px 7px", flexShrink: 0 }}>{rolPE.label}</span>}
@@ -4176,10 +4206,10 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
                   <div className="font-body" style={{ color: "#8B8698", fontSize: 10 }}>{maxSemanas > 1 ? `Objetivo — semana ${semana + 1}` : "Objetivo"}</div>
                   <div className="font-display" style={{ color: "#F4F1EA", fontSize: 18, fontWeight: 700 }}>{formatObjetivo(objetivo)}</div>
                 </div>
-                {pesoSug != null && (
+                {pesosSug && pesosSug.length > 0 && (
                   <div style={{ background: "rgba(125,214,192,0.12)", border: "1px solid #7DD6C0", borderRadius: 12, padding: "10px 14px" }}>
-                    <div className="font-body" style={{ color: "#7DD6C0", fontSize: 10, fontWeight: 700 }}>PESO A USAR ({rmDeSemana(activePE, semana)})</div>
-                    <div className="font-display" style={{ color: "#F4F1EA", fontSize: 20, fontWeight: 700 }}>{pesoSug}kg</div>
+                    <div className="font-body" style={{ color: "#7DD6C0", fontSize: 10, fontWeight: 700 }}>{pesosSug.length > 1 ? "PESOS A USAR" : "PESO A USAR"} ({rmDeSemana(activePE, semana)})</div>
+                    <div className="font-display" style={{ color: "#F4F1EA", fontSize: 20, fontWeight: 700 }}>{pesosSug.map((p) => `${p}kg`).join(" / ")}</div>
                   </div>
                 )}
                 <div style={{ display: "flex", gap: 8 }}>
