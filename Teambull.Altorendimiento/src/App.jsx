@@ -2229,6 +2229,7 @@ function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibr
   const [warmPicking, setWarmPicking] = useState(false);
   const [dragIdx, setDragIdx] = useState(null);
   const [seleccionandoRM, setSeleccionandoRM] = useState(null);
+  const [busquedaRM, setBusquedaRM] = useState("");
   const setMeta = (field) => (v) => onChange({ ...plan, meta: { ...plan.meta, [field]: v } });
   const updateWarm = (id, patch) => onChange({ ...plan, calentamiento: plan.calentamiento.map((w) => (w.id === id ? { ...w, ...patch } : w)) });
   const removeWarm = (id) => onChange({ ...plan, calentamiento: plan.calentamiento.filter((w) => w.id !== id) });
@@ -2344,8 +2345,17 @@ function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibr
         {plan.dias.length > 0 && <button onClick={duplicarSemana} className="font-body" style={{ flex: 1, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, color: "#8B8698", fontWeight: 700, fontSize: 11, padding: 10, cursor: "pointer" }}>📋 Duplicar semana</button>}
       </div>
 
-      <div className="font-body" style={{ fontSize: 11, color: "#8B8698", fontWeight: 700, marginBottom: 8 }}>VALORES DE RM</div>
+      <div className="font-body" style={{ fontSize: 11, color: "#8B8698", fontWeight: 700, marginBottom: 8 }}>VALORES DE RM {plan.rm.length > 0 ? `(${plan.rm.length})` : ""}</div>
       <div className="font-body" style={{ fontSize: 9, color: "#6B6678", marginBottom: 8 }}>El nombre no hace falta que quede idéntico letra por letra (ignora mayúsculas, acentos y espacios de más) — igual conviene elegirlo de la lista que aparece al escribir. Si le ponés uno o varios % en el campo RM/RIR del ejercicio (ej: "80% · RIR 2" o "80% 85% 100%" para una serie progresiva), la app le calcula el peso o los pesos solo/a al alumno/a durante el entrenamiento.</div>
+      {plan.rm.length > 4 && (
+        <input
+          value={busquedaRM}
+          onChange={(e) => setBusquedaRM(e.target.value)}
+          placeholder="🔍 Buscar en los RM cargados..."
+          className="font-body"
+          style={{ width: "100%", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, color: "#F4F1EA", padding: "8px 10px", fontSize: 11, boxSizing: "border-box", marginBottom: 8 }}
+        />
+      )}
       {(() => {
         if (!historialRMAlumno) return null;
         // RM que el/la alumno/a cargó por su cuenta (en "Progreso" → "+ Registrar RM") y todavía
@@ -2377,7 +2387,11 @@ function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibr
       })()}
       {(() => {
         const nombresDelPlan = [...new Set(plan.dias.flatMap((d) => d.bloques.flatMap((b) => b.ejercicios.map((f) => f.nombre))).filter(Boolean))];
-        return plan.rm.map((r) => (
+        const rmFiltrados = busquedaRM.trim() ? plan.rm.filter((r) => coincideBusqueda(r.ejercicio || "", busquedaRM)) : plan.rm;
+        if (busquedaRM.trim() && rmFiltrados.length === 0) {
+          return <div className="font-body" style={{ color: "#6B6678", fontSize: 10, marginBottom: 8 }}>No hay ningún RM cargado que coincida con "{busquedaRM}".</div>;
+        }
+        return rmFiltrados.map((r) => (
           <div key={r.id} style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 6 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <button
