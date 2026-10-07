@@ -3036,16 +3036,26 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
   // Historial de "Deshacer": guarda una copia del plan justo antes de cada cambio, para poder
   // volver atrás con un toque si borrás un día, un bloque, o cualquier otra cosa por error.
   const [historialPlan, setHistorialPlan] = useState([]);
-  useEffect(() => { setHistorialPlan([]); }, [alumno.id]); // arranca de cero al cambiar de alumno/a
+  const [redoPlan, setRedoPlan] = useState([]);
+  useEffect(() => { setHistorialPlan([]); setRedoPlan([]); }, [alumno.id]); // arranca de cero al cambiar de alumno/a
   const cambiarPlanConHistorial = (newPlan) => {
     setHistorialPlan((h) => [...h.slice(-9), alumno.plan]); // guardamos hasta 10 pasos atrás
+    setRedoPlan([]); // un cambio nuevo invalida lo que se podía "rehacer"
     onUpdatePlan(alumno.id, newPlan);
   };
   const deshacerUltimoCambio = () => {
     if (historialPlan.length === 0) return;
     const anterior = historialPlan[historialPlan.length - 1];
     setHistorialPlan((h) => h.slice(0, -1));
+    setRedoPlan((r) => [...r.slice(-9), alumno.plan]);
     onUpdatePlan(alumno.id, anterior);
+  };
+  const rehacerUltimoCambio = () => {
+    if (redoPlan.length === 0) return;
+    const siguiente = redoPlan[redoPlan.length - 1];
+    setRedoPlan((r) => r.slice(0, -1));
+    setHistorialPlan((h) => [...h.slice(-9), alumno.plan]);
+    onUpdatePlan(alumno.id, siguiente);
   };
   const ejerciciosConHistorialCoach = Object.keys(alumno.historialRM || {}).filter((k) => (alumno.historialRM[k] || []).length > 0);
   const [ejercicioRMCoach, setEjercicioRMCoach] = useState(ejerciciosConHistorialCoach[0] || null);
@@ -3087,6 +3097,13 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
   };
   return (
     <div>
+      {tab === "plan" && (historialPlan.length > 0 || redoPlan.length > 0) && (
+        <div style={{ position: "fixed", bottom: "calc(72px + env(safe-area-inset-bottom, 0px))", right: 14, zIndex: 50, display: "flex", background: "rgba(28,26,36,0.85)", border: "1px solid #322E3D", borderRadius: 999, overflow: "hidden" }}>
+          <button onClick={deshacerUltimoCambio} disabled={historialPlan.length === 0} title="Deshacer" style={{ background: "none", border: "none", padding: "8px 11px", fontSize: 15, cursor: historialPlan.length ? "pointer" : "default", color: historialPlan.length ? "#FFC94A" : "#4A4658" }}>⬅</button>
+          <div style={{ width: 1, background: "#322E3D" }} />
+          <button onClick={rehacerUltimoCambio} disabled={redoPlan.length === 0} title="Rehacer" style={{ background: "none", border: "none", padding: "8px 11px", fontSize: 15, cursor: redoPlan.length ? "pointer" : "default", color: redoPlan.length ? "#FFC94A" : "#4A4658" }}>➡</button>
+        </div>
+      )}
       <div style={{ padding: "20px 20px 8px", display: "flex", alignItems: "center", gap: 10 }}>
         <button onClick={onBack} style={{ background: "none", border: "none", color: "#F4F1EA", fontSize: 18, cursor: "pointer" }}>←</button>
         <Avatar text={alumno.foto} foto={alumno.fotoPerfil} size={36} />
@@ -3327,9 +3344,6 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
             </>)}
           </div>
 
-          {historialPlan.length > 0 && (
-            <button onClick={deshacerUltimoCambio} className="font-body" style={{ width: "100%", background: "rgba(255,201,74,0.1)", border: "1px solid #FFC94A", borderRadius: 8, color: "#FFC94A", fontWeight: 700, fontSize: 11, padding: 9, cursor: "pointer", marginBottom: 8 }}>↩️ Deshacer último cambio</button>
-          )}
           <PlanEditor plan={alumno.plan} onChange={cambiarPlanConHistorial} version={version} onGuardarHistorialRM={(ejercicio, valor) => onGuardarHistorialRM(alumno.id, ejercicio, valor)} onAddToLibrary={onAddToLibrary} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={onAgregarRolPersonalizado} historialRMAlumno={alumno.historialRM} />
         </div>
       )}
