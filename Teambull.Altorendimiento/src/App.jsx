@@ -3589,7 +3589,7 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
   );
 }
 
-function CoachPlantillas({ templates, alumnos, onAsignar, onCrearPlantilla, onEditarPlantilla, onEliminarPlantilla, onAddToLibrary, version, rolesPersonalizados, onAgregarRolPersonalizado, coachIdActual }) {
+function CoachPlantillas({ templates, alumnos, onAsignar, onAgregarPlanSecundario, onCrearPlantilla, onEditarPlantilla, onEliminarPlantilla, onAddToLibrary, version, rolesPersonalizados, onAgregarRolPersonalizado, coachIdActual }) {
   const [targetOpen, setTargetOpen] = useState(null);
   const [previewOpen, setPreviewOpen] = useState(null);
   const [editandoId, setEditandoId] = useState(null);
@@ -3675,10 +3675,16 @@ function CoachPlantillas({ templates, alumnos, onAsignar, onCrearPlantilla, onEd
             )}
             {targetOpen === t.id && (
               <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+                <div className="font-body" style={{ fontSize: 9, color: "#6B6678" }}>Elegí a quién y cómo: <b style={{ color: "#FF6B35" }}>Principal</b> reemplaza su plan actual (podés deshacerlo); <b style={{ color: "#7DD6C0" }}>Extra</b> la suma como rutina extra sin tocar la principal.</div>
                 {alumnos.map((a) => (
-                  <button key={a.id} onClick={() => { onAsignar(a.id, t.id); setTargetOpen(null); }} className="font-body" style={{ display: "flex", alignItems: "center", gap: 8, background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, padding: 8, cursor: "pointer", textAlign: "left" }}>
-                    <Avatar text={a.foto} foto={a.fotoPerfil} size={22} /><span style={{ color: "#F4F1EA", fontSize: 11 }}>Asignar a {a.nombre}</span>
-                  </button>
+                  <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, padding: 8 }}>
+                    <Avatar text={a.foto} foto={a.fotoPerfil} size={22} />
+                    <span className="font-body" style={{ flex: 1, minWidth: 0, color: "#F4F1EA", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.nombre}</span>
+                    <button onClick={() => { onAsignar(a.id, t.id); setTargetOpen(null); }} className="font-body" style={{ flexShrink: 0, background: "rgba(255,107,53,0.12)", border: "1px solid #FF6B35", borderRadius: 6, color: "#FF6B35", fontWeight: 700, fontSize: 10, padding: "5px 9px", cursor: "pointer" }}>Principal</button>
+                    {onAgregarPlanSecundario && (
+                      <button onClick={() => { onAgregarPlanSecundario(a.id, t.nombre, t.plan); setTargetOpen(null); }} className="font-body" style={{ flexShrink: 0, background: "rgba(125,214,192,0.12)", border: "1px solid #7DD6C0", borderRadius: 6, color: "#7DD6C0", fontWeight: 700, fontSize: 10, padding: "5px 9px", cursor: "pointer" }}>Extra</button>
+                    )}
+                  </div>
                 ))}
               </div>
             )}
@@ -5761,7 +5767,7 @@ export default function GymPlannerCoachApp() {
     const templatesVisibles = templates.filter((t) => t.coachIds == null || t.coachIds.includes(session.coachId));
     if (tab === "dashboard") body = <CoachDashboard alumnos={alumnosVisibles} goAlumnos={(id) => { setTab("alumnos"); abrirAlumno(id); }} coachNombre={coachNombre} onUpdateCoach={setCoachNombre} coaches={coaches} onAddCoach={addCoach} onRemoveCoach={removeCoach} mensajeRecordatorio={mensajeRecordatorio} onUpdateMensajeRecordatorio={setMensajeRecordatorio} notificacionesActivas={notificacionesActivas} onToggleNotificaciones={setNotificacionesActivas} modoPausa={modoPausa} onToggleModoPausa={setModoPausa} diasAvisoPlan={diasAvisoPlan} onSetDiasAvisoPlan={setDiasAvisoPlan} coachId={session?.coachId} onCambiarPassword={cambiarPasswordCoach} onSetRecoveryPin={setRecoveryPin} onSetTelefono={setTelefonoCoach} onReclamarAlumnos={reclamarAlumnosSinDueño} logActividad={logActividad} grupos={grupos} onCrearGrupo={crearGrupo} onEliminarGrupo={eliminarGrupo} />;
     else if (tab === "alumnos") body = <CoachAlumnos alumnos={alumnosVisibles} selectedId={selectedCoachAlumno} setSelectedId={abrirAlumno} templates={templatesVisibles} onAsignarPlantilla={asignarPlantilla} onCopiarPlan={copiarPlan} onCopiarVersionAOtro={copiarVersionAOtro} onCopiarSoloCalentamiento={copiarSoloCalentamiento} onAgregarPlanSecundario={agregarPlanSecundario} onQuitarPlanSecundario={quitarPlanSecundario} onToggleFijoPlanSecundario={toggleFijoPlanSecundario} onGuardarComoPlantilla={guardarComoPlantilla} onUpdatePlan={updatePlan} onUpdateAlumno={updateAlumno} onDeleteAlumno={deleteAlumno} onAddAlumno={addAlumno} onSendMsg={sendMsg} onGuardarVersion={guardarVersion} onRestaurarVersion={restaurarVersion} onEliminarVersion={eliminarVersion} onGuardarHistorialRM={agregarHistorialRM} onAddToLibrary={addCustomExercise} version={libVersion} coaches={coaches} coachIdActual={session.coachId} onCompartirAlumno={compartirAlumnoConCoach} onDejarDeCompartir={dejarDeCompartirAlumno} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={agregarRolPersonalizado} grupos={grupos} onCompartirGrupo={compartirAlumnoConGrupo} plantelGrupos={plantelGrupos} onCrearPlantelGrupo={crearPlantelGrupo} onRenombrarPlantelGrupo={renombrarPlantelGrupo} onEliminarPlantelGrupo={eliminarPlantelGrupo} onAsignarPlantelGrupo={asignarPlantelGrupo} />;
-    else if (tab === "plantillas") body = <CoachPlantillas templates={templatesVisibles} alumnos={alumnosVisibles} onAsignar={asignarPlantilla} onCrearPlantilla={crearPlantilla} onEditarPlantilla={editarPlantilla} onEliminarPlantilla={eliminarPlantilla} onAddToLibrary={addCustomExercise} version={libVersion} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={agregarRolPersonalizado} coachIdActual={session.coachId} />;
+    else if (tab === "plantillas") body = <CoachPlantillas templates={templatesVisibles} alumnos={alumnosVisibles} onAsignar={asignarPlantilla} onAgregarPlanSecundario={agregarPlanSecundario} onCrearPlantilla={crearPlantilla} onEditarPlantilla={editarPlantilla} onEliminarPlantilla={eliminarPlantilla} onAddToLibrary={addCustomExercise} version={libVersion} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={agregarRolPersonalizado} coachIdActual={session.coachId} />;
     else if (tab === "ejercicios") body = <CoachEjercicios onAddExercise={addCustomExercise} version={libVersion} onToggleFav={toggleFavorito} onEditVideo={editarVideoLibreria} onEliminarExercise={eliminarExercise} gruposMuscularesPersonalizados={gruposMuscularesPersonalizados} onAgregarGrupoMuscularPersonalizado={agregarGrupoMuscularPersonalizado} />;
     else body = <BuscarGlobal alumnos={alumnosVisibles} templates={templatesVisibles} version={libVersion} onGoAlumno={(id) => { setTab("alumnos"); abrirAlumno(id); }} onGoPlantillas={() => setTab("plantillas")} />;
   } else if (!athlete) {
