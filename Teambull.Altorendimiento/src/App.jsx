@@ -705,6 +705,10 @@ const EJERCICIOS_OCULTOS_SET = new Set();
 // (como pediste, como estaba antes) — lo ve cualquier entrenador que use la app, y esta vez sí
 // queda guardado de verdad entre sesiones (antes se perdía al cerrar la app).
 let VIDEOS_GUARDADOS = {}; // { [exerciseId]: video }
+// Ejercicios "propios" del coach: los que creó él, o los que tienen un video cargado por él.
+// Se muestran primero en las bibliotecas; los de fábrica de la app quedan después.
+function esEjercicioPropio(ex) { return !!ex.custom || !!VIDEOS_GUARDADOS[ex.id] || !!ex.video; }
+function propiosPrimero(lista) { return [...lista.filter(esEjercicioPropio), ...lista.filter((e) => !esEjercicioPropio(e))]; }
 function videoEfectivo(ex) {
   return VIDEOS_GUARDADOS[ex.id] || ex.video;
 }
@@ -1953,7 +1957,7 @@ function ExercisePicker({ onPick, onClose, version, onAddNew }) {
     let l = filtro === "Todos" ? EXERCISES : EXERCISES.filter((e) => e.categoria === filtro);
     l = l.filter((e) => !EJERCICIOS_OCULTOS_SET.has(e.id));
     if (busqueda.trim()) { l = l.filter((e) => coincideBusqueda(e.nombre, busqueda) || (e.grupoMuscular && coincideBusqueda(e.grupoMuscular, busqueda))); }
-    return l;
+    return propiosPrimero(l);
   }, [busqueda, filtro, version]);
   const lista = listaCompleta.slice(0, limite);
   return (
@@ -2139,7 +2143,8 @@ function FilaEjercicio({ fila, onChange, onRemove, onAddToLibrary, rolesPersonal
 function BloqueEditor({ bloque, onChange, onRemove, version, onAddToLibrary, rolesPersonalizados, onAgregarRolPersonalizado }) {
   const [picking, setPicking] = useState(false);
   const setFila = (f) => onChange({ ...bloque, ejercicios: bloque.ejercicios.map((x) => (x.id === f.id ? f : x)) });
-  const removeFila = (id) => onChange({ ...bloque, ejercicios: bloque.ejercicios.filter((x) => x.id !== id) });
+  // Al borrar un ejercicio se abre la biblioteca de este bloque, así buscás el reemplazo enseguida.
+  const removeFila = (id) => { onChange({ ...bloque, ejercicios: bloque.ejercicios.filter((x) => x.id !== id) }); setPicking(true); };
   const addFromLibrary = (ex) => { onChange({ ...bloque, ejercicios: [...bloque.ejercicios, mkRow(ex.nombre, { video: videoEfectivo(ex), emoji: ex.emoji })] }); };
   const addNewFromPicker = (nombre) => { onChange({ ...bloque, ejercicios: [...bloque.ejercicios, mkRow(nombre)] }); setPicking(false); };
   // Mueve un ejercicio una posición hacia arriba o abajo dentro del bloque, sin borrar ni perder nada.
@@ -2233,6 +2238,14 @@ function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibr
   const setMeta = (field) => (v) => onChange({ ...plan, meta: { ...plan.meta, [field]: v } });
   const updateWarm = (id, patch) => onChange({ ...plan, calentamiento: plan.calentamiento.map((w) => (w.id === id ? { ...w, ...patch } : w)) });
   const removeWarm = (id) => onChange({ ...plan, calentamiento: plan.calentamiento.filter((w) => w.id !== id) });
+  // Sube o baja un ejercicio de la entrada en calor una posición (antes quedaban fijos en el orden en que se cargaban).
+  const moverWarm = (index, direccion) => {
+    const nuevoIndex = index + direccion;
+    if (nuevoIndex < 0 || nuevoIndex >= plan.calentamiento.length) return;
+    const lista = [...plan.calentamiento];
+    [lista[index], lista[nuevoIndex]] = [lista[nuevoIndex], lista[index]];
+    onChange({ ...plan, calentamiento: lista });
+  };
   const addWarm = (nombre = "Nuevo ejercicio", video = null) => onChange({ ...plan, calentamiento: [...plan.calentamiento, mkWarm(nombre, "", "", video)] });
   const updateDia = (id, u) => onChange({ ...plan, dias: plan.dias.map((d) => (d.id === id ? u : d)) });
   const removeDia = (id) => onChange({ ...plan, dias: plan.dias.filter((d) => d.id !== id) });
@@ -2266,18 +2279,24 @@ function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibr
       </div>
 
       <div className="font-body" style={{ fontSize: 11, color: "#7DD6C0", fontWeight: 700, marginBottom: 8 }}>ENTRADA EN CALOR</div>
-      {plan.calentamiento.map((w) => {
+      {plan.calentamiento.map((w, wi) => {
         const nombreLimpioW = (w.nombre || "").trim();
         const yaEnBibliotecaW = !nombreLimpioW || EXERCISES.some((e) => e.nombre.toLowerCase() === nombreLimpioW.toLowerCase());
+        const ultimoW = wi === plan.calentamiento.length - 1;
         return (
-        <div key={w.id} style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 6 }}>
+        <div key={w.id} style={{ display: "flex", gap: 4, alignItems: "stretch", marginBottom: 6 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2, paddingTop: 4 }}>
+          <button onClick={() => moverWarm(wi, -1)} disabled={wi === 0} className="font-body" style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 5, color: wi === 0 ? "#3A3646" : "#7DD6C0", fontSize: 10, width: 20, height: 20, cursor: wi === 0 ? "default" : "pointer", padding: 0, lineHeight: "18px" }}>▲</button>
+          <button onClick={() => moverWarm(wi, 1)} disabled={ultimoW} className="font-body" style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 5, color: ultimoW ? "#3A3646" : "#7DD6C0", fontSize: 10, width: 20, height: 20, cursor: ultimoW ? "default" : "pointer", padding: 0, lineHeight: "18px" }}>▼</button>
+        </div>
+        <div style={{ flex: 1, minWidth: 0, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <input value={w.nombre} onChange={(e) => updateWarm(w.id, { nombre: e.target.value })} className="font-body" style={{ width: "100%", background: "transparent", border: "none", color: "#F4F1EA", fontSize: 11 }} />
             </div>
             <MiniInput label="Series" value={w.series} onChange={(v) => updateWarm(w.id, { series: v })} />
             <MiniInput label="Reps" value={w.reps} onChange={(v) => updateWarm(w.id, { reps: v })} />
-            <button onClick={() => removeWarm(w.id)} style={{ background: "none", border: "none", color: "#8B8698", cursor: "pointer", flexShrink: 0 }}>✕</button>
+            <button onClick={() => { removeWarm(w.id); setWarmPicking(true); }} style={{ background: "none", border: "none", color: "#8B8698", cursor: "pointer", flexShrink: 0 }}>✕</button>
           </div>
           {!yaEnBibliotecaW && onAddToLibrary && (
             <button
@@ -2310,6 +2329,7 @@ function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibr
             className="font-body"
             style={{ width: "100%", background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "5px 8px", fontSize: 10, boxSizing: "border-box", marginTop: 6 }}
           />
+        </div>
         </div>
       );})}
       {warmPicking ? (
@@ -3123,6 +3143,23 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
 
       {tab === "plan" && (
         <div style={{ padding: "0 20px" }}>
+          <div style={{ background: "rgba(255,201,74,0.08)", border: "1px solid #FFC94A", borderRadius: 10, padding: 10, marginBottom: 12 }}>
+            <div className="font-body" style={{ fontSize: 10, color: "#FFC94A", fontWeight: 700, marginBottom: 4 }}>📣 AVISO PARA {alumno.nombre.toUpperCase()}</div>
+            <div className="font-body" style={{ fontSize: 9, color: "#8B8698", marginBottom: 6 }}>Lo que escribas acá le aparece destacado en su Inicio, justo antes de empezar a entrenar. Dejalo vacío y no se muestra nada.</div>
+            <textarea
+              value={alumno.avisoCoach || ""}
+              onChange={(e) => onUpdateAlumno(alumno.id, { avisoCoach: e.target.value })}
+              placeholder="Ej: Esta semana bajamos el volumen, priorizá la técnica. Cualquier molestia me avisás."
+              className="font-body"
+              style={{ width: "100%", minHeight: 56, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, color: "#F4F1EA", padding: 8, fontSize: 12, boxSizing: "border-box", resize: "vertical" }}
+            />
+            {alumno.avisoCoach && alumno.avisoCoach.trim() && (
+              <div className="font-body" style={{ fontSize: 10, marginTop: 6, color: alumno.avisoCoach === alumno.avisoVistoTexto ? "#33D6A6" : "#8B8698" }}>
+                {alumno.avisoCoach === alumno.avisoVistoTexto ? `✓ Ya lo vio${alumno.avisoVistoFecha ? ` · ${tiempoRelativo(alumno.avisoVistoFecha)}` : ""}` : "⏳ Todavía no lo vio"}
+              </div>
+            )}
+            {alumno.avisoCoach && <button onClick={() => onUpdateAlumno(alumno.id, { avisoCoach: "" })} className="font-body" style={{ background: "none", border: "none", color: "#E85D5D", fontSize: 10, cursor: "pointer", padding: "4px 0 0" }}>✕ Borrar aviso</button>}
+          </div>
           <select onChange={(e) => {
             if (!e.target.value) return;
             const tpl = templates.find((t) => t.id === e.target.value);
@@ -3789,7 +3826,7 @@ function CoachEjercicios({ onAddExercise, version, onToggleFav, onEditVideo, onE
     l = l.filter((e) => !EJERCICIOS_OCULTOS_SET.has(e.id));
     if (filtroGrupo !== "Todos") l = l.filter((e) => e.grupoMuscular === filtroGrupo);
     if (busqueda.trim()) { l = l.filter((e) => coincideBusqueda(e.nombre, busqueda) || (e.grupoMuscular && coincideBusqueda(e.grupoMuscular, busqueda))); }
-    return l;
+    return propiosPrimero(l);
   }, [filtro, filtroGrupo, busqueda, version]);
   const lista = listaCompleta.slice(0, limite);
   return (
@@ -3940,7 +3977,7 @@ function EncuestaSemanalModal({ onSubmit, onClose }) {
   );
 }
 
-function AthleteInicio({ alumno, goEntrenar, onCheckin, onUpdateFoto }) {
+function AthleteInicio({ alumno, goEntrenar, onCheckin, onUpdateFoto, onMarcarAvisoVisto }) {
   const primerDia = alumno.plan.dias[0];
   const total = flatEjercicios(primerDia).length;
   const hoy = todayISO();
@@ -3974,12 +4011,21 @@ function AthleteInicio({ alumno, goEntrenar, onCheckin, onUpdateFoto }) {
             </div>
           </div>
         )}
+        {alumno.avisoCoach && alumno.avisoCoach.trim() && alumno.avisoCoach !== alumno.avisoVistoTexto && (
+          <div style={{ background: "rgba(255,201,74,0.1)", border: "1px solid #FFC94A", borderRadius: 14, padding: "12px 16px", marginBottom: 14 }}>
+            <div className="font-body" style={{ fontSize: 10, color: "#FFC94A", fontWeight: 700, marginBottom: 4 }}>📣 MENSAJE DE TU COACH</div>
+            <div className="font-body" style={{ fontSize: 13, color: "#F4F1EA", lineHeight: 1.45, whiteSpace: "pre-wrap" }}>{alumno.avisoCoach}</div>
+            {onMarcarAvisoVisto && (
+              <button onClick={onMarcarAvisoVisto} className="font-body" style={{ marginTop: 10, background: "#FFC94A", color: "#121017", border: "none", borderRadius: 999, fontWeight: 700, fontSize: 12, padding: "7px 16px", cursor: "pointer" }}>✓ Entendido</button>
+            )}
+          </div>
+        )}
         {primerDia ? (
           <div style={{ background: "linear-gradient(135deg, #1C1A24, #26232F)", border: "1px solid #322E3D", borderRadius: 18, padding: 18 }}>
             <div className="font-body" style={{ fontSize: 11, color: "#FF6B35", fontWeight: 700 }}>{alumno.plan.dias.length} DÍA{alumno.plan.dias.length !== 1 ? "S" : ""} EN TU PLAN</div>
             <div className="font-display" style={{ fontSize: 20, color: "#F4F1EA", fontWeight: 600, marginTop: 4 }}>{primerDia.nombre}</div>
             <div className="font-body" style={{ fontSize: 12, color: "#8B8698", marginTop: 4 }}>{total} ejercicios · {alumno.plan.calentamiento.length} de entrada en calor</div>
-            <button onClick={goEntrenar} className="font-body pulse" style={{ marginTop: 14, width: "100%", background: "#FF6B35", color: "#121017", border: "none", borderRadius: 12, padding: "12px 0", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>▶ Empezar entrenamiento</button>
+            <button onClick={() => { if (onMarcarAvisoVisto && alumno.avisoCoach && alumno.avisoCoach.trim() && alumno.avisoCoach !== alumno.avisoVistoTexto) onMarcarAvisoVisto(); goEntrenar(); }} className="font-body pulse" style={{ marginTop: 14, width: "100%", background: "#FF6B35", color: "#121017", border: "none", borderRadius: 12, padding: "12px 0", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>▶ Empezar entrenamiento</button>
           </div>
         ) : <div className="font-body" style={{ color: "#8B8698", fontSize: 13, textAlign: "center", padding: "30px 0" }}>Tu entrenador todavía no te asignó un plan.</div>}
         <div style={{ display: "flex", gap: 10, marginTop: 14, marginBottom: 14 }}>
@@ -5215,6 +5261,11 @@ function sanearAlumno(a) {
       fotoPerfil: typeof a.fotoPerfil === "string" ? a.fotoPerfil : null,
       fotosMediciones: Array.isArray(a.fotosMediciones) ? a.fotosMediciones : [],
       pruebasNatacion: typeof a.pruebasNatacion === "string" ? a.pruebasNatacion : "",
+      // Aviso del coach: mensaje que el/la alumno/a ve en su Inicio antes de empezar a entrenar.
+      avisoCoach: typeof a.avisoCoach === "string" ? a.avisoCoach : "",
+      // Qué texto del aviso ya vio el/la alumno/a (y cuándo): si el coach cambia el texto, vuelve a aparecer.
+      avisoVistoTexto: typeof a.avisoVistoTexto === "string" ? a.avisoVistoTexto : "",
+      avisoVistoFecha: typeof a.avisoVistoFecha === "string" ? a.avisoVistoFecha : null,
     };
   } catch {
     return a;
@@ -5775,12 +5826,12 @@ export default function GymPlannerCoachApp() {
   } else if (athlete.wellness.encuestaPendiente && tab !== "entrenar") {
     body = (
       <div style={{ position: "relative", minHeight: "100%" }}>
-        <AthleteInicio alumno={athlete} goEntrenar={() => setTab("entrenar")} onCheckin={registrarCheckin} onUpdateFoto={(dataUrl) => updateAlumno(athlete.id, { fotoPerfil: dataUrl })} />
+        <AthleteInicio alumno={athlete} goEntrenar={() => setTab("entrenar")} onCheckin={registrarCheckin} onUpdateFoto={(dataUrl) => updateAlumno(athlete.id, { fotoPerfil: dataUrl })} onMarcarAvisoVisto={() => updateAlumno(athlete.id, { avisoVistoTexto: athlete.avisoCoach, avisoVistoFecha: new Date().toISOString() })} />
         <EncuestaSemanalModal onClose={() => updateAlumno(athlete.id, { wellness: { ...athlete.wellness, encuestaPendiente: false } })} onSubmit={(data) => enviarEncuestaSemanal(athlete.id, data)} />
       </div>
     );
   } else {
-    if (tab === "inicio") body = <AthleteInicio alumno={athlete} goEntrenar={() => setTab("entrenar")} onCheckin={registrarCheckin} onUpdateFoto={(dataUrl) => updateAlumno(athlete.id, { fotoPerfil: dataUrl })} />;
+    if (tab === "inicio") body = <AthleteInicio alumno={athlete} goEntrenar={() => setTab("entrenar")} onCheckin={registrarCheckin} onUpdateFoto={(dataUrl) => updateAlumno(athlete.id, { fotoPerfil: dataUrl })} onMarcarAvisoVisto={() => updateAlumno(athlete.id, { avisoVistoTexto: athlete.avisoCoach, avisoVistoFecha: new Date().toISOString() })} />;
     else if (tab === "entrenar") body = <AthleteEntrenar alumno={athlete} onFinalizar={(id) => { finalizarEntrenamiento(id); setTab("inicio"); }} onUpdateNota={(exId, exNombre, texto, claveNota) => updateNota(athlete.id, exId, exNombre, texto, claveNota)} rolesPersonalizados={rolesPersonalizados} />;
     else if (tab === "progreso") body = <AthleteProgreso alumno={athlete} onGuardarHistorialRM={(ejercicio, valor) => agregarHistorialRM(athlete.id, ejercicio, valor)} />;
     else if (tab === "nutricion") body = <CalculadoraScreen alumno={athlete} />;
