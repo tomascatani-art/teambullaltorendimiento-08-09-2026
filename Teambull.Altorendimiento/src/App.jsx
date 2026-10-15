@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import { createPortal } from "react-dom";
 
 /* ---------- Tokens ----------
   bg #121017 · surface #1C1A24 · surface2 #26232F · hairline #322E3D
@@ -855,6 +856,17 @@ function semanaQueToca(fechaInicio, maxSemanas) {
   return Math.max(0, Math.min(semana, maxSemanas - 1));
 }
 // Convierte una fecha ISO en "hace 5 min", "hace 2 h", "hace 3 días", etc.
+// "hoy 19:33", "ayer 08:10" o "lun 12/10 19:33" — para mostrar cuándo fue la última conexión de un/a alumno/a.
+function formatoConexion(iso) {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const hh = d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  const hoy = new Date();
+  const ayer = new Date(hoy.getTime() - 86400000);
+  if (d.toDateString() === hoy.toDateString()) return `hoy ${hh}`;
+  if (d.toDateString() === ayer.toDateString()) return `ayer ${hh}`;
+  return `${d.toLocaleDateString("es-AR", { weekday: "short", day: "2-digit", month: "2-digit" })} ${hh}`;
+}
 function tiempoRelativo(iso) {
   const diffMs = Date.now() - new Date(iso).getTime();
   const min = Math.floor(diffMs / 60000);
@@ -918,7 +930,7 @@ const ESTILO_PDF = `
   h1{margin:0 0 2px;font-size:22px;color:#F4F1EA}
   h2{color:#FF6B35;margin:22px 0 2px;font-size:18px}
   h3{margin:16px 0 6px;font-size:14px;color:#F4F1EA;border-bottom:1px solid #322E3D;padding-bottom:4px}
-  h4{color:#7DD6C0;margin:10px 0 6px;font-size:12px;letter-spacing:.03em;text-transform:uppercase}
+  h4{color:#FF6B35;margin:10px 0 6px;font-size:12px;letter-spacing:.03em;text-transform:uppercase}
   table{border-collapse:collapse;width:100%;margin-bottom:14px;font-size:11.5px;background:#1C1A24;border-radius:8px;overflow:hidden}
   td,th{border:1px solid #322E3D;padding:6px 8px;text-align:left;color:#F4F1EA}
   th{background:#26232F;color:#8B8698;font-weight:600;font-size:10px;text-transform:uppercase}
@@ -2004,7 +2016,8 @@ function ExercisePicker({ onPick, onClose, version, onAddNew }) {
   );
 }
 
-function FilaEjercicio({ fila, onChange, onRemove, onAddToLibrary, rolesPersonalizados, onAgregarRolPersonalizado }) {
+function FilaEjercicio({ fila, onChange, onRemove, onAddToLibrary, rolesPersonalizados, onAgregarRolPersonalizado, version }) {
+  const [cambiando, setCambiando] = useState(false); // abre la biblioteca para reemplazar este ejercicio
   const set = (field) => (v) => onChange({ ...fila, [field]: v });
   const setSemana = (i, v) => { const s = [...fila.semanas]; s[i] = v; onChange({ ...fila, semanas: s }); };
   const setRmSemana = (i, v) => { const r = [...(fila.rmSemanas || fila.semanas.map(() => ""))]; r[i] = v; onChange({ ...fila, rmSemanas: r }); };
@@ -2047,8 +2060,17 @@ function FilaEjercicio({ fila, onChange, onRemove, onAddToLibrary, rolesPersonal
           {fila.emoji && <span style={{ fontSize: 15, flexShrink: 0 }}>{fila.emoji}</span>}
           <input value={fila.nombre} onChange={(e) => onChange({ ...fila, nombre: e.target.value, video: null })} placeholder="Nombre del ejercicio" className="font-body" style={{ background: "transparent", border: "none", borderBottom: "1px dashed #322E3D", color: "#F4F1EA", fontSize: 12, fontWeight: 600, padding: "2px 0", flex: 1, minWidth: 0 }} />
         </div>
+        <button onClick={() => setCambiando(!cambiando)} title="Buscar otro ejercicio en la biblioteca" className="font-body" style={{ background: cambiando ? "rgba(125,214,192,0.15)" : "none", border: "1px solid #322E3D", borderRadius: 6, color: "#7DD6C0", cursor: "pointer", fontSize: 11, fontWeight: 700, padding: "3px 7px", flexShrink: 0 }}>🔍 Cambiar</button>
         <button onClick={onRemove} style={{ background: "none", border: "none", color: "#8B8698", cursor: "pointer", fontSize: 13, flexShrink: 0 }}>✕</button>
       </div>
+      {cambiando && (
+        <ExercisePicker
+          version={version}
+          onClose={() => setCambiando(false)}
+          onPick={(ex) => { onChange({ ...fila, nombre: ex.nombre, video: videoEfectivo(ex) || null, emoji: ex.emoji }); setCambiando(false); }}
+          onAddNew={(nombre) => { onChange({ ...fila, nombre, video: null, emoji: null }); setCambiando(false); }}
+        />
+      )}
       {!yaEnBiblioteca && onAddToLibrary && (
         <button onClick={guardarEnBiblioteca} className="font-body" style={{ background: "none", border: "none", color: "#7DD6C0", fontSize: 9, fontWeight: 700, cursor: "pointer", padding: 0, marginBottom: 6 }}>+ Guardar "{nombreLimpio}" en tu biblioteca también</button>
       )}
@@ -2169,7 +2191,7 @@ function BloqueEditor({ bloque, onChange, onRemove, version, onAddToLibrary, rol
             <button onClick={() => moverFila(i, 1)} disabled={i === bloque.ejercicios.length - 1} className="font-body" style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 5, color: i === bloque.ejercicios.length - 1 ? "#3A3646" : "#7DD6C0", fontSize: 10, width: 20, height: 20, cursor: i === bloque.ejercicios.length - 1 ? "default" : "pointer", padding: 0, lineHeight: "18px" }}>▼</button>
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <FilaEjercicio fila={f} onChange={setFila} onRemove={() => removeFila(f.id)} onAddToLibrary={onAddToLibrary} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={onAgregarRolPersonalizado} />
+            <FilaEjercicio fila={f} onChange={setFila} onRemove={() => removeFila(f.id)} onAddToLibrary={onAddToLibrary} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={onAgregarRolPersonalizado} version={version} />
             {f.sinDescansoSiguiente && i < bloque.ejercicios.length - 1 && (
               <div className="font-body" style={{ display: "flex", alignItems: "center", gap: 6, margin: "-2px 0 6px 8px", color: "#FFC94A", fontSize: 9, fontWeight: 700 }}>
                 <div style={{ width: 2, height: 14, background: "#FFC94A" }} />
@@ -2234,6 +2256,7 @@ function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibr
   const [warmPicking, setWarmPicking] = useState(false);
   const [dragIdx, setDragIdx] = useState(null);
   const [seleccionandoRM, setSeleccionandoRM] = useState(null);
+  const [cambiandoWarmId, setCambiandoWarmId] = useState(null); // ejercicio de la entrada en calor que se está reemplazando
   const [busquedaRM, setBusquedaRM] = useState("");
   const setMeta = (field) => (v) => onChange({ ...plan, meta: { ...plan.meta, [field]: v } });
   const updateWarm = (id, patch) => onChange({ ...plan, calentamiento: plan.calentamiento.map((w) => (w.id === id ? { ...w, ...patch } : w)) });
@@ -2296,8 +2319,19 @@ function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibr
             </div>
             <MiniInput label="Series" value={w.series} onChange={(v) => updateWarm(w.id, { series: v })} />
             <MiniInput label="Reps" value={w.reps} onChange={(v) => updateWarm(w.id, { reps: v })} />
+            <button onClick={() => setCambiandoWarmId(cambiandoWarmId === w.id ? null : w.id)} title="Buscar otro ejercicio en la biblioteca" className="font-body" style={{ background: cambiandoWarmId === w.id ? "rgba(125,214,192,0.15)" : "none", border: "1px solid #322E3D", borderRadius: 6, color: "#7DD6C0", cursor: "pointer", fontSize: 10, fontWeight: 700, padding: "3px 6px", flexShrink: 0 }}>🔍</button>
             <button onClick={() => { removeWarm(w.id); setWarmPicking(true); }} style={{ background: "none", border: "none", color: "#8B8698", cursor: "pointer", flexShrink: 0 }}>✕</button>
           </div>
+          {cambiandoWarmId === w.id && (
+            <div style={{ marginTop: 8 }}>
+              <ExercisePicker
+                version={version}
+                onClose={() => setCambiandoWarmId(null)}
+                onPick={(ex) => { updateWarm(w.id, { nombre: ex.nombre, video: videoEfectivo(ex) || null }); setCambiandoWarmId(null); }}
+                onAddNew={(nombre) => { updateWarm(w.id, { nombre, video: null }); setCambiandoWarmId(null); }}
+              />
+            </div>
+          )}
           {!yaEnBibliotecaW && onAddToLibrary && (
             <button
               onClick={() => onAddToLibrary({ id: uid(), nombre: nombreLimpioW, categoria: "Otro", emoji: "⭐", color: "#7DD6C0", material: "Sin especificar", dificultad: "Intermedio", video: w.video || `https://www.youtube.com/results?search_query=${encodeURIComponent(nombreLimpioW + " técnica")}`, custom: true })}
@@ -2489,6 +2523,7 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
   const [editando, setEditando] = useState(false);
   const [tipoAlertaAbierto, setTipoAlertaAbierto] = useState(null);
   const [verTodoRanking, setVerTodoRanking] = useState(false);
+  const [verTodasConexiones, setVerTodasConexiones] = useState(false);
   const [agregandoCoach, setAgregandoCoach] = useState(false);
   const [nombreNuevoCoach, setNombreNuevoCoach] = useState("");
   const [credencialesNuevoCoach, setCredencialesNuevoCoach] = useState(null);
@@ -2723,6 +2758,38 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
         <button onClick={() => compartirTextoPorWhatsApp(generarInformeSemanal(alumnosActivos))} className="font-body" style={{ width: "100%", background: "#25D366", border: "none", borderRadius: 10, color: "#0B2A2E", fontWeight: 700, fontSize: 11, padding: 10, cursor: "pointer", marginBottom: 6 }}>💬 Informe semanal por WhatsApp</button>
         <button onClick={() => compartirTexto("Informe semanal Team Bull", generarInformeSemanal(alumnosActivos))} className="font-body" style={{ width: "100%", background: "none", border: "none", color: "#FF6B35", fontWeight: 700, fontSize: 10, padding: "4px 0", cursor: "pointer", marginBottom: 8 }}>Más opciones para compartir</button>
         <button onClick={() => descargarPlantelPDF(alumnosActivos)} className="font-body" style={{ width: "100%", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, color: "#8B8698", fontWeight: 700, fontSize: 11, padding: 10, cursor: "pointer", marginBottom: 16 }}>📄 Descargar planes de todo el plantel (uno solo)</button>
+        {(() => {
+          // Últimas conexiones: quién abrió la app y a qué hora. Se actualiza solo con la sincronización.
+          const conConexion = alumnosActivos.filter((a) => a.ultimaConexion).sort((a, b) => b.ultimaConexion.localeCompare(a.ultimaConexion));
+          const sinConexion = alumnosActivos.filter((a) => !a.ultimaConexion);
+          const visibles = verTodasConexiones ? conConexion : conConexion.slice(0, 5);
+          return (
+            <div style={{ marginBottom: 16 }}>
+              <div className="font-body" style={{ fontSize: 11, color: "#8B8698", fontWeight: 600, marginBottom: 8 }}>📲 ÚLTIMAS CONEXIONES</div>
+              {conConexion.length === 0 && <div className="font-body" style={{ color: "#6B6678", fontSize: 11, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 12, padding: 12 }}>Todavía no se registró ninguna conexión. Aparecen acá apenas tus alumnos/as abran la app.</div>}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {visibles.map((a) => {
+                  const minutos = Math.floor((Date.now() - new Date(a.ultimaConexion).getTime()) / 60000);
+                  const reciente = minutos < 30;
+                  return (
+                    <button key={a.id} onClick={() => goAlumnos(a.id)} style={{ display: "flex", alignItems: "center", gap: 10, background: reciente ? "rgba(51,214,166,0.08)" : "#1C1A24", border: reciente ? "1px solid #33D6A6" : "1px solid #322E3D", borderRadius: 12, padding: "8px 10px", cursor: "pointer", textAlign: "left" }}>
+                      <Avatar text={a.foto} foto={a.fotoPerfil} size={28} />
+                      <span className="font-body" style={{ flex: 1, minWidth: 0, color: "#F4F1EA", fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.nombre}</span>
+                      <span className="font-body" style={{ textAlign: "right", flexShrink: 0 }}>
+                        <span style={{ display: "block", color: reciente ? "#33D6A6" : "#F4F1EA", fontSize: 11, fontWeight: 700 }}>{reciente ? "● Entró " : ""}{formatoConexion(a.ultimaConexion)}</span>
+                        <span style={{ display: "block", color: "#8B8698", fontSize: 9 }}>{tiempoRelativo(a.ultimaConexion)}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              {conConexion.length > 5 && (
+                <button onClick={() => setVerTodasConexiones(!verTodasConexiones)} className="font-body" style={{ marginTop: 6, width: "100%", background: "none", border: "1px dashed #322E3D", borderRadius: 10, color: "#8B8698", fontWeight: 700, fontSize: 11, padding: 8, cursor: "pointer" }}>{verTodasConexiones ? "▲ Ver menos" : `▼ Ver todos (${conConexion.length})`}</button>
+              )}
+              {sinConexion.length > 0 && conConexion.length > 0 && <div className="font-body" style={{ color: "#6B6678", fontSize: 10, marginTop: 6 }}>Todavía no entraron: {sinConexion.map((a) => a.nombre).join(", ")}</div>}
+            </div>
+          );
+        })()}
         <div className="font-body" style={{ fontSize: 11, color: "#8B8698", fontWeight: 600, marginBottom: 8 }}>RANKING DE CUMPLIMIENTO</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
           {(verTodoRanking ? ranking : ranking.slice(0, 5)).map((a, i) => (
@@ -3405,6 +3472,17 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
             </div>
           </div>
 
+          {(alumno.reacciones || []).length > 0 && (() => {
+            const rs = alumno.reacciones.map((r) => r.ms);
+            const ult = rs.slice(-5);
+            return (
+              <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 12, padding: 12, marginBottom: 12 }}>
+                <div className="font-body" style={{ fontSize: 10, color: "#FF6B35", fontWeight: 700, marginBottom: 4 }}>⚡ LARGADA — REACCIÓN</div>
+                <div className="font-body" style={{ fontSize: 12, color: "#F4F1EA" }}>Mejor: <b>{Math.min(...rs)} ms</b> · Promedio últimos {ult.length}: <b>{Math.round(ult.reduce((a, b) => a + b, 0) / ult.length)} ms</b> · {rs.length} intentos</div>
+                <div className="font-body" style={{ fontSize: 10, color: "#8B8698", marginTop: 3 }}>Último: {formatoConexion(alumno.reacciones[alumno.reacciones.length - 1].f)}</div>
+              </div>
+            );
+          })()}
           <button onClick={() => descargarInformePDF(alumno)} className="font-body" style={{ width: "100%", background: "#FF6B35", border: "none", borderRadius: 10, color: "#121017", fontWeight: 700, fontSize: 12, padding: 11, cursor: "pointer", marginBottom: 6 }}>📄 Descargar informe (PDF)</button>
           <div className="font-body" style={{ fontSize: 9, color: "#6B6678", textAlign: "center", marginBottom: 16 }}>Se abre y guarda un archivo — tocá "Imprimir / Guardar como PDF" ahí adentro, y de ahí lo podés mandar por WhatsApp como cualquier otro archivo.</div>
 
@@ -3626,15 +3704,37 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
   );
 }
 
+// ---- Borradores: guardan automáticamente lo que estás armando (plantilla nueva o edición de una
+// existente) en este dispositivo, así no se pierde si cambiás de pestaña, tocás "atrás" sin querer
+// o se recarga la app. Se borran solos al guardar de verdad.
+const BORRADOR_PREFIX = "tb_borrador_";
+function leerBorrador(clave) { try { const r = window.localStorage.getItem(BORRADOR_PREFIX + clave); return r ? JSON.parse(r) : null; } catch (e) { return null; } }
+function guardarBorrador(clave, datos) { try { window.localStorage.setItem(BORRADOR_PREFIX + clave, JSON.stringify(datos)); } catch (e) { /* sin espacio: seguimos sin borrador */ } }
+function borrarBorrador(clave) { try { window.localStorage.removeItem(BORRADOR_PREFIX + clave); } catch (e) { /* nada */ } }
+function planTieneContenido(p) { return !!p && (p.calentamiento.length > 0 || p.rm.length > 0 || p.dias.some((d) => d.bloques.some((b) => b.ejercicios.length > 0))); }
+
 function CoachPlantillas({ templates, alumnos, onAsignar, onAgregarPlanSecundario, onCrearPlantilla, onEditarPlantilla, onEliminarPlantilla, onAddToLibrary, version, rolesPersonalizados, onAgregarRolPersonalizado, coachIdActual }) {
   const [targetOpen, setTargetOpen] = useState(null);
   const [previewOpen, setPreviewOpen] = useState(null);
   const [editandoId, setEditandoId] = useState(null);
   const [planEnEdicion, setPlanEnEdicion] = useState(null);
   const [creando, setCreando] = useState(false);
-  const [nombre, setNombre] = useState("");
-  const [categoria, setCategoria] = useState("Hipertrofia");
-  const [plan, setPlan] = useState(mkPlanVacio());
+  const [nombre, setNombre] = useState(() => (leerBorrador("nueva") || {}).nombre || "");
+  const [categoria, setCategoria] = useState(() => (leerBorrador("nueva") || {}).categoria || "Hipertrofia");
+  const [plan, setPlan] = useState(() => { const b = leerBorrador("nueva"); try { return b && b.plan ? clonarPlan(b.plan) : mkPlanVacio(); } catch (e) { return mkPlanVacio(); } });
+  const [editSucio, setEditSucio] = useState(false);
+  const [editRestaurado, setEditRestaurado] = useState(false);
+  const hayBorradorNueva = !!nombre.trim() || planTieneContenido(plan);
+
+  // Guarda solo, cada vez que cambia algo, la plantilla nueva que se está armando.
+  useEffect(() => {
+    if (!nombre.trim() && !planTieneContenido(plan)) borrarBorrador("nueva");
+    else guardarBorrador("nueva", { nombre, categoria, plan });
+  }, [nombre, categoria, plan]);
+  // Ídem para los cambios en una plantilla existente que todavía no guardaste.
+  useEffect(() => {
+    if (editandoId && planEnEdicion && editSucio) guardarBorrador("edit_" + editandoId, { plan: planEnEdicion });
+  }, [editandoId, planEnEdicion, editSucio]);
 
   const guardar = () => {
     if (!nombre.trim() || plan.dias.length === 0) return;
@@ -3667,22 +3767,39 @@ function CoachPlantillas({ templates, alumnos, onAsignar, onAgregarPlanSecundari
     <div>
       <TopBar title="Plantillas" subtitle={`${templates.length} disponibles`} />
       <div style={{ padding: "0 20px", display: "flex", flexDirection: "column", gap: 10 }}>
+        {hayBorradorNueva && (
+          <div style={{ background: "rgba(255,201,74,0.1)", border: "1px solid #FFC94A", borderRadius: 14, padding: 12 }}>
+            <div className="font-body" style={{ color: "#FFC94A", fontSize: 11, fontWeight: 700 }}>📝 Tenés una plantilla sin terminar{nombre.trim() ? `: “${nombre.trim()}”` : ""}</div>
+            <div className="font-body" style={{ color: "#8B8698", fontSize: 10, margin: "4px 0 8px" }}>Quedó guardada como borrador, no se perdió nada.</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setCreando(true)} className="font-body" style={{ background: "#FFC94A", color: "#121017", border: "none", borderRadius: 8, fontWeight: 700, fontSize: 11, padding: "7px 14px", cursor: "pointer" }}>Retomar</button>
+              <button onClick={() => { if (window.confirm("¿Descartar este borrador? No se puede recuperar.")) { setNombre(""); setPlan(mkPlanVacio()); borrarBorrador("nueva"); } }} className="font-body" style={{ background: "none", color: "#E85D5D", border: "1px solid #E85D5D", borderRadius: 8, fontWeight: 700, fontSize: 11, padding: "7px 14px", cursor: "pointer" }}>Descartar</button>
+            </div>
+          </div>
+        )}
         <button onClick={() => setCreando(true)} className="font-body" style={{ background: "rgba(255,107,53,0.1)", border: "1px dashed #FF6B35", borderRadius: 14, padding: 14, color: "#FF6B35", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>+ Crear plantilla desde cero</button>
         {templates.map((t) => (
           <div key={t.id} style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 14, padding: 14, position: "relative" }}>
             <button onClick={() => { if (window.confirm(`¿Eliminar la plantilla "${t.nombre}"? Esta acción no se puede deshacer.`)) onEliminarPlantilla(t.id); }} className="font-body" style={{ position: "absolute", top: 10, right: 10, background: "none", border: "none", color: "#E85D5D", fontSize: 15, cursor: "pointer", padding: 4, lineHeight: 1 }}>✕</button>
             <div className="font-display" style={{ color: "#F4F1EA", fontSize: 14, fontWeight: 600, paddingRight: 24 }}>{t.nombre}</div>
             <div className="font-body" style={{ color: "#7DD6C0", fontSize: 11, marginTop: 2, fontWeight: 600 }}>{t.categoria} · {t.plan.dias.length} días</div>
+            {editandoId !== t.id && leerBorrador("edit_" + t.id) && <div className="font-body" style={{ color: "#FFC94A", fontSize: 10, marginTop: 4, fontWeight: 700 }}>📝 Tenés cambios sin guardar acá — tocá Editar para retomarlos</div>}
             <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
               <button onClick={() => { setPreviewOpen(previewOpen === t.id ? null : t.id); setTargetOpen(null); setEditandoId(null); }} className="font-body" style={{ background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, color: "#8B8698", fontWeight: 700, fontSize: 11, padding: "8px 12px", cursor: "pointer" }}>👁️ Ver ejercicios</button>
-              <button onClick={() => { if (editandoId === t.id) { setEditandoId(null); } else { setEditandoId(t.id); setPlanEnEdicion(clonarPlan(t.plan)); setPreviewOpen(null); setTargetOpen(null); } }} className="font-body" style={{ background: "#26232F", border: "1px solid #7DD6C0", borderRadius: 8, color: "#7DD6C0", fontWeight: 700, fontSize: 11, padding: "8px 12px", cursor: "pointer" }}>✏️ Editar</button>
+              <button onClick={() => { if (editandoId === t.id) { setEditandoId(null); } else { const bor = leerBorrador("edit_" + t.id); const hayBor = !!(bor && bor.plan); setEditandoId(t.id); try { setPlanEnEdicion(clonarPlan(hayBor ? bor.plan : t.plan)); } catch (e) { setPlanEnEdicion(clonarPlan(t.plan)); } setEditSucio(hayBor); setEditRestaurado(hayBor); setPreviewOpen(null); setTargetOpen(null); } }} className="font-body" style={{ background: "#26232F", border: "1px solid #7DD6C0", borderRadius: 8, color: "#7DD6C0", fontWeight: 700, fontSize: 11, padding: "8px 12px", cursor: "pointer" }}>✏️ Editar</button>
               <button onClick={() => { setTargetOpen(targetOpen === t.id ? null : t.id); setPreviewOpen(null); setEditandoId(null); }} className="font-body" style={{ background: "#FF6B35", border: "none", borderRadius: 8, color: "#121017", fontWeight: 700, fontSize: 11, padding: "8px 12px", cursor: "pointer" }}>Usar plantilla</button>
             </div>
             {editandoId === t.id && planEnEdicion && (
               <div style={{ marginTop: 10, background: "#0F0E13", border: "1px solid #322E3D", borderRadius: 10, padding: 10 }}>
                 <div className="font-body" style={{ color: "#8B8698", fontSize: 9, marginBottom: 8 }}>Edición rápida — los cambios quedan guardados en esta plantilla, no afectan a nadie que ya la haya usado antes.</div>
-                <PlanEditor plan={planEnEdicion} onChange={setPlanEnEdicion} version={version} onAddToLibrary={onAddToLibrary} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={onAgregarRolPersonalizado} />
-                <button onClick={() => { onEditarPlantilla(t.id, planEnEdicion); setEditandoId(null); }} className="font-body" style={{ width: "100%", marginTop: 8, background: "#7DD6C0", border: "none", borderRadius: 10, color: "#0B2A2E", fontWeight: 700, fontSize: 12, padding: 11, cursor: "pointer" }}>Guardar cambios en la plantilla</button>
+                {editRestaurado && (
+                  <div style={{ background: "rgba(255,201,74,0.1)", border: "1px solid #FFC94A", borderRadius: 8, padding: 8, marginBottom: 8 }}>
+                    <div className="font-body" style={{ color: "#FFC94A", fontSize: 10, fontWeight: 700 }}>📝 Retomaste tus cambios que no habías guardado.</div>
+                    <button onClick={() => { if (window.confirm("¿Descartar esos cambios y volver a la plantilla original?")) { borrarBorrador("edit_" + t.id); setPlanEnEdicion(clonarPlan(t.plan)); setEditSucio(false); setEditRestaurado(false); } }} className="font-body" style={{ background: "none", border: "none", color: "#E85D5D", fontSize: 10, cursor: "pointer", padding: "4px 0 0" }}>Descartar cambios y volver al original</button>
+                  </div>
+                )}
+                <PlanEditor plan={planEnEdicion} onChange={(p) => { setPlanEnEdicion(p); setEditSucio(true); }} version={version} onAddToLibrary={onAddToLibrary} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={onAgregarRolPersonalizado} />
+                <button onClick={() => { onEditarPlantilla(t.id, planEnEdicion); borrarBorrador("edit_" + t.id); setEditSucio(false); setEditRestaurado(false); setEditandoId(null); }} className="font-body" style={{ width: "100%", marginTop: 8, background: "#7DD6C0", border: "none", borderRadius: 10, color: "#0B2A2E", fontWeight: 700, fontSize: 12, padding: 11, cursor: "pointer" }}>Guardar cambios en la plantilla</button>
               </div>
             )}
             {previewOpen === t.id && (
@@ -3977,7 +4094,117 @@ function EncuestaSemanalModal({ onSubmit, onClose }) {
   );
 }
 
-function AthleteInicio({ alumno, goEntrenar, onCheckin, onUpdateFoto, onMarcarAvisoVisto }) {
+// ---------- Largada: juego de activación neuromuscular ----------
+// El pitido se genera en el momento (onda de 1000 Hz), así no hace falta ningún archivo de audio.
+let _pitidoUrl = null;
+function urlPitido() {
+  if (_pitidoUrl) return _pitidoUrl;
+  const rate = 22050, n = Math.floor(rate * 0.45);
+  const buf = new ArrayBuffer(44 + n * 2); const v = new DataView(buf);
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); w(8, "WAVE"); w(12, "fmt "); v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true);
+  v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, "data"); v.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) { const env = Math.min(1, i / 200, (n - i) / 400); v.setInt16(44 + i * 2, Math.sin((2 * Math.PI * 1000 * i) / rate) * 0.9 * env * 32767, true); }
+  _pitidoUrl = URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
+  return _pitidoUrl;
+}
+
+function JuegoLargada({ reacciones, onGuardar, onClose }) {
+  const [fase, setFase] = useState("listo"); // listo → marcas → ya → resultado | falsa
+  const faseRef = useRef("listo");
+  const [ms, setMs] = useState(null);
+  const [vivo, setVivo] = useState(0);
+  const [intentos, setIntentos] = useState([]);
+  const [esRecord, setEsRecord] = useState(false);
+  const t0 = useRef(0), timer = useRef(null), raf = useRef(null), audio = useRef(null);
+  const todos = (reacciones || []).map((r) => r.ms);
+  const mejor = todos.length ? Math.min(...todos) : null;
+  const cambiarFase = (f) => { faseRef.current = f; setFase(f); };
+  const limpiar = () => { clearTimeout(timer.current); cancelAnimationFrame(raf.current); };
+  useEffect(() => () => limpiar(), []);
+
+  const senal = () => {
+    try { const a = audio.current; a.currentTime = 0; a.volume = 1; const p = a.play(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* sin sonido: queda la señal visual */ }
+    if (navigator.vibrate) navigator.vibrate(40);
+    t0.current = performance.now();
+    cambiarFase("ya");
+    const tick = () => { setVivo(performance.now() - t0.current); raf.current = requestAnimationFrame(tick); };
+    raf.current = requestAnimationFrame(tick);
+  };
+  const empezar = () => {
+    limpiar(); setMs(null); setVivo(0); setEsRecord(false);
+    if (!audio.current) { audio.current = new Audio(urlPitido()); audio.current.preload = "auto"; }
+    // Este toque "desbloquea" el audio: los celulares solo dejan sonar después de un toque del usuario.
+    const a = audio.current; a.volume = 0;
+    a.play().then(() => { a.pause(); a.currentTime = 0; a.volume = 1; }).catch(() => { a.volume = 1; });
+    cambiarFase("marcas");
+    timer.current = setTimeout(senal, 1800 + Math.random() * 2700);
+  };
+  const toque = () => {
+    const f = faseRef.current;
+    if (f === "marcas") { limpiar(); cambiarFase("falsa"); setMs(null); }
+    else if (f === "ya") {
+      const dt = performance.now() - t0.current; // se mide en el instante del toque
+      limpiar();
+      const r = Math.round(dt);
+      setMs(r);
+      if (r < 100) { cambiarFase("falsa"); return; } // menos de 100 ms = anticipación, igual que en natación
+      setEsRecord(mejor === null || r < mejor);
+      setIntentos((p) => [...p, r].slice(-5));
+      onGuardar(r);
+      cambiarFase("resultado");
+    }
+  };
+  const nivel = (r) => (r <= 200 ? "¡Explosivo!" : r <= 250 ? "Muy rápido" : r <= 320 ? "Bien" : "Podés mejorar: probá otra");
+  const fondo = fase === "ya" ? "#33D6A6" : fase === "falsa" ? "#E85D5D" : fase === "marcas" ? "#1A1417" : "#121017";
+  const oscuro = fase === "ya" || fase === "falsa";
+  const btn = (bg, color) => ({ background: bg, color, border: "none", borderRadius: 14, fontWeight: 700, fontSize: 16, padding: "14px 28px", cursor: "pointer", minWidth: 200 });
+
+  return createPortal((
+    <div onPointerDown={toque} style={{ position: "fixed", inset: 0, zIndex: 700, background: fondo, color: oscuro ? "#0B2A2E" : "#F4F1EA", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: 24, touchAction: "manipulation", userSelect: "none", WebkitUserSelect: "none" }}>
+      {(fase === "listo" || fase === "resultado" || fase === "falsa") && (
+        <button onClick={() => { limpiar(); onClose(); }} className="font-body" style={{ position: "absolute", top: "calc(14px + env(safe-area-inset-top, 0px))", right: 16, background: "rgba(255,255,255,0.12)", border: "none", borderRadius: 999, color: oscuro ? "#0B2A2E" : "#F4F1EA", width: 36, height: 36, fontSize: 16, cursor: "pointer" }}>✕</button>
+      )}
+      {fase === "listo" && (<>
+        <div style={{ fontSize: 54 }}>⚡</div>
+        <div className="font-display" style={{ fontSize: 32, fontWeight: 700, marginTop: 6 }}>LARGADA</div>
+        <div className="font-body" style={{ color: "#7DD6C0", fontSize: 13, fontWeight: 700, marginTop: 2 }}>Activación neuromuscular</div>
+        <div className="font-body" style={{ color: "#8B8698", fontSize: 14, lineHeight: 1.5, maxWidth: 300, margin: "16px 0 18px" }}>Tocá <b style={{ color: "#F4F1EA" }}>Empezar</b> y esperá. Cuando suene el pitido y la pantalla se ponga <b style={{ color: "#33D6A6" }}>verde</b>, tocá lo más rápido que puedas. Si tocás antes, es salida en falso. Subí el volumen.</div>
+        {mejor !== null && <div className="font-display" style={{ fontSize: 15, color: "#FFC94A", marginBottom: 14 }}>🏆 Tu mejor tiempo: {mejor} ms</div>}
+        <button onClick={empezar} className="font-display" style={btn("#FF6B35", "#121017")}>EMPEZAR</button>
+        <div className="font-body" style={{ color: "#6B6678", fontSize: 10, marginTop: 16, maxWidth: 280 }}>Menos de 100 ms cuenta como anticipación, igual que en una largada de natación.</div>
+      </>)}
+      {fase === "marcas" && (<>
+        <div className="font-display" style={{ fontSize: 40, fontWeight: 700, color: "#FFC94A" }}>A SUS MARCAS…</div>
+        <div className="font-body" style={{ color: "#8B8698", fontSize: 14, marginTop: 14 }}>Esperá el pitido. No toques todavía.</div>
+      </>)}
+      {fase === "ya" && (<>
+        <div className="font-display" style={{ fontSize: 96, fontWeight: 700, lineHeight: 1 }}>¡YA!</div>
+        <div className="font-display" style={{ fontSize: 44, fontWeight: 600, marginTop: 20, fontVariantNumeric: "tabular-nums" }}>{(vivo / 1000).toFixed(3)} s</div>
+        <div className="font-body" style={{ fontSize: 15, marginTop: 14, fontWeight: 700 }}>¡TOCÁ!</div>
+      </>)}
+      {fase === "resultado" && (<>
+        {esRecord && <div className="font-display" style={{ color: "#FFC94A", fontSize: 18, marginBottom: 6 }}>🏆 ¡NUEVO MEJOR TIEMPO!</div>}
+        <div className="font-display" style={{ fontSize: 78, fontWeight: 700, color: "#7DD6C0", lineHeight: 1 }}>{ms}<span style={{ fontSize: 28 }}> ms</span></div>
+        <div className="font-display" style={{ fontSize: 22, marginTop: 8 }}>{nivel(ms)}</div>
+        {intentos.length > 1 && <div className="font-body" style={{ color: "#8B8698", fontSize: 12, marginTop: 14 }}>Esta sesión: {intentos.map((x) => `${x} ms`).join(" · ")} — promedio {Math.round(intentos.reduce((a, b) => a + b, 0) / intentos.length)} ms</div>}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 26 }}>
+          <button onClick={empezar} className="font-display" style={btn("#FF6B35", "#121017")}>OTRA VEZ</button>
+          <button onClick={() => { limpiar(); onClose(); }} className="font-body" style={btn("#26232F", "#F4F1EA")}>Terminar</button>
+        </div>
+      </>)}
+      {fase === "falsa" && (<>
+        <div className="font-display" style={{ fontSize: 38, fontWeight: 700 }}>¡SALIDA EN FALSO!</div>
+        <div className="font-body" style={{ fontSize: 14, marginTop: 10, maxWidth: 280, lineHeight: 1.45 }}>{ms !== null ? `Tocaste a los ${ms} ms: es demasiado rápido, anticipaste la señal.` : "Tocaste antes del pitido. Esperá la señal."}</div>
+        <button onClick={empezar} className="font-display" style={{ ...btn("#121017", "#F4F1EA"), marginTop: 26 }}>OTRA VEZ</button>
+      </>)}
+    </div>
+  ), document.body);
+}
+
+function AthleteInicio({ alumno, goEntrenar, onCheckin, onUpdateFoto, onMarcarAvisoVisto, onGuardarReaccion }) {
+  const [juego, setJuego] = useState(false);
   const primerDia = alumno.plan.dias[0];
   const total = flatEjercicios(primerDia).length;
   const hoy = todayISO();
@@ -4033,6 +4260,18 @@ function AthleteInicio({ alumno, goEntrenar, onCheckin, onUpdateFoto, onMarcarAv
           <StatMini label="Peso actual" value={`${alumno.peso}kg`} />
           <StatMini label="Objetivo" value={alumno.plan.meta.objetivo?.split(" ")[0] || "—"} />
         </div>
+
+        {onGuardarReaccion && (
+          <button onClick={() => setJuego(true)} className="font-body" style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, background: "linear-gradient(135deg, rgba(255,107,53,0.14), rgba(125,214,192,0.10))", border: "1px solid #FF6B35", borderRadius: 14, padding: "12px 16px", marginBottom: 14, cursor: "pointer", textAlign: "left" }}>
+            <span style={{ fontSize: 28 }}>⚡</span>
+            <span style={{ flex: 1 }}>
+              <span className="font-display" style={{ display: "block", color: "#F4F1EA", fontSize: 16, fontWeight: 700 }}>LARGADA · activación</span>
+              <span style={{ display: "block", color: "#8B8698", fontSize: 11, marginTop: 2 }}>Probá tu reacción con sonido y cronómetro{(alumno.reacciones || []).length ? ` · mejor ${Math.min(...alumno.reacciones.map((r) => r.ms))} ms` : ""}</span>
+            </span>
+            <span style={{ color: "#FF6B35", fontSize: 18 }}>▶</span>
+          </button>
+        )}
+        {juego && <JuegoLargada reacciones={alumno.reacciones} onGuardar={onGuardarReaccion} onClose={() => setJuego(false)} />}
 
         {/* Check-in diario de ánimo — tu coach lo ve para saber cómo venís */}
         <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 14, padding: 16, marginBottom: 14 }}>
@@ -5263,6 +5502,10 @@ function sanearAlumno(a) {
       pruebasNatacion: typeof a.pruebasNatacion === "string" ? a.pruebasNatacion : "",
       // Aviso del coach: mensaje que el/la alumno/a ve en su Inicio antes de empezar a entrenar.
       avisoCoach: typeof a.avisoCoach === "string" ? a.avisoCoach : "",
+      // Última vez que el/la alumno/a abrió la app (la ve el coach en el Dashboard).
+      ultimaConexion: typeof a.ultimaConexion === "string" ? a.ultimaConexion : null,
+      // Tiempos de reacción del juego "Largada" (últimos 30): { f: fecha ISO, ms }.
+      reacciones: Array.isArray(a.reacciones) ? a.reacciones.filter((r) => r && typeof r.ms === "number") : [],
       // Qué texto del aviso ya vio el/la alumno/a (y cuándo): si el coach cambia el texto, vuelve a aparecer.
       avisoVistoTexto: typeof a.avisoVistoTexto === "string" ? a.avisoVistoTexto : "",
       avisoVistoFecha: typeof a.avisoVistoFecha === "string" ? a.avisoVistoFecha : null,
@@ -5597,6 +5840,25 @@ export default function GymPlannerCoachApp() {
     return false;
   };
   const logout = () => { setSession(null); setSelectedCoachAlumno(null); };
+  // Deja registrado cuándo entra cada alumno/a a la app, para que el coach lo vea en su Dashboard.
+  // Se anota al iniciar sesión y cuando vuelve a abrir la app, como máximo una vez cada 10 minutos
+  // (así no se llena de guardados innecesarios).
+  const ultimaConexionRef = useRef(0);
+  useEffect(() => {
+    if (!session || session.role !== "athlete") return;
+    const id = session.athleteId;
+    ultimaConexionRef.current = 0;
+    const registrar = (forzar) => {
+      const ahora = Date.now();
+      if (!forzar && ahora - ultimaConexionRef.current < 10 * 60 * 1000) return;
+      ultimaConexionRef.current = ahora;
+      setAlumnos((prev) => prev.map((a) => (a.id === id ? { ...a, ultimaConexion: new Date(ahora).toISOString() } : a)));
+    };
+    registrar(true);
+    const alVolver = () => { if (document.visibilityState === "visible") registrar(false); };
+    document.addEventListener("visibilitychange", alVolver);
+    return () => document.removeEventListener("visibilitychange", alVolver);
+  }, [session?.role, session?.athleteId]);
   const addCoach = (d) => {
     const usuario = slugify(d.nombre.trim()) || `coach${coaches.length + 1}`;
     const password = Math.random().toString().slice(2, 6);
@@ -5826,12 +6088,12 @@ export default function GymPlannerCoachApp() {
   } else if (athlete.wellness.encuestaPendiente && tab !== "entrenar") {
     body = (
       <div style={{ position: "relative", minHeight: "100%" }}>
-        <AthleteInicio alumno={athlete} goEntrenar={() => setTab("entrenar")} onCheckin={registrarCheckin} onUpdateFoto={(dataUrl) => updateAlumno(athlete.id, { fotoPerfil: dataUrl })} onMarcarAvisoVisto={() => updateAlumno(athlete.id, { avisoVistoTexto: athlete.avisoCoach, avisoVistoFecha: new Date().toISOString() })} />
+        <AthleteInicio alumno={athlete} goEntrenar={() => setTab("entrenar")} onCheckin={registrarCheckin} onUpdateFoto={(dataUrl) => updateAlumno(athlete.id, { fotoPerfil: dataUrl })} onMarcarAvisoVisto={() => updateAlumno(athlete.id, { avisoVistoTexto: athlete.avisoCoach, avisoVistoFecha: new Date().toISOString() })} onGuardarReaccion={(ms) => updateAlumno(athlete.id, { reacciones: [...(athlete.reacciones || []), { f: new Date().toISOString(), ms }].slice(-30) })} />
         <EncuestaSemanalModal onClose={() => updateAlumno(athlete.id, { wellness: { ...athlete.wellness, encuestaPendiente: false } })} onSubmit={(data) => enviarEncuestaSemanal(athlete.id, data)} />
       </div>
     );
   } else {
-    if (tab === "inicio") body = <AthleteInicio alumno={athlete} goEntrenar={() => setTab("entrenar")} onCheckin={registrarCheckin} onUpdateFoto={(dataUrl) => updateAlumno(athlete.id, { fotoPerfil: dataUrl })} onMarcarAvisoVisto={() => updateAlumno(athlete.id, { avisoVistoTexto: athlete.avisoCoach, avisoVistoFecha: new Date().toISOString() })} />;
+    if (tab === "inicio") body = <AthleteInicio alumno={athlete} goEntrenar={() => setTab("entrenar")} onCheckin={registrarCheckin} onUpdateFoto={(dataUrl) => updateAlumno(athlete.id, { fotoPerfil: dataUrl })} onMarcarAvisoVisto={() => updateAlumno(athlete.id, { avisoVistoTexto: athlete.avisoCoach, avisoVistoFecha: new Date().toISOString() })} onGuardarReaccion={(ms) => updateAlumno(athlete.id, { reacciones: [...(athlete.reacciones || []), { f: new Date().toISOString(), ms }].slice(-30) })} />;
     else if (tab === "entrenar") body = <AthleteEntrenar alumno={athlete} onFinalizar={(id) => { finalizarEntrenamiento(id); setTab("inicio"); }} onUpdateNota={(exId, exNombre, texto, claveNota) => updateNota(athlete.id, exId, exNombre, texto, claveNota)} rolesPersonalizados={rolesPersonalizados} />;
     else if (tab === "progreso") body = <AthleteProgreso alumno={athlete} onGuardarHistorialRM={(ejercicio, valor) => agregarHistorialRM(athlete.id, ejercicio, valor)} />;
     else if (tab === "nutricion") body = <CalculadoraScreen alumno={athlete} />;
