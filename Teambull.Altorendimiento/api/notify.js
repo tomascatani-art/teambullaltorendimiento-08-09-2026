@@ -4,7 +4,8 @@
 import webpush from "web-push";
 
 const SUPABASE_URL = "https://phoqazemsipnxibpxboq.supabase.co";
-const SUPABASE_KEY = "sb_publishable_04mcDE0s7wlA5Z2JVAkfbA_67H7Sbvk";
+// Con el modo seguro activo, team_data solo se puede leer con la clave secreta.
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "sb_publishable_04mcDE0s7wlA5Z2JVAkfbA_67H7Sbvk";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {

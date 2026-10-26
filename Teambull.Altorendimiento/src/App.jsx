@@ -710,6 +710,16 @@ let VIDEOS_GUARDADOS = {}; // { [exerciseId]: video }
 // Se muestran primero en las bibliotecas; los de fábrica de la app quedan después.
 function esEjercicioPropio(ex) { return !!ex.custom || !!VIDEOS_GUARDADOS[ex.id] || !!ex.video; }
 function propiosPrimero(lista) { return [...lista.filter(esEjercicioPropio), ...lista.filter((e) => !esEjercicioPropio(e))]; }
+// Agrupa los ejercicios de un bloque: los marcados como "circuito con el siguiente" quedan en el
+// mismo grupo que el ejercicio que sigue; el resto va cada uno solo.
+function agruparCircuitos(lista) {
+  const grupos = [];
+  (lista || []).forEach((e, i) => {
+    if (i > 0 && lista[i - 1].circuito) grupos[grupos.length - 1].push(e);
+    else grupos.push([e]);
+  });
+  return grupos;
+}
 function videoEfectivo(ex) {
   return VIDEOS_GUARDADOS[ex.id] || ex.video;
 }
@@ -842,6 +852,100 @@ function coincideBusqueda(nombre, busqueda) {
   return palabrasBusqueda.every((pb) =>
     palabrasNombre.some((pn) => pn.startsWith(pb) || pn.includes(pb) || distanciaEdicion(pb, pn) <= Math.max(1, Math.floor(pb.length / 4)))
   );
+}
+// ---------- Nombres de ejercicios que son "el mismo" ----------
+// Para que "hip trust", "Hip Thrust" e "hipthrust" sean el mismo RM, y "press de pecho" o
+// "banco plano" se relacionen con "Press banca plano". Primero se limpia el nombre (tildes,
+// mayúsculas, letras repetidas, "th"), después se pasa por una lista de sinónimos comunes del
+// gimnasio y, si todavía no coincide, se tolera algún error de tipeo.
+const SINONIMOS_EJERCICIO = [
+  ["press banca plano", ["press de pecho", "press pecho", "banco plano", "press banca", "press de banca", "press banco plano", "press plano", "press en banco plano", "bench press", "bench", "pecho plano", "press de pecho plano"]],
+  ["press banca inclinado", ["banco inclinado", "press inclinado", "press de pecho inclinado", "incline bench"]],
+  ["press banca declinado", ["banco declinado", "press declinado"]],
+  ["hip thrust", ["hip trust", "hipthrust", "hip thrus", "empuje de cadera", "puente de gluteo con barra", "elevacion de cadera con barra"]],
+  ["sentadilla trasera", ["sentadilla", "sentadillas", "squat", "back squat", "sentadilla libre", "sentadilla con barra", "sentadilla atras"]],
+  ["sentadilla frontal", ["front squat", "sentadilla adelante", "sentadilla delantera"]],
+  ["peso muerto convencional", ["peso muerto", "deadlift", "pm", "peso muerto clasico"]],
+  ["peso muerto rumano", ["rumano", "rdl", "peso muerto piernas rigidas"]],
+  ["press militar de pie", ["press militar", "press de hombro", "press hombro", "ohp", "overhead press", "press por encima de la cabeza"]],
+  ["dominada", ["dominadas", "pull up", "pullup", "pull ups", "chin up", "chin ups"]],
+  ["remo con barra", ["remo barra", "remo inclinado con barra", "barbell row"]],
+  ["cargada", ["clean", "power clean", "cargada de potencia"]],
+  ["arranque", ["snatch", "power snatch"]],
+  ["prensa", ["prensa de piernas", "prensa 45", "leg press"]],
+];
+function limpiarNombreEjercicio(s) {
+  return normalizarTexto(s)
+    .replace(/[^a-z0-9ñ ]+/g, " ")
+    .replace(/th/g, "t")
+    .replace(/([a-z])\1+/g, "$1")
+    .replace(/\b(de|del|con|en|la|el|los|las|a|al)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+const _MAPA_SINONIMOS = (() => {
+  const m = new Map();
+  SINONIMOS_EJERCICIO.forEach(([canon, alias]) => [canon, ...alias].forEach((x) => m.set(limpiarNombreEjercicio(x), limpiarNombreEjercicio(canon))));
+  return m;
+})();
+// Palabras de variante que no cambian el ejercicio para el RM ("Hip thrust con pausa" usa el RM de
+// "Hip thrust"). Unilateral o a una mano no están: ahí el RM es otro.
+const PALABRAS_VARIANTE = /\b(pausas?|tempo|lent[oa]|isometric[oa]s?|excentric[oa]s?|enfatizad[oa]|banda|elastica|cadenas?|deficit|cinturon|calzado|rango|medio|velocidad|maxima|tecnica|vacia|repeticiones|3 1 1|1 5)\b/g;
+// Clave para comparar dos nombres de ejercicio. Sin la variante (lo que va después de " — " o las
+// palabras de variante sueltas).
+function claveEjercicio(nombre) {
+  const limpio = limpiarNombreEjercicio(String(nombre || "").split(/\s[—–-]\s/)[0]);
+  const base = limpio.replace(PALABRAS_VARIANTE, " ").replace(/\s+/g, " ").trim() || limpio;
+  return _MAPA_SINONIMOS.get(base) || base;
+}
+function mismoEjercicio(a, b) {
+  const ka = claveEjercicio(a), kb = claveEjercicio(b);
+  if (!ka || !kb) return false;
+  if (ka === kb) return true;
+  const tol = Math.min(ka.length, kb.length) >= 8 ? 2 : 1;
+  return distanciaEdicion(ka, kb) <= tol;
+}
+// De una lista de nombres ya cargados, devuelve el que es "el mismo" ejercicio que el escrito
+// (o null). Si hay uno idéntico, gana ese.
+function ejercicioRelacionado(nombre, lista) {
+  const n = normalizarTexto(nombre).trim();
+  if (!n) return null;
+  const exacto = lista.find((x) => normalizarTexto(x).trim() === n);
+  if (exacto) return exacto;
+  // entre los que coinciden, el que está escrito más parecido
+  const l = limpiarNombreEjercicio(nombre);
+  const candidatos = lista.filter((x) => mismoEjercicio(x, nombre));
+  candidatos.sort((a, b) => distanciaEdicion(limpiarNombreEjercicio(a), l) - distanciaEdicion(limpiarNombreEjercicio(b), l));
+  return candidatos[0] || null;
+}
+// Grupo al que pertenece un ejercicio, para mostrar los RM ordenados en grupos que se abren y
+// se cierran, en vez de una lista larga suelta.
+const GRUPOS_RM = [
+  { id: "piernas", label: "Piernas", emoji: "🦵", claves: ["sentadilla", "squat", "prensa", "zancada", "estocada", "bulgara", "extension cuadriceps", "sillon", "pistol", "step up", "subida cajon", "hack"] },
+  { id: "cadera", label: "Cadera y glúteo", emoji: "🍑", claves: ["hip trust", "puente", "peso muerto", "rumano", "rdl", "deadlift", "swing", "gluteo", "curl femoral", "isquio", "patada", "abductor", "aductor", "buenos dias"] },
+  { id: "empuje", label: "Empuje (pecho y hombro)", emoji: "💪", claves: ["press", "banca", "banco", "pecho", "fondos", "flexion", "push", "militar", "hombro", "aperturas", "jerk", "elevaciones laterales"] },
+  { id: "traccion", label: "Tracción (espalda)", emoji: "🧗", claves: ["remo", "dominada", "jalon", "pul", "chin", "espalda", "face", "pulover", "encogimientos"] },
+  { id: "olimpico", label: "Olímpicos y potencia", emoji: "🏋️", claves: ["arranque", "cargada", "envion", "clean", "snatch", "salto", "lanzamiento", "balon"] },
+  { id: "brazos", label: "Brazos", emoji: "🦾", claves: ["curl", "biceps", "triceps", "frances", "martillo", "antebrazo", "muñeca"] },
+  { id: "core", label: "Core", emoji: "🔥", claves: ["plancha", "abdominal", "core", "rueda", "pallof", "giro", "hollow", "lumbar"] },
+];
+function grupoRM(nombre) {
+  const k = claveEjercicio(nombre) + " " + limpiarNombreEjercicio(nombre);
+  for (const g of GRUPOS_RM) if (g.claves.some((c) => k.includes(limpiarNombreEjercicio(c)))) return g;
+  return { id: "otros", label: "Otros", emoji: "📌", claves: [] };
+}
+// Ordena una lista de elementos en los grupos de arriba (en ese orden), cada uno ordenado por nombre.
+function agruparPorGrupoRM(items, nombreDe) {
+  const orden = [...GRUPOS_RM.map((g) => g.id), "otros"];
+  const grupos = new Map();
+  items.forEach((it) => {
+    const g = grupoRM(nombreDe(it));
+    if (!grupos.has(g.id)) grupos.set(g.id, { ...g, items: [] });
+    grupos.get(g.id).items.push(it);
+  });
+  return [...grupos.values()]
+    .sort((a, b) => orden.indexOf(a.id) - orden.indexOf(b.id))
+    .map((g) => ({ ...g, items: g.items.sort((x, y) => String(nombreDe(x)).localeCompare(String(nombreDe(y)), "es")) }));
 }
 // Calcula qué semana del mesociclo le toca a un alumno HOY, en base a la fecha real de inicio
 // que cargó el coach — para que la app arranque ahí sola, y para poder marcarla como "la que toca"
@@ -1147,6 +1251,261 @@ function svgLineChart(data, color = "#FF6B35", unidad = "") {
       <span>Mín: ${fmt(min)}${unidad}</span><span>Máx: ${fmt(max)}${unidad}</span>
     </div>`;
 }
+// ---------- Biomecánica en el informe ----------
+// Arma las series de evolución con las mediciones del apartado Biomecánica (alumno.biomecanica):
+// velocidad de barra por ejercicio, altura de salto, frecuencia de ciclo y tiempos de prueba.
+function seriesBiomecanica(alumno, enMes = () => true) {
+  const evs = (alumno.biomecanica || []).filter((e) => e && typeof e.date === "string" && enMes(e.date)).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const series = {};
+  const agregar = (clave, def, fecha, v, detalle) => {
+    if (!Number.isFinite(v)) return;
+    (series[clave] = series[clave] || { ...def, puntos: [] }).puntos.push({ fecha, v, detalle: detalle || "" });
+  };
+  evs.forEach((e) => {
+    const r = e.summary || {}, d = e.data || {};
+    const nombre = (e.title || "").replace(/^(Gym|Técnica) · /, "");
+    if (e.kind === "gym" && Number.isFinite(r.mv)) {
+      const perdida = d.vl && Number.isFinite(d.vl.v) ? `pérdida de velocidad ${fmtBio(d.vl.v, 1)}%` : "";
+      agregar("mv:" + nombre, { titulo: `${nombre} · velocidad media de la mejor repetición`, corto: `${nombre} (velocidad de barra)`, unidad: " m/s", dec: 2, color: "#FF6B35" }, e.date, r.mv, [e.event, perdida].filter(Boolean).join(" · "));
+    } else if (e.kind === "gym" && Number.isFinite(r.jump)) {
+      agregar("salto", { titulo: "Altura de salto (mejor intento)", corto: "Altura de salto", unidad: " cm", dec: 1, color: "#7DD6C0" }, e.date, r.jump * 100, e.event);
+    } else if (e.kind === "tech" && Number.isFinite(r.cycleRate)) {
+      agregar("ciclo:" + nombre, { titulo: `${nombre} · frecuencia de ciclo`, corto: `${nombre} (frecuencia de ciclo)`, unidad: " ciclos/min", dec: 1, color: "#5AA0E6" }, e.date, r.cycleRate, e.event);
+    } else if ((e.kind === "race" || e.kind === "report") && Number.isFinite(r.finalTime)) {
+      const prueba = e.event || nombre;
+      agregar("tiempo:" + prueba, { titulo: `${prueba} · tiempo final`, corto: `${prueba} (tiempo)`, unidad: " s", dec: 2, color: "#F2A93B", menorEsMejor: true }, e.date, r.finalTime, "");
+    }
+  });
+  return { evs, series: Object.values(series) };
+}
+const fmtBio = (v, dec) => v.toLocaleString("es-AR", { minimumFractionDigits: dec, maximumFractionDigits: dec });
+// Variación entre la primera y la última medición, con el color según si es una mejora.
+function cambioBio(serie) {
+  const p = serie.puntos, a = p[0].v, b = p[p.length - 1].v, delta = b - a;
+  const mejora = serie.menorEsMejor ? delta < 0 : delta > 0;
+  const pct = a ? Math.round((delta / Math.abs(a)) * 100) : null;
+  return { a, b, delta, mejora, igual: Math.abs(delta) < Math.pow(10, -serie.dec), pct };
+}
+// Gráfico de evolución con fechas: mismo estilo que el resto del informe, con el valor de cada punto.
+function svgBioChart(serie) {
+  const p = serie.puntos;
+  if (p.length === 1) {
+    return `<div style="display:flex;justify-content:space-between;align-items:baseline;"><div><span style="font-size:22px;font-weight:800;">${fmtBio(p[0].v, serie.dec)}${serie.unidad}</span> <span style="font-size:11px;color:#8B8698;">primera medición · ${mostrarFecha(p[0].fecha)}</span></div></div>`;
+  }
+  const c = cambioBio(serie);
+  const w = 640, h = 150, padX = 34, padTop = 24, padBot = 26;
+  const vals = p.map((x) => x.v), max = Math.max(...vals), min = Math.min(...vals);
+  const pt = (v, i) => [padX + (i * (w - padX * 2)) / (p.length - 1), padTop + (1 - (v - min) / (max - min || 1)) * (h - padTop - padBot)];
+  const pts = p.map((x, i) => pt(x.v, i));
+  const linea = pts.map((q, i) => (i === 0 ? "M" : "L") + q[0].toFixed(1) + "," + q[1].toFixed(1)).join(" ");
+  const area = linea + ` L ${pts[pts.length - 1][0].toFixed(1)},${h - padBot} L ${pts[0][0].toFixed(1)},${h - padBot} Z`;
+  const gid = "b" + Math.random().toString(36).slice(2);
+  const colorCambio = c.igual ? "#8B8698" : c.mejora ? "#1a9c6e" : "#c94a3a";
+  const flecha = c.igual ? "=" : c.delta > 0 ? "▲" : "▼";
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
+      <div><span style="font-size:22px;font-weight:800;">${fmtBio(c.b, serie.dec)}${serie.unidad}</span> <span style="font-size:11px;color:#8B8698;">última medición</span></div>
+      <div style="font-size:12px;font-weight:700;color:${colorCambio};">${flecha} ${fmtBio(Math.abs(c.delta), serie.dec)}${serie.unidad}${c.pct !== null && !c.igual ? ` (${c.pct > 0 ? "+" : ""}${c.pct}%)` : ""} desde la primera</div>
+    </div>
+    <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;display:block;">
+      <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="${serie.color}" stop-opacity="0.3"/>
+        <stop offset="100%" stop-color="${serie.color}" stop-opacity="0"/>
+      </linearGradient></defs>
+      <line x1="${padX}" y1="${h - padBot}" x2="${w - padX}" y2="${h - padBot}" stroke="#E8E3D8" stroke-width="1"/>
+      <path d="${area}" fill="url(#${gid})"/>
+      <path d="${linea}" fill="none" stroke="${serie.color}" stroke-width="2.5" stroke-linejoin="round"/>
+      ${pts.map((q, i) => `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="3.5" fill="#fff" stroke="${serie.color}" stroke-width="2"/>
+      <text x="${q[0].toFixed(1)}" y="${(q[1] - 9).toFixed(1)}" text-anchor="middle" font-size="10.5" font-weight="700" fill="#121017" font-family="-apple-system,sans-serif">${fmtBio(p[i].v, serie.dec)}</text>
+      <text x="${q[0].toFixed(1)}" y="${h - 8}" text-anchor="middle" font-size="9.5" fill="#8B8698" font-family="-apple-system,sans-serif">${mostrarFecha(p[i].fecha)}</text>`).join("")}
+    </svg>`;
+}
+// Frases para el "Análisis final" a partir de las series de biomecánica.
+function analisisBiomecanica(series) {
+  return series.map((s) => {
+    if (s.puntos.length === 1) return `Biomecánica — ${s.corto}: primera medición de ${fmtBio(s.puntos[0].v, s.dec)}${s.unidad}; sirve de base para comparar las próximas.`;
+    const c = cambioBio(s);
+    if (c.igual) return `Biomecánica — ${s.corto}: se mantuvo estable en ${fmtBio(c.b, s.dec)}${s.unidad} a lo largo de ${s.puntos.length} mediciones.`;
+    return `Biomecánica — ${s.corto}: pasó de ${fmtBio(c.a, s.dec)} a ${fmtBio(c.b, s.dec)}${s.unidad}${c.pct !== null ? ` (${c.pct > 0 ? "+" : ""}${c.pct}%)` : ""} en ${s.puntos.length} mediciones, ${c.mejora ? "una mejora" : "un retroceso para revisar"}.`;
+  });
+}
+
+// Cruza la biomecánica con lo del gimnasio: el RM del mismo ejercicio y las sesiones entrenadas
+// entre la primera y la última medición, para leer los avances juntos.
+function cruceBiomecanicaGimnasio(alumno, series) {
+  const lineas = [];
+  const sinTildes = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const rm = alumno.historialRM || {};
+  series.filter((s) => s.corto.includes("velocidad de barra")).forEach((s) => {
+    const ej = s.corto.replace(" (velocidad de barra)", "");
+    const clave = Object.keys(rm).find((k) => (rm[k] || []).length && (sinTildes(k).includes(sinTildes(ej)) || sinTildes(ej).includes(sinTildes(k))));
+    if (!clave) return;
+    const v = rm[clave], ini = v[0], fin = v[v.length - 1];
+    const cambioVel = s.puntos.length > 1 ? cambioBio(s) : null;
+    let t = `${clave}: el RM ${v.length > 1 && fin !== ini ? `pasó de ${ini} a ${fin} kg` : `es de ${fin} kg`}`;
+    if (cambioVel && !cambioVel.igual) {
+      const subeRM = fin > ini, subeVel = cambioVel.mejora;
+      t += subeRM && subeVel ? ` y la velocidad de barra también mejoró: la ganancia de fuerza se ve en la ejecución.` : subeRM && !subeVel ? `, pero la velocidad de barra bajó: puede haber fatiga acumulada, conviene controlar las cargas.` : !subeRM && subeVel ? ` y la velocidad de barra mejoró: se mueve la misma carga más rápido, señal de que el RM puede subir.` : ` y la velocidad de barra bajó: conviene revisar la carga de trabajo y el descanso.`;
+    } else t += `.`;
+    lineas.push(t);
+  });
+  const fechas = series.flatMap((s) => s.puntos.map((p) => p.fecha)).sort();
+  if (fechas.length > 1 && fechas[0] !== fechas[fechas.length - 1]) {
+    const entre = (alumno.historialSesiones || []).filter((f) => f >= fechas[0] && f <= fechas[fechas.length - 1]).length;
+    if (entre > 0) lineas.push(`Entre la primera medición (${mostrarFecha(fechas[0])}) y la última (${mostrarFecha(fechas[fechas.length - 1])}) completó ${entre} ${entre === 1 ? "sesión" : "sesiones"} de gimnasio.`);
+  }
+  return lineas;
+}
+
+// Informe solo de biomecánica: mismo formato que el informe individual, con los gráficos de
+// evolución, el detalle de cada evaluación y la relación con los avances del gimnasio.
+function generarHTMLInformeBiomecanica(alumno) {
+  const bio = seriesBiomecanica(alumno);
+  const cruce = cruceBiomecanicaGimnasio(alumno, bio.series);
+  const analisis = [...analisisBiomecanica(bio.series), ...cruce];
+  if (!bio.evs.length) analisis.push("Todavía no hay mediciones de biomecánica guardadas.");
+  const rm = alumno.historialRM || {};
+  const sinTildes = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const ejerciciosMedidos = bio.series.filter((s) => s.corto.includes("velocidad de barra")).map((s) => sinTildes(s.corto.replace(" (velocidad de barra)", "")));
+  const rmRelacionados = Object.keys(rm).filter((k) => (rm[k] || []).length > 1 && ejerciciosMedidos.some((ej) => sinTildes(k).includes(ej) || ej.includes(sinTildes(k))));
+  return `<html><head><meta charset="utf-8"><title>Biomecánica — ${alumno.nombre}</title><style>${ESTILO_INFORME}</style></head><body>
+    <button class="btn-imprimir" onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button>
+    <div class="hoja">
+      <div class="header">
+        <div class="marca">🐂 Team Bull · Biomecánica</div>
+        <h1>${alumno.nombre}</h1>
+        <div class="sub">Informe de biomecánica — ${fechaLegible(todayISO())}</div>
+      </div>
+      <div class="cuerpo">
+        <h2 class="seccion">👤 Perfil</h2>
+        <div class="perfil-grid">
+          <div class="perfil-item"><b>Edad</b>${alumno.edad || "—"}</div>
+          <div class="perfil-item"><b>Peso</b>${alumno.peso ? alumno.peso + " kg" : "—"}</div>
+          <div class="perfil-item"><b>Deporte</b>${alumno.deportes || "—"}</div>
+          <div class="perfil-item"><b>Objetivo</b>${alumno.objetivo || "—"}</div>
+        </div>
+        ${seccionBiomecanicaHTML(bio, true)}
+        ${cruce.length ? `<h2 class="seccion">🏋️ Relación con el gimnasio</h2>
+        <div class="stats">
+          <div class="stat"><div class="num">${calcularCumplimiento(alumno)}%</div><div class="label">Cumplimiento</div></div>
+          <div class="stat"><div class="num">${alumno.sesionesCompletadas || 0}</div><div class="label">Sesiones completadas</div></div>
+        </div>
+        ${rmRelacionados.slice(0, 4).map((k) => `<div class="chart-box"><div class="titulo">RM · ${k}</div>${svgLineChart(rm[k], "#121017", "kg")}</div>`).join("")}` : ""}
+        <div class="analisis">
+          <h3>🔎 Análisis</h3>
+          ${analisis.map((p) => `<p>${p}</p>`).join("")}
+        </div>
+      </div>
+      <div class="footer">Generado por Team Bull · Mediciones estimadas por análisis de video</div>
+    </div>
+  </body></html>`;
+}
+function descargarInformeBiomecanicaPDF(alumno) {
+  const blob = new Blob([generarHTMLInformeBiomecanica(alumno)], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `Biomecanica-${slugify(alumno.nombre)}.html`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+const ESTILO_INFORME = `
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; margin: 0; color: #1C1A24; background: #F4F1EA; }
+    .hoja { max-width: 760px; margin: 0 auto; background: #fff; }
+    .header { background: #121017; color: #fff; padding: 32px 36px; }
+    .header .marca { color: #FF6B35; font-weight: 800; font-size: 13px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
+    .header h1 { margin: 0; font-size: 28px; }
+    .header .sub { color: #8B8698; font-size: 13px; margin-top: 4px; }
+    .cuerpo { padding: 28px 36px 40px; }
+    .stats { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+    .donuts { display: flex; gap: 24px; margin-bottom: 16px; justify-content: flex-start; }
+    .stat { flex: 1; min-width: 130px; background: #F8F6F1; border: 1px solid #E8E3D8; border-radius: 12px; padding: 14px 16px; }
+    .stat .num { font-size: 24px; font-weight: 800; color: #121017; }
+    .stat .label { font-size: 11px; color: #8B8698; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+    h2.seccion { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #fff; background: #121017; padding: 9px 14px; border-radius: 8px; margin: 26px 0 14px; }
+    .perfil-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 20px; }
+    .destacado { background: #FFF3E0; border: 1px solid #FF6B35; border-radius: 10px; padding: 12px 16px; font-size: 13px; margin-bottom: 20px; }
+    .analisis { background: #121017; color: #fff; border-radius: 12px; padding: 18px 20px; margin-top: 20px; }
+    .analisis h3 { color: #FF6B35; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 10px; }
+    .analisis p { font-size: 13px; line-height: 1.6; margin: 0 0 6px; color: #E8E3D8; }
+    .dias-plan { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+    .dia-chip { background: #F8F6F1; border: 1px solid #E8E3D8; border-radius: 8px; padding: 8px 12px; font-size: 12px; min-width: 100px; }
+    .dia-chip b { display: block; font-size: 11px; color: #FF6B35; margin-bottom: 2px; }
+    .asistencia-dias { display: flex; flex-wrap: wrap; gap: 6px; }
+    .asistencia-dia { background: #E9F7F1; color: #1a9c6e; border-radius: 6px; padding: 4px 9px; font-size: 11px; font-weight: 700; }
+    .perfil-item { font-size: 13px; padding: 6px 0; border-bottom: 1px solid #EEE; }
+    .perfil-item b { color: #8B8698; font-weight: 600; font-size: 10px; text-transform: uppercase; display: block; margin-bottom: 2px; }
+    .rm-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #EEE; }
+    .rm-nombre { font-weight: 600; font-size: 13px; }
+    .rm-valor { font-weight: 800; font-size: 14px; }
+    .rm-valor.up { color: #1a9c6e; } .rm-valor.down { color: #c94a3a; }
+    .chart-box { background: #F8F6F1; border-radius: 12px; padding: 12px 16px; margin-bottom: 10px; page-break-inside: avoid; }
+    .chart-box .titulo { font-size: 12px; font-weight: 700; margin-bottom: 8px; }
+    .card { background: #F8F6F1; border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; }
+    .card .fecha { font-size: 10px; font-weight: 700; color: #8B8698; text-transform: uppercase; margin-bottom: 4px; }
+    .card .ej { font-size: 11px; font-weight: 700; color: #7DD6C0; margin-top: 6px; }
+    .card .txt { font-size: 13px; }
+    .footer { text-align: center; padding: 20px; color: #8B8698; font-size: 11px; }
+    .btn-imprimir { display: inline-block; background: #FF6B35; color: #fff; border: none; border-radius: 8px; padding: 10px 18px; font-size: 14px; font-weight: 700; cursor: pointer; margin: 16px 0 0 36px; }
+    @media print { .btn-imprimir { display: none; } body { background: #fff; } .hoja { max-width: none; } }
+  `;
+// Sección de biomecánica (gráficos + últimas evaluaciones). completo = versión del informe aparte.
+function seccionCruceGymPiletaHTML(alumno) {
+  const c = cruceGimnasioPileta(alumno);
+  if (!c.rms.length || !(c.mejoras.length + c.empeoro.length)) return "";
+  const fila = (izq, der, ok) => `<div style="display:flex;justify-content:space-between;padding:7px 12px;border-bottom:1px solid #EEE;font-size:12px;"><span>${izq}</span><b style="color:${ok ? "#1a9c6e" : "#c94a3a"};">${der}</b></div>`;
+  return `<h2 class="seccion">🏋️ Gimnasio y pileta <span style="font-weight:400;text-transform:none;letter-spacing:0;opacity:0.7;">(últimos 3 meses · ${c.sesiones} sesiones de gimnasio)</span></h2>
+        <div style="border:1px solid #EEE;border-radius:10px;overflow:hidden;">
+          ${c.rms.map((r) => fila(r.ej, `${r.de} → ${r.a} kg`, r.a > r.de)).join("")}
+          ${[...c.mejoras, ...c.empeoro].map((x) => fila(x.prueba, `${fmtTiempo(x.de)} → ${fmtTiempo(x.a)} (${x.dif < 0 ? "" : "+"}${x.dif.toFixed(2)} s)`, x.dif < 0)).join("")}
+        </div>`;
+}
+
+// Sección "Marcas de natación" del informe: mejor marca de cada prueba y cuánto cambió la última.
+function seccionMarcasHTML(marcas) {
+  if (!Array.isArray(marcas) || !marcas.length) return "";
+  const pruebas = {};
+  marcas.forEach((m) => { const k = `${m.distancia} ${m.estilo} ${m.pileta || ""}`; (pruebas[k] = pruebas[k] || []).push(m); });
+  const filas = Object.values(pruebas).map((ms) => {
+    const orden = [...ms].sort((a, b) => (a.fecha || "").localeCompare(b.fecha || ""));
+    const mejor = ms.reduce((x, y) => (y.segundos < x.segundos ? y : x));
+    const ult = orden[orden.length - 1], ant = orden.length > 1 ? orden[orden.length - 2] : null;
+    return { m: ms[0], orden: (ms[0].pileta === "25" ? 100000 : 0) + ESTILOS_NATACION.indexOf(ms[0].estilo) * 10000 + ms[0].distancia, mejor, ult, ant };
+  }).sort((a, b) => a.orden - b.orden);
+  return `<h2 class="seccion">🏊 Marcas de natación <span style="font-weight:400;text-transform:none;letter-spacing:0;opacity:0.7;">(${filas.length} prueba${filas.length === 1 ? "" : "s"})</span></h2>
+        <div style="border:1px solid #EEE;border-radius:10px;overflow:hidden;">
+          ${filas.map((f) => {
+            const mejoro = f.ant && f.ult.segundos < f.ant.segundos;
+            const dif = f.ant ? Math.abs(f.ult.segundos - f.ant.segundos).toFixed(2) : null;
+            return `<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;border-bottom:1px solid #EEE;font-size:12px;"><span style="font-weight:600;">${f.m.distancia} ${f.m.estilo}${f.m.pileta ? ` <span style="font-weight:400;color:#8B8698;font-size:10px;">pileta ${f.m.pileta}</span>` : ""}</span><span>Mejor: <b>${fmtTiempo(f.mejor.segundos)}</b>${f.mejor.fecha ? ` <span style="color:#8B8698;font-size:10px;">(${mostrarFecha(f.mejor.fecha)})</span>` : ""}${dif ? ` <span style="color:${mejoro ? "#1a9c6e" : "#c94a3a"};font-size:10px;">${mejoro ? "▼" : "▲"} ${dif}s última</span>` : ""}</span></div>`;
+          }).join("")}
+        </div>`;
+}
+
+function seccionBiomecanicaHTML(bio, completo = false) {
+  if (!bio.evs.length) return "";
+  return `<h2 class="seccion">🦵 Biomecánica <span style="font-weight:400;text-transform:none;letter-spacing:0;opacity:0.7;">(${bio.evs.length} evaluaci${bio.evs.length === 1 ? "ón" : "ones"} con video)</span></h2>
+        <div class="stats">
+          <div class="stat"><div class="num">${bio.evs.length}</div><div class="label">Evaluaciones</div></div>
+          <div class="stat"><div class="num">${mostrarFecha(bio.evs[bio.evs.length - 1].date)}</div><div class="label">Última medición</div></div>
+          ${bio.series.filter((s) => s.puntos.length > 1).length ? `<div class="stat"><div class="num">${bio.series.filter((s) => s.puntos.length > 1 && cambioBio(s).mejora).length}/${bio.series.filter((s) => s.puntos.length > 1).length}</div><div class="label">Medidas que mejoraron</div></div>` : ""}
+        </div>
+        ${bio.series.map((s) => `<div class="chart-box"><div class="titulo">${s.titulo}</div>${svgBioChart(s)}</div>`).join("")}
+        <div style="font-size:9.5px;color:#8B8698;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin:14px 0 8px;">Últimas evaluaciones</div>
+        <div style="border:1px solid #EEE;border-radius:10px;overflow:hidden;">
+          ${[...bio.evs].reverse().slice(0, completo ? 30 : 8).map((e) => {
+            const r = e.summary || {};
+            const valor = Number.isFinite(r.mv) ? `${fmtBio(r.mv, 2)} m/s` : Number.isFinite(r.jump) ? `${fmtBio(r.jump * 100, 1)} cm` : Number.isFinite(r.cycleRate) ? `${fmtBio(r.cycleRate, 1)} ciclos/min` : Number.isFinite(r.finalTime) ? `${fmtBio(r.finalTime, 2)} s` : "—";
+            return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid #EEE;font-size:12px;"><span><span style="color:#8B8698;font-size:10px;font-weight:700;text-transform:uppercase;margin-right:8px;">${mostrarFecha(e.date)}</span><b>${e.title || "Evaluación"}</b>${e.event ? ` <span style="color:#8B8698;">· ${e.event}</span>` : ""}${completo && e.data && e.data.vl && Number.isFinite(e.data.vl.v) ? ` <span style="color:#8B8698;">· pérdida de velocidad ${fmtBio(e.data.vl.v, 1)}%</span>` : ""}</span><b style="white-space:nowrap;">${valor}</b></div>`;
+          }).join("")}
+        </div>
+        <div style="font-size:10px;color:#8B8698;margin-top:6px;">Mediciones estimadas por análisis de video en el apartado Biomecánica de Team Bull.</div>`;
+}
+
 function generarHTMLInforme(alumno, mesFiltro) {
   // mesFiltro opcional, formato "YYYY-MM" — si viene, el informe muestra solo ese mes
   // (check-ins, encuestas, notas); si no viene, muestra todo el historial.
@@ -1206,49 +1565,11 @@ function generarHTMLInforme(alumno, mesFiltro) {
     const subieron = ejerciciosRM.filter((ej) => { const v = alumno.historialRM[ej]; return v[v.length - 1] >= v[0]; }).length;
     analisis.push(`De ${ejerciciosRM.length} ejercicio${ejerciciosRM.length === 1 ? "" : "s"} con RM registrado, ${subieron} mostró${subieron === 1 ? "" : "aron"} mejora respecto al valor inicial.`);
   }
+  const bio = seriesBiomecanica(alumno, enMes);
+  analisis.push(...analisisBiomecanica(bio.series), ...cruceBiomecanicaGimnasio(alumno, bio.series));
   if (sesionesDelMes.length) analisis.push(`Entrenó ${sesionesDelMes.length} día${sesionesDelMes.length === 1 ? "" : "s"} ${tituloMes ? `durante ${tituloMes}` : "en el período mostrado"}.`);
 
-  return `<html><head><meta charset="utf-8"><title>Informe — ${alumno.nombre}</title><style>
-    * { box-sizing: border-box; }
-    body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; margin: 0; color: #1C1A24; background: #F4F1EA; }
-    .hoja { max-width: 760px; margin: 0 auto; background: #fff; }
-    .header { background: #121017; color: #fff; padding: 32px 36px; }
-    .header .marca { color: #FF6B35; font-weight: 800; font-size: 13px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
-    .header h1 { margin: 0; font-size: 28px; }
-    .header .sub { color: #8B8698; font-size: 13px; margin-top: 4px; }
-    .cuerpo { padding: 28px 36px 40px; }
-    .stats { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
-    .donuts { display: flex; gap: 24px; margin-bottom: 16px; justify-content: flex-start; }
-    .stat { flex: 1; min-width: 130px; background: #F8F6F1; border: 1px solid #E8E3D8; border-radius: 12px; padding: 14px 16px; }
-    .stat .num { font-size: 24px; font-weight: 800; color: #121017; }
-    .stat .label { font-size: 11px; color: #8B8698; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
-    h2.seccion { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #fff; background: #121017; padding: 9px 14px; border-radius: 8px; margin: 26px 0 14px; }
-    .perfil-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 20px; }
-    .destacado { background: #FFF3E0; border: 1px solid #FF6B35; border-radius: 10px; padding: 12px 16px; font-size: 13px; margin-bottom: 20px; }
-    .analisis { background: #121017; color: #fff; border-radius: 12px; padding: 18px 20px; margin-top: 20px; }
-    .analisis h3 { color: #FF6B35; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 10px; }
-    .analisis p { font-size: 13px; line-height: 1.6; margin: 0 0 6px; color: #E8E3D8; }
-    .dias-plan { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
-    .dia-chip { background: #F8F6F1; border: 1px solid #E8E3D8; border-radius: 8px; padding: 8px 12px; font-size: 12px; min-width: 100px; }
-    .dia-chip b { display: block; font-size: 11px; color: #FF6B35; margin-bottom: 2px; }
-    .asistencia-dias { display: flex; flex-wrap: wrap; gap: 6px; }
-    .asistencia-dia { background: #E9F7F1; color: #1a9c6e; border-radius: 6px; padding: 4px 9px; font-size: 11px; font-weight: 700; }
-    .perfil-item { font-size: 13px; padding: 6px 0; border-bottom: 1px solid #EEE; }
-    .perfil-item b { color: #8B8698; font-weight: 600; font-size: 10px; text-transform: uppercase; display: block; margin-bottom: 2px; }
-    .rm-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #EEE; }
-    .rm-nombre { font-weight: 600; font-size: 13px; }
-    .rm-valor { font-weight: 800; font-size: 14px; }
-    .rm-valor.up { color: #1a9c6e; } .rm-valor.down { color: #c94a3a; }
-    .chart-box { background: #F8F6F1; border-radius: 12px; padding: 12px 16px; margin-bottom: 10px; page-break-inside: avoid; }
-    .chart-box .titulo { font-size: 12px; font-weight: 700; margin-bottom: 8px; }
-    .card { background: #F8F6F1; border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; }
-    .card .fecha { font-size: 10px; font-weight: 700; color: #8B8698; text-transform: uppercase; margin-bottom: 4px; }
-    .card .ej { font-size: 11px; font-weight: 700; color: #7DD6C0; margin-top: 6px; }
-    .card .txt { font-size: 13px; }
-    .footer { text-align: center; padding: 20px; color: #8B8698; font-size: 11px; }
-    .btn-imprimir { display: inline-block; background: #FF6B35; color: #fff; border: none; border-radius: 8px; padding: 10px 18px; font-size: 14px; font-weight: 700; cursor: pointer; margin: 16px 0 0 36px; }
-    @media print { .btn-imprimir { display: none; } body { background: #fff; } .hoja { max-width: none; } }
-  </style></head><body>
+  return `<html><head><meta charset="utf-8"><title>Informe — ${alumno.nombre}</title><style>${ESTILO_INFORME}</style></head><body>
     <button class="btn-imprimir" onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button>
     <div class="hoja">
       <div class="header">
@@ -1357,6 +1678,11 @@ function generarHTMLInforme(alumno, mesFiltro) {
           </div>`).join("")}
           ${totalNotas > 5 ? `<div style="font-size:10px;color:#8B8698;margin-top:2px;">+ ${totalNotas - 5} notas más este mes.</div>` : ""}`;
         })() : ""}
+
+        ${seccionMarcasHTML(alumno.marcasNatacion)}
+        ${seccionCruceGymPiletaHTML(alumno)}
+
+        ${seccionBiomecanicaHTML(bio)}
 
         ${mesFiltro && !checkins.length && !encuestas.length && !diasConNotas.length ? `<div style="color:#8B8698;font-size:13px;padding:20px 0;text-align:center;">Sin actividad registrada este mes.</div>` : ""}
 
@@ -1507,7 +1833,9 @@ const clonarPlan = (p) => ({
 function buscarRMBase(rmList, nombreEjercicio) {
   if (!rmList || !nombreEjercicio) return null;
   const norm = (s) => normalizarTexto(s || "").trim().replace(/\s+/g, " ");
-  const encontrado = rmList.find((r) => norm(r.ejercicio) === norm(nombreEjercicio) && r.valor);
+  // Primero el nombre idéntico; si no, el mismo ejercicio escrito distinto (ej. "Press de pecho"
+  // para "Press banca plano — Con pausa").
+  const encontrado = rmList.find((r) => norm(r.ejercicio) === norm(nombreEjercicio) && r.valor) || rmList.find((r) => r.valor && mismoEjercicio(r.ejercicio, nombreEjercicio));
   if (!encontrado) return null;
   const val = parseFloat(String(encontrado.valor).replace(",", "."));
   return Number.isFinite(val) && val > 0 ? val : null;
@@ -1535,6 +1863,51 @@ function pesosSugeridos(rmList, nombreEjercicio, textoRM) {
   const base = buscarRMBase(rmList, nombreEjercicio);
   if (!pcts.length || !base) return null;
   return pcts.map((pct) => Math.round(((base * pct) / 100) * 2) / 2);
+}
+
+// Sin % pero con RIR (ej. "RIR 2") y las repeticiones de la semana (ej. "3x8" o "4x8/6/4"): peso
+// APROXIMADO, contando las reps que harían hasta el fallo (8 + 2 = 10) con la fórmula de Epley
+// (10 reps ≈ 75% del RM). Es una guía: el alumno/a elige el peso según cómo se sienta.
+function pesosAproxPorRIR(rmList, nombreEjercicio, textoRM, series) {
+  if (extraerPorcentajes(textoRM).length) return null;
+  const mr = String(textoRM || "").match(/rir\s*(\d+(?:[.,]\d+)?)/i);
+  const m = String(series || "").match(/^\s*\d+\s*[x×]\s*(.+)$/i);
+  const base = buscarRMBase(rmList, nombreEjercicio);
+  if (!mr || !m || !base) return null;
+  const rir = parseFloat(mr[1].replace(",", "."));
+  const reps = m[1].split("/").map((x) => parseInt(x, 10)).filter((n) => n > 0 && n <= 30);
+  if (!reps.length || !(rir >= 0 && rir <= 10)) return null;
+  const pesos = reps.map((r) => Math.round((base / (1 + (r + rir) / 30)) * 2) / 2);
+  return pesos.filter((p, i) => i === 0 || p !== pesos[i - 1]);
+}
+
+// Próximo plan: el coach lo carga antes con la fecha en que empieza. Ese día pasa a ser el plan del
+// alumno/a (con esa fecha de inicio) y el anterior queda en "Versiones guardadas". Si el próximo no
+// tiene RM cargados, sigue con los del plan anterior; los que sí tiene se suman a su historial de RM.
+const primerDiaMesSiguiente = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth() + 1, 1, 12).toISOString().slice(0, 10); };
+const diaAnteriorISO = (f) => { const d = new Date(f + "T12:00:00"); d.setDate(d.getDate() - 1); return d.toISOString().slice(0, 10); };
+// Todo sale de los datos (sin ids nuevos ni "hoy"), así da igual en qué celular se active: el plan
+// que ve el alumno/a ese día es exactamente el mismo que después queda guardado.
+const planProximoVencido = (a) => !!(a && a.planProximo && a.planProximo.fecha && a.planProximo.fecha <= todayISO());
+function activarPlanProximo(a) {
+  const pp = a.planProximo;
+  const plan = { ...pp.plan, meta: { ...pp.plan.meta, fechaInicio: pp.fecha } };
+  if (!plan.rm.length) plan.rm = (a.plan?.rm || []).map((r) => ({ ...r }));
+  const idVersion = "proximo-" + (pp.id || pp.fecha);
+  const fin = diaAnteriorISO(pp.fecha), inicio = a.plan?.meta?.fechaInicio;
+  const mes = new Date(fin + "T12:00:00").toLocaleDateString("es-AR", { month: "long", year: "numeric" }).replace(/ de /, " ");
+  const tramo = /^\d{4}-\d{2}-\d{2}$/.test(inicio || "") && inicio <= fin ? `${mostrarFecha(inicio)} al ${mostrarFecha(fin)}` : `hasta el ${mostrarFecha(fin)}`;
+  const meso = (a.plan?.meta?.mesociclo || "").trim();
+  const anterior = { id: idVersion, nombre: `Plan ${mes.charAt(0).toUpperCase() + mes.slice(1)} (${tramo})${meso ? (/^\d+$/.test(meso) ? " · Mesociclo " : " · ") + meso : ""}`, fecha: pp.fecha, plan: a.plan };
+  const historialRM = { ...(a.historialRM || {}) };
+  plan.rm.forEach((r) => {
+    const v = parseFloat(String(r.valor).replace(",", "."));
+    if (!r.ejercicio || !r.ejercicio.trim() || !(v > 0)) return;
+    const nombre = ejercicioRelacionado(r.ejercicio, Object.keys(historialRM)) || r.ejercicio.trim();
+    const h = historialRM[nombre] || [];
+    if (h[h.length - 1] !== v) historialRM[nombre] = [...h, v];
+  });
+  return { ...a, plan, planProximo: null, historialRM, historialPlanes: [anterior, ...(a.historialPlanes || []).filter((v) => v.id !== idVersion)] };
 }
 
 /* ---------- Plantillas base ---------- */
@@ -2184,8 +2557,13 @@ function BloqueEditor({ bloque, onChange, onRemove, version, onAddToLibrary, rol
         <input value={bloque.nombre} onChange={(e) => onChange({ ...bloque, nombre: e.target.value })} className="font-body" style={{ background: "transparent", border: "none", borderBottom: "1px solid #322E3D", color: "#FF6B35", fontSize: 11, fontWeight: 700, padding: "2px 0", flex: 1 }} />
         <button onClick={onRemove} className="font-body" style={{ background: "none", border: "none", color: "#8B8698", fontSize: 10, cursor: "pointer", marginLeft: 8, whiteSpace: "nowrap" }}>Eliminar bloque ✕</button>
       </div>
-      {bloque.ejercicios.map((f, i) => (
-        <div key={f.id} style={{ display: "flex", gap: 4, alignItems: "stretch" }}>
+      {bloque.ejercicios.map((f, i) => {
+        // Si es parte de un circuito, se marca con una franja violeta para verlo agrupado.
+        const enCircuito = f.circuito || (i > 0 && bloque.ejercicios[i - 1].circuito);
+        const inicioCircuito = enCircuito && !(i > 0 && bloque.ejercicios[i - 1].circuito);
+        const finCircuito = enCircuito && !f.circuito;
+        return (
+        <div key={f.id} style={{ display: "flex", gap: 4, alignItems: "stretch", ...(enCircuito ? { background: "rgba(170,110,230,0.07)", borderLeft: "3px solid #AA6EE6", paddingLeft: 5, paddingTop: inicioCircuito ? 6 : 0, borderRadius: `${inicioCircuito ? 10 : 0}px 0 0 ${finCircuito ? 10 : 0}px`, marginBottom: finCircuito ? 8 : 0 } : {}) }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 2, paddingTop: 4 }}>
             <button onClick={() => moverFila(i, -1)} disabled={i === 0} className="font-body" style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 5, color: i === 0 ? "#3A3646" : "#7DD6C0", fontSize: 10, width: 20, height: 20, cursor: i === 0 ? "default" : "pointer", padding: 0, lineHeight: "18px" }}>▲</button>
             <button onClick={() => moverFila(i, 1)} disabled={i === bloque.ejercicios.length - 1} className="font-body" style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 5, color: i === bloque.ejercicios.length - 1 ? "#3A3646" : "#7DD6C0", fontSize: 10, width: 20, height: 20, cursor: i === bloque.ejercicios.length - 1 ? "default" : "pointer", padding: 0, lineHeight: "18px" }}>▼</button>
@@ -2206,7 +2584,8 @@ function BloqueEditor({ bloque, onChange, onRemove, version, onAddToLibrary, rol
             )}
           </div>
         </div>
-      ))}
+        );
+      })}
       {picking ? (
         <ExercisePicker onPick={addFromLibrary} onClose={() => setPicking(false)} version={version} onAddNew={addNewFromPicker} />
       ) : (
@@ -2252,12 +2631,15 @@ function DiaEditor({ dia, onChange, onRemove, version, onAddToLibrary, rolesPers
   );
 }
 
-function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibrary, rolesPersonalizados, onAgregarRolPersonalizado, historialRMAlumno }) {
+function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibrary, rolesPersonalizados, onAgregarRolPersonalizado, historialRMAlumno, onConfirmarRM }) {
   const [warmPicking, setWarmPicking] = useState(false);
   const [dragIdx, setDragIdx] = useState(null);
   const [seleccionandoRM, setSeleccionandoRM] = useState(null);
   const [cambiandoWarmId, setCambiandoWarmId] = useState(null); // ejercicio de la entrada en calor que se está reemplazando
   const [busquedaRM, setBusquedaRM] = useState("");
+  const [filtroEjRM, setFiltroEjRM] = useState("");
+  const [gruposRMAbiertos, setGruposRMAbiertos] = useState({});
+  const [rmConfirmado, setRmConfirmado] = useState(null);
   const setMeta = (field) => (v) => onChange({ ...plan, meta: { ...plan.meta, [field]: v } });
   const updateWarm = (id, patch) => onChange({ ...plan, calentamiento: plan.calentamiento.map((w) => (w.id === id ? { ...w, ...patch } : w)) });
   const removeWarm = (id) => onChange({ ...plan, calentamiento: plan.calentamiento.filter((w) => w.id !== id) });
@@ -2278,7 +2660,36 @@ function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibr
     const nuevos = plan.dias.map((d) => ({ ...d, id: uid(), bloques: d.bloques.map((b) => ({ ...b, id: uid(), ejercicios: b.ejercicios.map((f) => ({ ...f, id: uid(), semanas: [...f.semanas] })) })) }));
     onChange({ ...plan, dias: [...plan.dias, ...nuevos] });
   };
-  const updateRm = (id, patch) => onChange({ ...plan, rm: plan.rm.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
+  // Cada RM que el coach toca queda anotado y, a los 2 segundos sin cambios (o al salir de la pantalla),
+  // se guarda solo en el historial de RM del alumno/a, aunque no se haya tocado afuera del campo.
+  const rmEditadosRef = useRef(new Set());
+  const planRef = useRef(plan);
+  planRef.current = plan;
+  const guardarHistorialRef = useRef(onGuardarHistorialRM);
+  guardarHistorialRef.current = onGuardarHistorialRM;
+  const volcarRMsEditados = () => {
+    for (const id of [...rmEditadosRef.current]) {
+      const r = (planRef.current.rm || []).find((x) => x.id === id);
+      if (!r) { rmEditadosRef.current.delete(id); continue; }
+      const v = parseFloat(String(r.valor).replace(",", "."));
+      if (r.ejercicio && r.ejercicio.trim() && !isNaN(v) && v > 0 && guardarHistorialRef.current) {
+        guardarHistorialRef.current(r.ejercicio.trim(), v);
+        rmEditadosRef.current.delete(id);
+      }
+    }
+  };
+  useEffect(() => {
+    if (!rmEditadosRef.current.size) return;
+    const t = setTimeout(volcarRMsEditados, 2000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plan.rm]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => () => volcarRMsEditados(), []);
+  const updateRm = (id, patch) => {
+    if ("valor" in patch || "ejercicio" in patch) rmEditadosRef.current.add(id);
+    onChange({ ...plan, rm: plan.rm.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
+  };
   const removeRm = (id) => onChange({ ...plan, rm: plan.rm.filter((r) => r.id !== id) });
   const addRm = () => onChange({ ...plan, rm: [...plan.rm, { id: uid(), ejercicio: "", valor: "" }] });
 
@@ -2400,7 +2811,7 @@ function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibr
       </div>
 
       <div className="font-body" style={{ fontSize: 11, color: "#8B8698", fontWeight: 700, marginBottom: 8 }}>VALORES DE RM {plan.rm.length > 0 ? `(${plan.rm.length})` : ""}</div>
-      <div className="font-body" style={{ fontSize: 9, color: "#6B6678", marginBottom: 8 }}>El nombre no hace falta que quede idéntico letra por letra (ignora mayúsculas, acentos y espacios de más) — igual conviene elegirlo de la lista que aparece al escribir. Si le ponés uno o varios % en el campo RM/RIR del ejercicio (ej: "80% · RIR 2" o "80% 85% 100%" para una serie progresiva), la app le calcula el peso o los pesos solo/a al alumno/a durante el entrenamiento.</div>
+      <div className="font-body" style={{ fontSize: 9, color: "#6B6678", marginBottom: 8 }}>El nombre no hace falta que quede idéntico letra por letra (ignora mayúsculas, acentos y espacios de más) — igual conviene elegirlo de la lista que aparece al escribir. Si le ponés uno o varios % en el campo RM/RIR del ejercicio (ej: "80% · RIR 2" o "80% 85% 100%" para una serie progresiva), la app le calcula el peso o los pesos solo/a al alumno/a durante el entrenamiento. Si ponés solo RIR (ej: "RIR 2"), le muestra un peso aproximado según las repeticiones de esa semana, avisando que es una guía.</div>
       {plan.rm.length > 4 && (
         <input
           value={busquedaRM}
@@ -2410,67 +2821,111 @@ function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibr
           style={{ width: "100%", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, color: "#F4F1EA", padding: "8px 10px", fontSize: 11, boxSizing: "border-box", marginBottom: 8 }}
         />
       )}
+      {rmConfirmado && (
+        <div className="font-body" style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(51,214,166,0.1)", border: "1px solid #33D6A6", borderRadius: 8, padding: "7px 9px", marginBottom: 8, color: "#F4F1EA", fontSize: 10.5 }}>
+          <span style={{ flex: 1 }}><b style={{ color: "#33D6A6" }}>✓ {rmConfirmado.ejercicio} actualizado</b>{rmConfirmado.de ? ` · ${rmConfirmado.de} → ${rmConfirmado.a} kg` : ` · ${rmConfirmado.a} kg`}. Los pesos con % del plan ya se recalcularon y al alumno/a le aparece el aviso.</span>
+          <button onClick={() => setRmConfirmado(null)} style={{ background: "none", border: "none", color: "#8B8698", cursor: "pointer" }}>✕</button>
+        </div>
+      )}
       {(() => {
         if (!historialRMAlumno) return null;
         // RM que el/la alumno/a cargó por su cuenta (en "Progreso" → "+ Registrar RM") y todavía
         // no coinciden con el valor que tenés puesto acá — para que vos solo tengas que confirmarlo
-        // y poner el %, sin tener que preguntarle el peso y escribirlo de nuevo.
+        // y poner el %, sin tener que preguntarle el peso y escribirlo de nuevo. Se relaciona aunque
+        // el nombre esté escrito distinto ("hip trust" con "Hip thrust").
         const pendientes = Object.entries(historialRMAlumno)
-          .map(([ejercicio, historial]) => ({ ejercicio, valor: historial && historial.length ? historial[historial.length - 1] : null }))
-          .filter((p) => p.valor != null && !plan.rm.some((r) => r.ejercicio.trim().toLowerCase() === p.ejercicio.trim().toLowerCase() && String(r.valor) === String(p.valor)));
+          .map(([ejercicio, historial]) => ({ ejercicio, valor: historial && historial.length ? historial[historial.length - 1] : null, existente: plan.rm.find((r) => r.ejercicio && mismoEjercicio(r.ejercicio, ejercicio)) }))
+          .filter((p) => p.valor != null && !(p.existente && parseFloat(String(p.existente.valor).replace(",", ".")) === p.valor))
+          // si en el historial hay dos nombres para el mismo RM del plan, se muestra uno solo (el de nombre igual)
+          .filter((p, i, arr) => !p.existente || !arr.some((q, j) => j !== i && q.existente && q.existente.id === p.existente.id && (normalizarTexto(q.ejercicio) === normalizarTexto(q.existente.ejercicio) ? normalizarTexto(p.ejercicio) !== normalizarTexto(p.existente.ejercicio) || j < i : j < i && normalizarTexto(p.ejercicio) !== normalizarTexto(p.existente.ejercicio))));
         if (!pendientes.length) return null;
         return (
           <div style={{ background: "rgba(125,214,192,0.08)", border: "1px dashed #7DD6C0", borderRadius: 8, padding: 8, marginBottom: 10 }}>
             <div className="font-body" style={{ color: "#7DD6C0", fontSize: 9, fontWeight: 700, marginBottom: 6 }}>RM QUE CARGÓ EL/LA ALUMNO/A — A CONFIRMAR</div>
-            {pendientes.map((p) => (
-              <div key={p.ejercicio} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                <span className="font-body" style={{ flex: 1, color: "#F4F1EA", fontSize: 11 }}>{p.ejercicio} — <b>{p.valor}kg</b></span>
-                <button
-                  onClick={() => {
-                    const existente = plan.rm.find((r) => r.ejercicio.trim().toLowerCase() === p.ejercicio.trim().toLowerCase());
-                    if (existente) updateRm(existente.id, { valor: String(p.valor) });
-                    else onChange({ ...plan, rm: [...plan.rm, { id: uid(), ejercicio: p.ejercicio, valor: String(p.valor) }] });
-                  }}
-                  className="font-body"
-                  style={{ background: "#7DD6C0", border: "none", borderRadius: 6, color: "#0B2A2E", fontWeight: 700, fontSize: 9, padding: "5px 9px", cursor: "pointer", whiteSpace: "nowrap" }}
-                >✓ Usar</button>
-              </div>
-            ))}
+            {pendientes.map((p) => {
+              const de = p.existente && p.existente.valor !== "" ? parseFloat(String(p.existente.valor).replace(",", ".")) : null;
+              return (
+                <div key={p.ejercicio} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                  <span className="font-body" style={{ flex: 1, color: "#F4F1EA", fontSize: 11 }}>
+                    {p.existente ? p.existente.ejercicio : p.ejercicio} — {de != null && !isNaN(de) ? <>{de} → <b>{p.valor}kg</b> <span style={{ color: p.valor > de ? "#33D6A6" : "#E85D5D", fontSize: 9, fontWeight: 700 }}>{p.valor > de ? "▲ subió" : "▼ bajó"}</span></> : <><b>{p.valor}kg</b> <span style={{ color: "#7DD6C0", fontSize: 9 }}>nuevo</span></>}
+                  </span>
+                  <button
+                    onClick={() => {
+                      if (p.existente) updateRm(p.existente.id, { valor: String(p.valor) });
+                      else onChange({ ...plan, rm: [...plan.rm, { id: uid(), ejercicio: p.ejercicio, valor: String(p.valor) }] });
+                      const nombre = p.existente ? p.existente.ejercicio : p.ejercicio;
+                      setRmConfirmado({ ejercicio: nombre, de: de != null && !isNaN(de) ? de : null, a: p.valor });
+                      setGruposRMAbiertos((g) => ({ ...g, [grupoRM(nombre).id]: true }));
+                      if (onConfirmarRM) onConfirmarRM(nombre, p.valor, de != null && !isNaN(de) ? de : null);
+                    }}
+                    className="font-body"
+                    style={{ background: "#7DD6C0", border: "none", borderRadius: 6, color: "#0B2A2E", fontWeight: 700, fontSize: 9, padding: "5px 9px", cursor: "pointer", whiteSpace: "nowrap" }}
+                  >✓ Usar</button>
+                </div>
+              );
+            })}
           </div>
         );
       })()}
       {(() => {
         const nombresDelPlan = [...new Set(plan.dias.flatMap((d) => d.bloques.flatMap((b) => b.ejercicios.map((f) => f.nombre))).filter(Boolean))];
-        const rmFiltrados = busquedaRM.trim() ? plan.rm.filter((r) => coincideBusqueda(r.ejercicio || "", busquedaRM)) : plan.rm;
+        const rmFiltrados = busquedaRM.trim() ? plan.rm.filter((r) => coincideBusqueda(r.ejercicio || "", busquedaRM) || mismoEjercicio(r.ejercicio || "", busquedaRM)) : plan.rm;
         if (busquedaRM.trim() && rmFiltrados.length === 0) {
           return <div className="font-body" style={{ color: "#6B6678", fontSize: 10, marginBottom: 8 }}>No hay ningún RM cargado que coincida con "{busquedaRM}".</div>;
         }
-        return rmFiltrados.map((r) => (
+        const filaRM = (r) => {
+          const repetido = r.ejercicio && plan.rm.find((o) => o.id !== r.id && o.ejercicio && mismoEjercicio(o.ejercicio, r.ejercicio));
+          const parecidos = r.ejercicio ? nombresDelPlan.filter((n) => n !== r.ejercicio && (coincideBusqueda(n, r.ejercicio) || mismoEjercicio(n, r.ejercicio))) : nombresDelPlan;
+          return (
           <div key={r.id} style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 6 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <button
-                onClick={() => setSeleccionandoRM(seleccionandoRM === r.id ? null : r.id)}
+                onClick={() => { setSeleccionandoRM(seleccionandoRM === r.id ? null : r.id); setFiltroEjRM(""); }}
                 className="font-body"
                 style={{ flex: 1, minWidth: 0, textAlign: "left", background: "transparent", border: "none", color: r.ejercicio ? "#F4F1EA" : "#6B6678", fontSize: 11, padding: "4px 0", cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
               >{r.ejercicio || "Tocá para elegir el ejercicio"} {seleccionandoRM === r.id ? "▲" : "▼"}</button>
               <input
                 value={r.valor}
                 onChange={(e) => updateRm(r.id, { valor: e.target.value })}
-                onBlur={() => { if (r.ejercicio && r.valor && !isNaN(parseFloat(r.valor)) && onGuardarHistorialRM) onGuardarHistorialRM(r.ejercicio, parseFloat(r.valor)); }}
+                onBlur={volcarRMsEditados}
                 placeholder="Valor"
                 className="font-body"
                 style={{ width: 70, background: "#26232F", border: "none", borderRadius: 6, color: "#F4F1EA", fontSize: 11, padding: "5px 6px", flexShrink: 0 }}
               />
               <button onClick={() => removeRm(r.id)} style={{ background: "none", border: "none", color: "#8B8698", cursor: "pointer", flexShrink: 0 }}>✕</button>
             </div>
+            {repetido && <div className="font-body" style={{ color: "#FFC94A", fontSize: 9, marginTop: 4 }}>⚠ Parece el mismo ejercicio que "{repetido.ejercicio}" ({repetido.valor || "—"} kg). Dejá uno solo.</div>}
             {seleccionandoRM === r.id && (
               <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #322E3D" }}>
                 {nombresDelPlan.length === 0 && <div className="font-body" style={{ color: "#6B6678", fontSize: 10 }}>Todavía no cargaste ejercicios en ningún día de este plan.</div>}
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
-                  {nombresDelPlan.map((n) => (
-                    <button key={n} onClick={() => { updateRm(r.id, { ejercicio: n }); setSeleccionandoRM(null); }} className="font-body" style={{ background: r.ejercicio === n ? "#7DD6C0" : "#26232F", border: "1px solid #322E3D", borderRadius: 999, color: r.ejercicio === n ? "#0B2A2E" : "#F4F1EA", fontWeight: 600, fontSize: 10.5, padding: "6px 11px", cursor: "pointer" }}>{n}</button>
-                  ))}
-                </div>
+                {/* Los ejercicios del plan, en orden alfabético y por grupo, con buscador arriba; los que ya
+                    tienen RM muestran su valor. */}
+                {nombresDelPlan.length > 8 && (
+                  <input
+                    value={filtroEjRM}
+                    onChange={(e) => setFiltroEjRM(e.target.value)}
+                    placeholder="🔍 Buscar en los ejercicios del plan"
+                    className="font-body"
+                    style={{ width: "100%", background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", fontSize: 10.5, padding: "6px 8px", boxSizing: "border-box", marginBottom: 8 }}
+                  />
+                )}
+                {(() => {
+                  const base = filtroEjRM.trim() ? nombresDelPlan.filter((n) => coincideBusqueda(n, filtroEjRM)) : (parecidos.length ? parecidos : nombresDelPlan);
+                  if (filtroEjRM.trim() && base.length === 0) return <div className="font-body" style={{ color: "#6B6678", fontSize: 10, marginBottom: 8 }}>Ningún ejercicio del plan coincide. Podés escribirlo abajo.</div>;
+                  return agruparPorGrupoRM(base, (n) => n).map((g) => (
+                    <div key={g.id} style={{ marginBottom: 8 }}>
+                      <div className="font-body" style={{ color: "#8B8698", fontSize: 9, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 5 }}>{g.emoji} {g.label}</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {g.items.map((n) => {
+                          const conRM = plan.rm.find((o) => o.id !== r.id && o.ejercicio === n && o.valor);
+                          return (
+                            <button key={n} onClick={() => { updateRm(r.id, { ejercicio: n }); setSeleccionandoRM(null); }} className="font-body" style={{ background: r.ejercicio === n ? "#7DD6C0" : "#26232F", border: "1px solid #322E3D", borderRadius: 999, color: r.ejercicio === n ? "#0B2A2E" : "#F4F1EA", fontWeight: 600, fontSize: 10.5, padding: "6px 11px", cursor: "pointer", textAlign: "left" }}>{n}{conRM && <span style={{ color: r.ejercicio === n ? "#0B2A2E" : "#6B6678", fontWeight: 400 }}> · {conRM.valor} kg</span>}</button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ));
+                })()}
                 <input
                   value={r.ejercicio}
                   onChange={(e) => updateRm(r.id, { ejercicio: e.target.value })}
@@ -2481,7 +2936,31 @@ function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibr
               </div>
             )}
           </div>
-        ));
+          );
+        };
+        // Los RM se muestran agrupados (Piernas, Cadera y glúteo, Empuje...): se toca el grupo y se
+        // abren sus ejercicios. Los recién agregados sin nombre quedan arriba, siempre a la vista.
+        const sinNombre = rmFiltrados.filter((r) => !r.ejercicio || !r.ejercicio.trim() || seleccionandoRM === r.id);
+        const grupos = agruparPorGrupoRM(rmFiltrados.filter((r) => !sinNombre.includes(r)), (r) => r.ejercicio);
+        return (
+          <>
+            {sinNombre.map(filaRM)}
+            {grupos.map((g) => {
+              const abierto = busquedaRM.trim() ? true : (gruposRMAbiertos[g.id] ?? false);
+              return (
+                <div key={g.id} style={{ border: "1px solid #322E3D", borderRadius: 10, marginBottom: 6, overflow: "hidden" }}>
+                  <button onClick={() => setGruposRMAbiertos((x) => ({ ...x, [g.id]: !abierto }))} className="font-body" style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, background: "#26232F", border: "none", padding: "9px 10px", cursor: "pointer", textAlign: "left" }}>
+                    <span style={{ fontSize: 13 }}>{g.emoji}</span>
+                    <span style={{ flex: 1, color: "#F4F1EA", fontSize: 11, fontWeight: 700 }}>{g.label}</span>
+                    {!abierto && <span style={{ color: "#6B6678", fontSize: 9, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.items.map((r) => r.valor ? `${r.valor}` : "—").join(" · ")} kg</span>}
+                    <span style={{ color: "#8B8698", fontSize: 10 }}>{g.items.length} {abierto ? "▲" : "▼"}</span>
+                  </button>
+                  {abierto && <div style={{ padding: "6px 6px 0" }}>{g.items.map(filaRM)}</div>}
+                </div>
+              );
+            })}
+          </>
+        );
       })()}
       <button onClick={addRm} className="font-body" style={{ width: "100%", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, color: "#8B8698", fontWeight: 700, fontSize: 10, padding: 7, cursor: "pointer" }}>+ Agregar valor de RM</button>
     </div>
@@ -2493,8 +2972,36 @@ function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibr
    ========================================================= */
 
 /* Alertas automáticas: cumplimiento bajo + bienestar (ánimo sostenido bajo, fatiga/dolor alto reportado) */
-function generarAlertas(a) {
+// Cuántos días le quedan al plan actual, según la fecha real de inicio y la cantidad de semanas
+// que tiene el plan cargado. null si no hay fecha de inicio cargada.
+function diasRestantesPlan(plan) {
+  const fechaInicio = plan?.meta?.fechaInicio;
+  if (!fechaInicio) return null;
+  const inicio = new Date(fechaInicio + "T00:00:00");
+  if (isNaN(inicio.getTime())) return null;
+  let semanas = 1;
+  for (const dia of plan.dias || []) for (const b of dia.bloques || []) for (const ej of b.ejercicios || []) {
+    if (Array.isArray(ej.semanas) && ej.semanas.length > semanas) semanas = ej.semanas.length;
+  }
+  const fin = inicio.getTime() + semanas * 7 * 24 * 60 * 60 * 1000;
+  return Math.ceil((fin - new Date(todayISO() + "T00:00:00").getTime()) / (24 * 60 * 60 * 1000));
+}
+
+function generarAlertas(a, diasAviso = 7) {
   const alertas = [];
+  // Aviso de fin de plan: aparece todos los días desde que faltan los días elegidos en Ajustes
+  // (no solo el día exacto), y sigue si el plan ya terminó y todavía no se cargó la fecha del nuevo.
+  const tienePlan = (a.plan?.dias || []).some((d) => (d.bloques || []).some((b) => (b.ejercicios || []).length));
+  if (tienePlan && !a.planProximo) { // con el próximo ya cargado no hace falta avisar
+    const restan = diasRestantesPlan(a.plan);
+    if (restan === null) {
+      alertas.push({ tipo: "Plan sin fecha de inicio", nombre: a.nombre, detalle: "Cargale la fecha real de inicio en su plan para que la app te avise cuando le quede poco." });
+    } else if (restan >= 0 && restan <= diasAviso) {
+      alertas.push({ tipo: "Plan por terminar", nombre: a.nombre, detalle: restan === 0 ? "Su plan termina hoy: es momento de armarle el próximo." : `Le ${restan === 1 ? "queda 1 día" : `quedan ${restan} días`} de plan: es un buen momento para armarle el próximo.` });
+    } else if (restan < 0 && restan >= -28) {
+      alertas.push({ tipo: "Plan terminado", nombre: a.nombre, detalle: `Su plan terminó hace ${-restan} ${restan === -1 ? "día" : "días"}. Armale el próximo y actualizá la fecha de inicio.` });
+    }
+  }
   const cumplA = calcularCumplimiento(a);
   if (cumplA < 70) alertas.push({ tipo: "Cumplimiento bajo", nombre: a.nombre, detalle: `Solo ${cumplA}% de sesiones completadas (últimas 4 semanas).` });
   const ultimosCheckins = a.wellness.checkins.slice(-3);
@@ -2504,6 +3011,25 @@ function generarAlertas(a) {
   const ultimaEncuesta = a.wellness.encuestas[0];
   if (ultimaEncuesta && (ultimaEncuesta.fatiga >= 8 || ultimaEncuesta.dolorMuscular >= 8)) {
     alertas.push({ tipo: "Fatiga/dolor alto reportado", nombre: a.nombre, detalle: `Última encuesta: fatiga ${ultimaEncuesta.fatiga}/10, dolor muscular ${ultimaEncuesta.dolorMuscular}/10.` });
+  }
+  // Carga alta / riesgo de lesión: si esta semana entrenó mucho más que su promedio de las 3
+  // anteriores y además viene cansado/a (encuesta) o con el ánimo bajo, conviene bajar un cambio.
+  {
+    const diasAtras = (f) => (Date.now() - new Date(f + "T00:00:00").getTime()) / 864e5;
+    const ses = (a.historialSesiones || []).map(diasAtras);
+    const aguda = ses.filter((d) => d >= 0 && d < 7).length;
+    const cronica = ses.filter((d) => d >= 7 && d < 28).length / 3;
+    const subio = aguda >= 3 && aguda >= Math.max(1, cronica) * 1.5;
+    const enc = (a.wellness.encuestas || []).find((e) => e.fecha && diasAtras(e.fecha) <= 10);
+    const cansado = enc && (enc.fatiga >= 7 || enc.dolorMuscular >= 7);
+    const ult = (a.wellness.checkins || []).slice(-3);
+    const animoBajo = ult.length >= 2 && ult.reduce((x, c) => x + c.valor, 0) / ult.length <= 5;
+    if (subio && (cansado || animoBajo)) {
+      const motivos = [`entrenó ${aguda} veces en 7 días (su promedio es ${cronica.toFixed(1)} por semana)`];
+      if (cansado) motivos.push(`fatiga ${enc.fatiga}/10 y dolor ${enc.dolorMuscular}/10 en la última encuesta`);
+      if (animoBajo) motivos.push("el ánimo de los últimos check-ins viene bajo");
+      alertas.push({ tipo: "Carga alta / riesgo de lesión", nombre: a.nombre, detalle: `${motivos.join("; ")}. Conviene bajar el volumen o meter una sesión suave.` });
+    }
   }
   // Cuántos días de los últimos 7 se olvidó de hacer el check-in de ánimo
   const hoy = new Date();
@@ -2517,6 +3043,244 @@ function generarAlertas(a) {
     alertas.push({ tipo: "Check-in incompleto", nombre: a.nombre, detalle: `No registró el check-in de ánimo ${diasSinCheckin} de los últimos 7 días.` });
   }
   return alertas;
+}
+
+// ---------- Cuotas ----------
+// Por alumno/a: monto, día de vencimiento y teléfono. Cada mes se marca como pagado; si vence y no
+// pagó, aparece en el Dashboard con un botón para mandarle el recordatorio por WhatsApp.
+const AccionesCtx = React.createContext(null);
+const MESES_NOMBRE = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+function estadoCuota(alumno, hoy = todayISO()) {
+  const c = alumno.cuota;
+  if (!c || !c.activa) return null;
+  const mes = hoy.slice(0, 7);
+  const pago = (c.pagos || []).find((p) => p.mes === mes);
+  const dia = Math.min(28, Math.max(1, parseInt(c.diaVencimiento, 10) || 10));
+  const vence = `${mes}-${String(dia).padStart(2, "0")}`;
+  const diasAtraso = Math.floor((new Date(hoy + "T00:00:00") - new Date(vence + "T00:00:00")) / 864e5);
+  return { mes, nombreMes: MESES_NOMBRE[parseInt(mes.slice(5), 10) - 1], pago, vence, vencida: !pago && diasAtraso > 0, diasAtraso, monto: c.monto };
+}
+function linkRecordatorioCuota(alumno, est, coachNombre) {
+  const tel = String(alumno.cuota?.telefono || "").replace(/\D/g, "");
+  const nombre = (alumno.nombre || "").split(" ")[0];
+  const texto = `Hola ${nombre}! Te recuerdo que la cuota de ${est.nombreMes}${est.monto ? ` ($${est.monto})` : ""} ${est.vencida ? `venció el ${mostrarFecha(est.vence)}` : `vence el ${mostrarFecha(est.vence)}`}. ¡Gracias!${coachNombre ? ` — ${coachNombre}` : ""}`;
+  return `https://wa.me/${tel}?text=${encodeURIComponent(texto)}`;
+}
+function marcarCuotaPagada(alumno, est) {
+  return { cuota: { ...alumno.cuota, pagos: [...(alumno.cuota.pagos || []).filter((p) => p.mes !== est.mes), { id: uid(), mes: est.mes, fecha: todayISO(), monto: alumno.cuota.monto || "" }] } };
+}
+function CuotaAlumno({ alumno, onUpdate, coachNombre }) {
+  const c = alumno.cuota || { activa: false, monto: "", diaVencimiento: 10, telefono: "", pagos: [] };
+  const est = estadoCuota(alumno);
+  const set = (patch) => onUpdate({ cuota: { ...c, ...patch } });
+  const inp = { background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "6px 8px", fontSize: 11, boxSizing: "border-box", width: "100%" };
+  const ultimos = Array.from({ length: 6 }, (_, i) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - (5 - i)); return d.toISOString().slice(0, 7); });
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
+        <div className="font-body" style={{ flex: 1, fontSize: 11, color: "#FF6B35", fontWeight: 600 }}>💳 CUOTA</div>
+        <button onClick={() => set({ activa: !c.activa })} style={{ width: 40, height: 22, borderRadius: 999, border: "none", background: c.activa ? "#33D6A6" : "#3A3646", position: "relative", cursor: "pointer" }}>
+          <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: c.activa ? 21 : 3, transition: "left 0.15s" }} />
+        </button>
+      </div>
+      {!c.activa ? (
+        <div className="font-body" style={{ color: "#6B6678", fontSize: 10 }}>Activalo para llevar el control de la cuota de este alumno/a.</div>
+      ) : (
+        <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, padding: 10 }}>
+          <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+            <label className="font-body" style={{ flex: 1, color: "#8B8698", fontSize: 8.5 }}>Monto ($)<input value={c.monto || ""} onChange={(e) => set({ monto: e.target.value.replace(/[^\d.,]/g, "") })} inputMode="decimal" placeholder="Ej: 25000" style={inp} /></label>
+            <label className="font-body" style={{ width: 70, color: "#8B8698", fontSize: 8.5 }}>Vence el día<input value={c.diaVencimiento ?? 10} onChange={(e) => set({ diaVencimiento: e.target.value.replace(/\D/g, "").slice(0, 2) })} inputMode="numeric" style={inp} /></label>
+            <label className="font-body" style={{ flex: 1.3, color: "#8B8698", fontSize: 8.5 }}>WhatsApp<input value={c.telefono || ""} onChange={(e) => set({ telefono: e.target.value })} inputMode="tel" placeholder="Ej: 5491112345678" style={inp} /></label>
+          </div>
+          {est && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, background: est.pago ? "rgba(51,214,166,0.08)" : est.vencida ? "rgba(232,93,93,0.1)" : "rgba(255,201,74,0.08)", border: `1px solid ${est.pago ? "#33D6A6" : est.vencida ? "#E85D5D" : "#FFC94A"}`, borderRadius: 8, padding: "8px 9px", marginBottom: 8 }}>
+              <div className="font-body" style={{ flex: 1, fontSize: 11, color: "#F4F1EA" }}>
+                <b>Cuota de {est.nombreMes}</b>: {est.pago ? <span style={{ color: "#33D6A6" }}>pagada el {mostrarFecha(est.pago.fecha)}</span> : est.vencida ? <span style={{ color: "#E85D5D" }}>vencida hace {est.diasAtraso} {est.diasAtraso === 1 ? "día" : "días"}</span> : <span style={{ color: "#FFC94A" }}>pendiente, vence el {mostrarFecha(est.vence)}</span>}
+              </div>
+              {est.pago ? (
+                <button onClick={() => set({ pagos: (c.pagos || []).filter((p) => p.mes !== est.mes) })} className="font-body" style={{ background: "none", border: "none", color: "#8B8698", fontSize: 9.5, cursor: "pointer" }}>Deshacer</button>
+              ) : (
+                <>
+                  {c.telefono && <a href={linkRecordatorioCuota(alumno, est, coachNombre)} target="_blank" rel="noopener noreferrer" className="font-body" style={{ background: "#25D366", borderRadius: 6, color: "#0B2A1A", fontWeight: 700, fontSize: 9.5, padding: "5px 8px", textDecoration: "none", whiteSpace: "nowrap" }}>📲 Recordar</a>}
+                  <button onClick={() => onUpdate(marcarCuotaPagada({ ...alumno, cuota: c }, est))} className="font-body" style={{ background: "#33D6A6", border: "none", borderRadius: 6, color: "#0B2A1A", fontWeight: 700, fontSize: 9.5, padding: "5px 8px", cursor: "pointer", whiteSpace: "nowrap" }}>✓ Pagó</button>
+                </>
+              )}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 4 }}>
+            {ultimos.map((m) => {
+              const p = (c.pagos || []).find((x) => x.mes === m);
+              return (
+                <div key={m} className="font-body" style={{ flex: 1, textAlign: "center", background: p ? "rgba(51,214,166,0.12)" : "#26232F", borderRadius: 6, padding: "4px 0", fontSize: 8.5, color: p ? "#33D6A6" : "#6B6678", fontWeight: 700 }}>
+                  {MESES_NOMBRE[parseInt(m.slice(5), 10) - 1].slice(0, 3)}<br />{p ? "✓" : "—"}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+// Cada bloque del Dashboard arranca cerrado, con su título y un resumen al costado; se abre al
+// tocarlo. Lo que dejás abierto queda abierto para la próxima vez (en este dispositivo).
+const SECCIONES_KEY = "teambull_secciones_abiertas";
+const leerSecciones = () => { try { return JSON.parse(window.localStorage.getItem(SECCIONES_KEY) || "{}"); } catch { return {}; } };
+function Seccion({ id, titulo, resumen, color = "#8B8698", children, abiertaPorDefecto = false }) {
+  const [abierta, setAbierta] = useState(() => { const v = leerSecciones()[id]; return typeof v === "boolean" ? v : abiertaPorDefecto; });
+  const alternar = () => {
+    const v = !abierta;
+    setAbierta(v);
+    try { const m = leerSecciones(); m[id] = v; window.localStorage.setItem(SECCIONES_KEY, JSON.stringify(m)); } catch {}
+  };
+  return (
+    <div style={{ background: "#15131A", border: "1px solid #26232F", borderRadius: 12, marginBottom: 8, overflow: "hidden" }}>
+      <button onClick={alternar} className="font-body" style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", padding: "11px 12px", cursor: "pointer", textAlign: "left" }}>
+        <span style={{ flex: 1, minWidth: 0, color: "#F4F1EA", fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{titulo}</span>
+        {resumen != null && resumen !== "" && <span style={{ color, fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{resumen}</span>}
+        <span style={{ color: "#6B6678", fontSize: 10, flexShrink: 0 }}>{abierta ? "▲" : "▼"}</span>
+      </button>
+      {abierta && <div style={{ padding: "0 12px 12px" }}>{children}</div>}
+    </div>
+  );
+}
+function CuotasDashboard({ alumnos, coachNombre }) {
+  const acc = React.useContext(AccionesCtx);
+  const conCuota = alumnos.map((a) => ({ a, est: estadoCuota(a) })).filter((x) => x.est);
+  if (!conCuota.length || !acc) return null;
+  const deben = conCuota.filter((x) => !x.est.pago).sort((x, y) => y.est.diasAtraso - x.est.diasAtraso);
+  const pagaron = conCuota.length - deben.length;
+  const mes = conCuota[0].est.nombreMes;
+  const total = deben.reduce((t, x) => t + (parseFloat(String(x.est.monto || "0").replace(/\./g, "").replace(",", ".")) || 0), 0);
+  return (
+    <Seccion id="cuotas" titulo={`💳 Cuotas de ${mes}`} resumen={deben.length ? `${deben.length} sin pagar` : "al día"} color={deben.length ? "#E85D5D" : "#33D6A6"}>
+      <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 12, padding: 10 }}>
+        <div className="font-body" style={{ fontSize: 11, color: "#F4F1EA", marginBottom: deben.length ? 6 : 0 }}>
+          <b style={{ color: "#33D6A6" }}>{pagaron} pagaron</b> · <b style={{ color: deben.length ? "#E85D5D" : "#8B8698" }}>{deben.length} deben</b>{total ? ` · faltan $${total.toLocaleString("es-AR")}` : ""}
+        </div>
+        {deben.map(({ a, est }) => (
+          <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 0", borderTop: "1px solid #26232F" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="font-body" style={{ color: "#F4F1EA", fontSize: 11, fontWeight: 600 }}>{a.nombre}</div>
+              <div className="font-body" style={{ color: est.vencida ? "#E85D5D" : "#FFC94A", fontSize: 9.5 }}>{est.vencida ? `Vencida hace ${est.diasAtraso} ${est.diasAtraso === 1 ? "día" : "días"}` : `Vence el ${mostrarFecha(est.vence)}`}{est.monto ? ` · $${est.monto}` : ""}</div>
+            </div>
+            {a.cuota.telefono && <a href={linkRecordatorioCuota(a, est, coachNombre)} target="_blank" rel="noopener noreferrer" className="font-body" style={{ background: "#25D366", borderRadius: 6, color: "#0B2A1A", fontWeight: 700, fontSize: 9.5, padding: "5px 8px", textDecoration: "none" }}>📲 Recordar</a>}
+            <button onClick={() => acc.updateAlumno(a.id, marcarCuotaPagada(a, est))} className="font-body" style={{ background: "#33D6A6", border: "none", borderRadius: 6, color: "#0B2A1A", fontWeight: 700, fontSize: 9.5, padding: "5px 8px", cursor: "pointer" }}>✓ Pagó</button>
+          </div>
+        ))}
+      </div>
+    </Seccion>
+  );
+}
+
+// Próximos torneos publicados en SwimRecords (su calendario + los torneos con resultados cargados).
+async function proximosTorneosSwimRecords() {
+  const hoy = todayISO();
+  const [a, b] = await Promise.all([
+    srGet(`competitions?select=id,name,start_date,end_date,location,province,federation&is_published=eq.true&start_date=gte.${hoy}&order=start_date&limit=30`).catch(() => []),
+    srGet(`hytek_competitions?select=id,name,start_date,end_date,location,province,federation,pool_type&start_date=gte.${hoy}&order=start_date&limit=30`).catch(() => []),
+  ]);
+  const vistos = new Set();
+  return [...a, ...b]
+    .filter((c) => { const k = normalizarTexto(c.name) + c.start_date; if (vistos.has(k)) return false; vistos.add(k); return true; })
+    .sort((x, y) => x.start_date.localeCompare(y.start_date));
+}
+function ProximosTorneos({ alumnos }) {
+  const sr = React.useContext(SwimRecordsCtx);
+  const [torneos, setTorneos] = useState(null);
+  const [error, setError] = useState(false);
+  const [verTodos, setVerTodos] = useState(false);
+  const [filtro, setFiltro] = useState("");
+  useEffect(() => { proximosTorneosSwimRecords().then(setTorneos).catch(() => setError(true)); }, []);
+  const nadadores = alumnos.filter((a) => a.swimrecords?.ids?.length);
+  if (!sr || (!nadadores.length && !torneos?.length)) return null;
+  const lista = (torneos || []).filter((t) => !filtro || coincideBusqueda(`${t.name} ${t.province || ""} ${t.federation || ""}`, filtro));
+  const visibles = verTodos ? lista : lista.slice(0, 4);
+  const semanas = (f) => { const d = Math.ceil((new Date(f + "T00:00:00") - new Date(todayISO() + "T00:00:00")) / 864e5); return d <= 0 ? "hoy" : d < 14 ? `en ${d} días` : `en ${Math.round(d / 7)} semanas`; };
+  return (
+    <Seccion id="torneos" titulo="🏊 Próximos torneos" resumen={torneos === null && !error ? "buscando..." : lista.length ? `${lista.length}` : ""} color="#7DD6C0">
+      <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 12, padding: 10 }}>
+        {torneos === null && !error && <div className="font-body" style={{ color: "#8B8698", fontSize: 10.5 }}>Buscando torneos…</div>}
+        {error && <div className="font-body" style={{ color: "#8B8698", fontSize: 10.5 }}>No se pudo conectar con SwimRecords ahora.</div>}
+        {torneos && torneos.length === 0 && <div className="font-body" style={{ color: "#8B8698", fontSize: 10.5 }}>SwimRecords todavía no publicó torneos próximos. Mientras tanto podés cargarlos a mano en el perfil de cada alumno/a (Competencias).</div>}
+        {torneos && torneos.length > 4 && <input value={filtro} onChange={(e) => setFiltro(e.target.value)} placeholder="🔍 Filtrar (ej: Buenos Aires, FeNaBA, Metro)" className="font-body" style={{ width: "100%", background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "6px 8px", fontSize: 10.5, boxSizing: "border-box", marginBottom: 6 }} />}
+        {visibles.map((t) => {
+          const yaCargado = nadadores.length > 0 && nadadores.every((a) => (a.competencias || []).some((c) => c.id === `sr-${t.id}` || (normalizarTexto(c.nombre) === normalizarTexto(t.name) && c.fecha === t.start_date)));
+          return (
+            <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0", borderTop: "1px solid #26232F" }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="font-body" style={{ color: "#F4F1EA", fontSize: 11, fontWeight: 700 }}>{t.name}</div>
+                <div className="font-body" style={{ color: "#8B8698", fontSize: 9.5 }}>{mostrarFecha(t.start_date)} · <b style={{ color: "#FFC94A" }}>{semanas(t.start_date)}</b>{t.location ? ` · ${t.location}` : ""}{t.federation ? ` · ${t.federation}` : ""}</div>
+              </div>
+              {nadadores.length > 0 && (
+                <button disabled={yaCargado} onClick={() => sr.agregarCompetencia(t)} className="font-body" style={{ background: yaCargado ? "#26232F" : "rgba(255,107,53,0.12)", border: `1px solid ${yaCargado ? "#322E3D" : "#FF6B35"}`, borderRadius: 6, color: yaCargado ? "#6B6678" : "#FF6B35", fontWeight: 700, fontSize: 9.5, padding: "5px 8px", cursor: yaCargado ? "default" : "pointer", whiteSpace: "nowrap" }}>{yaCargado ? "✓ Cargado" : "+ Al equipo"}</button>
+              )}
+            </div>
+          );
+        })}
+        {lista.length > 4 && <button onClick={() => setVerTodos(!verTodos)} className="font-body" style={{ width: "100%", background: "none", border: "none", color: "#8B8698", fontSize: 10, padding: 4, cursor: "pointer" }}>{verTodos ? "▲ Ver menos" : `▼ Ver los ${lista.length}`}</button>}
+        {nadadores.length > 0 && torneos && torneos.length > 0 && <div className="font-body" style={{ color: "#6B6678", fontSize: 9, marginTop: 4 }}>"+ Al equipo" lo suma a Competencias de tus {nadadores.length} nadadores vinculados: les aparece la cuenta regresiva en su inicio.</div>}
+      </div>
+    </Seccion>
+  );
+}
+
+// Copias de seguridad: bajar una copia de todo a este celular y, en modo seguro, volver a una de
+// las copias diarias que guarda el servidor.
+function CopiasSeguridad() {
+  const [abierto, setAbierto] = useState(false);
+  const [copias, setCopias] = useState(null);
+  const [mensaje, setMensaje] = useState("");
+  useEffect(() => {
+    if (!abierto || !MODO_SEGURO || copias) return;
+    apiDatos(null, "?copias=1").then((r) => setCopias(r.json?.tabla === false ? "sin-tabla" : r.json?.copias || [])).catch(() => setCopias("error"));
+  }, [abierto, copias]);
+  const descargar = () => {
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (!raw) { setMensaje("No hay datos guardados en este celular todavía."); return; }
+      const url = URL.createObjectURL(new Blob([raw], { type: "application/json" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = `teambull-copia-${todayISO()}.json`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      setMensaje("✓ Copia descargada. Guardala en Drive o mandátela por WhatsApp.");
+    } catch (e) { setMensaje("No se pudo descargar: " + (e?.message || "error")); }
+  };
+  const restaurar = async (c) => {
+    const cuando = new Date(c.created_at).toLocaleString("es-AR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    if (!window.confirm(`¿Volver a la copia del ${cuando}? Todo lo de la app queda como estaba ese día (lo de ahora también se guarda como copia, por si te arrepentís).`)) return;
+    setMensaje("Restaurando...");
+    try {
+      const r = await apiDatos({ accion: "restaurar", copiaId: c.id });
+      if (r.json?.ok) { window.alert("✓ Listo. La app se recarga y volvés a ingresar."); window.location.reload(); }
+      else setMensaje("No se pudo: " + (r.json?.error || "HTTP " + r.status));
+    } catch { setMensaje("Sin conexión: probá de nuevo."); }
+  };
+  const btn = { width: "100%", border: "none", borderRadius: 8, fontWeight: 700, padding: 9, cursor: "pointer", fontSize: 12 };
+  return (
+    <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, padding: 12, marginTop: 8 }}>
+      <button onClick={() => setAbierto(!abierto)} className="font-body" style={{ width: "100%", background: "none", border: "none", color: "#F4F1EA", fontWeight: 700, fontSize: 12, cursor: "pointer", textAlign: "left", padding: 0 }}>🛟 Copias de seguridad {abierto ? "▲" : "▼"}</button>
+      {abierto && (
+        <div style={{ marginTop: 10 }}>
+          <div className="font-body" style={{ color: "#8B8698", fontSize: 10, marginBottom: 8 }}>
+            {MODO_SEGURO ? "Todos los días se guarda sola una copia de todo en la nube (quedan las últimas 60). Si algo se borra por error, volvés a la de ese día." : "Bajá una copia de todo (alumnos, planes, historial) a este celular. Las copias diarias automáticas se activan con el modo seguro."}
+          </div>
+          <button onClick={descargar} className="font-body" style={{ ...btn, background: "#7DD6C0", color: "#0B2A2E", marginBottom: 8 }}>⬇ Descargar copia ahora</button>
+          {MODO_SEGURO && (copias === null ? <div className="font-body" style={{ color: "#8B8698", fontSize: 11 }}>Buscando copias...</div>
+            : copias === "sin-tabla" ? <div className="font-body" style={{ color: "#FFC94A", fontSize: 11 }}>Falta crear la tabla de copias en Supabase (paso 2 de la guía).</div>
+            : copias === "error" ? <div className="font-body" style={{ color: "#E85D5D", fontSize: 11 }}>No se pudieron traer las copias.</div>
+            : copias.length === 0 ? <div className="font-body" style={{ color: "#8B8698", fontSize: 11 }}>Todavía no hay copias: la primera se guarda con el próximo cambio.</div>
+            : <div style={{ maxHeight: 220, overflowY: "auto" }}>{copias.map((c) => (
+                <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderTop: "1px solid #26232F" }}>
+                  <span className="font-body" style={{ flex: 1, color: "#F4F1EA", fontSize: 12 }}>{new Date(c.created_at).toLocaleString("es-AR", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+                  <button onClick={() => restaurar(c)} className="font-body" style={{ background: "transparent", border: "1px solid #FF6B35", borderRadius: 6, color: "#FF6B35", fontSize: 10, fontWeight: 700, padding: "5px 8px", cursor: "pointer" }}>Volver a esta</button>
+                </div>))}</div>)}
+          {mensaje && <div className="font-body" style={{ color: mensaje.startsWith("✓") ? "#33D6A6" : "#FFC94A", fontSize: 11, marginTop: 8 }}>{mensaje}</div>}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coaches, onAddCoach, onRemoveCoach, mensajeRecordatorio, onUpdateMensajeRecordatorio, notificacionesActivas, onToggleNotificaciones, modoPausa, onToggleModoPausa, diasAvisoPlan, onSetDiasAvisoPlan, coachId, onCambiarPassword, onSetRecoveryPin, onSetTelefono, onReclamarAlumnos, logActividad, grupos, onCrearGrupo, onEliminarGrupo }) {
@@ -2613,6 +3377,8 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
               </div>
             )}
           </div>
+
+          <CopiasSeguridad />
 
           <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, padding: 12, marginTop: 8 }}>
             <button onClick={() => { setConfigurandoPin(!configurandoPin); setPinMensaje(null); }} className="font-body" style={{ width: "100%", background: "none", border: "none", color: "#F4F1EA", fontWeight: 700, fontSize: 12, cursor: "pointer", textAlign: "left", padding: 0 }}>🆘 PIN de recuperación {configurandoPin ? "▲" : "▼"}</button>
@@ -2755,17 +3521,13 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
           <StatMini label="Cumplimiento prom." value={`${promedio}%`} color="#7DD6C0" />
           <StatMini label="Próx. evaluación" value="3 días" />
         </div>
-        <button onClick={() => compartirTextoPorWhatsApp(generarInformeSemanal(alumnosActivos))} className="font-body" style={{ width: "100%", background: "#25D366", border: "none", borderRadius: 10, color: "#0B2A2E", fontWeight: 700, fontSize: 11, padding: 10, cursor: "pointer", marginBottom: 6 }}>💬 Informe semanal por WhatsApp</button>
-        <button onClick={() => compartirTexto("Informe semanal Team Bull", generarInformeSemanal(alumnosActivos))} className="font-body" style={{ width: "100%", background: "none", border: "none", color: "#FF6B35", fontWeight: 700, fontSize: 10, padding: "4px 0", cursor: "pointer", marginBottom: 8 }}>Más opciones para compartir</button>
-        <button onClick={() => descargarPlantelPDF(alumnosActivos)} className="font-body" style={{ width: "100%", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, color: "#8B8698", fontWeight: 700, fontSize: 11, padding: 10, cursor: "pointer", marginBottom: 16 }}>📄 Descargar planes de todo el plantel (uno solo)</button>
         {(() => {
           // Últimas conexiones: quién abrió la app y a qué hora. Se actualiza solo con la sincronización.
           const conConexion = alumnosActivos.filter((a) => a.ultimaConexion).sort((a, b) => b.ultimaConexion.localeCompare(a.ultimaConexion));
           const sinConexion = alumnosActivos.filter((a) => !a.ultimaConexion);
           const visibles = verTodasConexiones ? conConexion : conConexion.slice(0, 5);
           return (
-            <div style={{ marginBottom: 16 }}>
-              <div className="font-body" style={{ fontSize: 11, color: "#8B8698", fontWeight: 600, marginBottom: 8 }}>📲 ÚLTIMAS CONEXIONES</div>
+            <Seccion id="conexiones" abiertaPorDefecto titulo="📲 Últimas conexiones" resumen={conConexion.length ? `${conConexion.filter((a) => Date.now() - new Date(a.ultimaConexion).getTime() < 24 * 60 * 60 * 1000).length} hoy` : "nadie todavía"} color="#33D6A6">
               {conConexion.length === 0 && <div className="font-body" style={{ color: "#6B6678", fontSize: 11, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 12, padding: 12 }}>Todavía no se registró ninguna conexión. Aparecen acá apenas tus alumnos/as abran la app.</div>}
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {visibles.map((a) => {
@@ -2787,11 +3549,16 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
                 <button onClick={() => setVerTodasConexiones(!verTodasConexiones)} className="font-body" style={{ marginTop: 6, width: "100%", background: "none", border: "1px dashed #322E3D", borderRadius: 10, color: "#8B8698", fontWeight: 700, fontSize: 11, padding: 8, cursor: "pointer" }}>{verTodasConexiones ? "▲ Ver menos" : `▼ Ver todos (${conConexion.length})`}</button>
               )}
               {sinConexion.length > 0 && conConexion.length > 0 && <div className="font-body" style={{ color: "#6B6678", fontSize: 10, marginTop: 6 }}>Todavía no entraron: {sinConexion.map((a) => a.nombre).join(", ")}</div>}
-            </div>
+            </Seccion>
           );
         })()}
-        <div className="font-body" style={{ fontSize: 11, color: "#8B8698", fontWeight: 600, marginBottom: 8 }}>RANKING DE CUMPLIMIENTO</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+        <Seccion id="informes" titulo="📤 Informes del plantel" resumen="WhatsApp · PDF">
+        <button onClick={() => compartirTextoPorWhatsApp(generarInformeSemanal(alumnosActivos))} className="font-body" style={{ width: "100%", background: "#25D366", border: "none", borderRadius: 10, color: "#0B2A2E", fontWeight: 700, fontSize: 11, padding: 10, cursor: "pointer", marginBottom: 6 }}>💬 Informe semanal por WhatsApp</button>
+        <button onClick={() => compartirTexto("Informe semanal Team Bull", generarInformeSemanal(alumnosActivos))} className="font-body" style={{ width: "100%", background: "none", border: "none", color: "#FF6B35", fontWeight: 700, fontSize: 10, padding: "4px 0", cursor: "pointer", marginBottom: 8 }}>Más opciones para compartir</button>
+        <button onClick={() => descargarPlantelPDF(alumnosActivos)} className="font-body" style={{ width: "100%", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, color: "#8B8698", fontWeight: 700, fontSize: 11, padding: 10, cursor: "pointer", marginBottom: 16 }}>📄 Descargar planes de todo el plantel (uno solo)</button>
+        </Seccion>
+        <Seccion id="ranking" titulo="🏆 Ranking de cumplimiento" resumen={`${promedio}% prom.`} color={promedio >= 80 ? "#33D6A6" : promedio >= 60 ? "#FF6B35" : "#E85D5D"}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {(verTodoRanking ? ranking : ranking.slice(0, 5)).map((a, i) => (
             <button key={a.id} onClick={() => goAlumnos(a.id)} style={{ display: "flex", alignItems: "center", gap: 10, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 12, padding: 10, cursor: "pointer", width: "100%", textAlign: "left" }}>
               <span className="font-display" style={{ color: "#8B8698", fontSize: 13, width: 16 }}>{i + 1}</span>
@@ -2807,16 +3574,26 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
             <button onClick={() => setVerTodoRanking(!verTodoRanking)} className="font-body" style={{ background: "none", border: "1px dashed #322E3D", borderRadius: 10, color: "#8B8698", fontWeight: 700, fontSize: 11, padding: 9, cursor: "pointer" }}>{verTodoRanking ? "▲ Ver menos" : `▼ Ver todos (${ranking.length})`}</button>
           )}
         </div>
-        <div className="font-body" style={{ fontSize: 11, color: "#8B8698", fontWeight: 600, marginBottom: 8 }}>ALERTAS</div>
+        </Seccion>
+        {rankingLargada(alumnosActivos).length > 0 && (
+          <Seccion id="largada" titulo="⚡ Ranking de largada" resumen={`${(rankingLargada(alumnosActivos)[0].mejor / 1000).toFixed(3)} s`} color="#FFC94A">
+            <RankingLargada ranking={rankingLargada(alumnosActivos)} max={10} titulo="" />
+          </Seccion>
+        )}
+        <CuotasDashboard alumnos={alumnosActivos} coachNombre={coachNombre} />
+        <ProximosTorneos alumnos={alumnosActivos} />
         {(() => {
-          const todasLasAlertas = alumnosActivos.flatMap((a) => generarAlertas(a));
-          if (todasLasAlertas.length === 0) return <div className="font-body" style={{ color: "#8B8698", fontSize: 11, marginBottom: 8 }}>Todo tranquilo por ahora.</div>;
+          const todasLasAlertas = alumnosActivos.flatMap((a) => generarAlertas(a, diasAvisoPlan));
+          const envolver = (contenido) => (
+            <Seccion id="alertas" titulo="⚠ Alertas" resumen={todasLasAlertas.length ? `${todasLasAlertas.length}` : "todo en orden"} color={todasLasAlertas.length ? "#E85D5D" : "#33D6A6"}>{contenido}</Seccion>
+          );
+          if (todasLasAlertas.length === 0) return envolver(<div className="font-body" style={{ color: "#8B8698", fontSize: 11 }}>Todo tranquilo por ahora.</div>);
           // Agrupamos por tipo de alerta (ej: "Check-in incompleto") en vez de mostrar una tarjeta
           // por cada alumna — así, si son varias con lo mismo, no se hace una lista larga y
           // desprolija: queda una fila por tipo, que se despliega al tocarla.
           const grupos = {};
           todasLasAlertas.forEach((al) => { (grupos[al.tipo] = grupos[al.tipo] || []).push(al); });
-          return Object.entries(grupos).map(([tipo, items]) => (
+          return envolver(Object.entries(grupos).map(([tipo, items]) => (
             <div key={tipo} style={{ background: "rgba(232,93,93,0.08)", border: "1px solid #E85D5D", borderRadius: 12, marginBottom: 8, overflow: "hidden" }}>
               <button onClick={() => setTipoAlertaAbierto(tipoAlertaAbierto === tipo ? null : tipo)} className="font-body" style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", background: "none", border: "none", padding: 12, cursor: "pointer", textAlign: "left" }}>
                 <span style={{ color: "#F4F1EA", fontSize: 12, fontWeight: 600 }}>⚠ {tipo}</span>
@@ -2833,7 +3610,7 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
                 </div>
               )}
             </div>
-          ));
+          )));
         })()}
         {coaches.length > 1 && logActividad.length > 0 && (() => {
           // Solo mostramos actividad de entrenadores que comparten un grupo con vos (o la tuya
@@ -2843,16 +3620,15 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
           const logFiltrado = logActividad.filter((l) => l.coachId && misCompaneros.has(l.coachId));
           if (logFiltrado.length === 0) return null;
           return (
-            <>
-              <div className="font-body" style={{ fontSize: 11, color: "#8B8698", fontWeight: 600, marginBottom: 8, marginTop: 8 }}>ACTIVIDAD RECIENTE (tu grupo)</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
+            <Seccion id="actividad" titulo="🕘 Actividad reciente (tu grupo)" resumen={`${logFiltrado.length}`}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {logFiltrado.slice(0, 8).map((l) => (
                   <div key={l.id} className="font-body" style={{ color: "#8B8698", fontSize: 11, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: "8px 10px" }}>
                     <span style={{ color: "#7DD6C0", fontWeight: 700 }}>{l.coach}</span> {l.texto} <span style={{ color: "#6B6678" }}>— {tiempoRelativo(l.fecha)}</span>
                   </div>
                 ))}
               </div>
-            </>
+            </Seccion>
           );
         })()}
       </div>
@@ -3114,6 +3890,13 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
   const [confirmarBorrado, setConfirmarBorrado] = useState(false);
   const [nombreVersion, setNombreVersion] = useState("");
   const [empezandoNueva, setEmpezandoNueva] = useState(false);
+  const [creandoProximo, setCreandoProximo] = useState(false);
+  const [fechaProximo, setFechaProximo] = useState(primerDiaMesSiguiente);
+  const [baseProximo, setBaseProximo] = useState("copia");
+  const [viendoProximo, setViendoProximo] = useState(false);
+  useEffect(() => { setViendoProximo(false); setCreandoProximo(false); }, [alumno.id]);
+  const pp = alumno.planProximo;
+  const diasParaProximo = pp ? Math.round((new Date(pp.fecha + "T12:00:00") - new Date(todayISO() + "T12:00:00")) / 86400000) : null;
   const [nombreNuevaPlanificacion, setNombreNuevaPlanificacion] = useState("");
   const [diaNotasAbierto, setDiaNotasAbierto] = useState(null);
   const [verInformesMensuales, setVerInformesMensuales] = useState(false);
@@ -3448,7 +4231,66 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
             </>)}
           </div>
 
-          <PlanEditor plan={alumno.plan} onChange={cambiarPlanConHistorial} version={version} onGuardarHistorialRM={(ejercicio, valor) => onGuardarHistorialRM(alumno.id, ejercicio, valor)} onAddToLibrary={onAddToLibrary} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={onAgregarRolPersonalizado} historialRMAlumno={alumno.historialRM} />
+          {/* Próximo plan: se carga antes y el día elegido reemplaza solo al actual (que queda archivado). */}
+          {(() => {
+            const inp = { background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "7px 8px", fontSize: 12, colorScheme: "dark" };
+            const tab = (activo, color) => ({ flex: 1, background: activo ? color : "transparent", border: `1px solid ${activo ? color : "#322E3D"}`, borderRadius: 8, color: activo ? "#14121A" : "#8B8698", fontWeight: 700, fontSize: 11, padding: 9, cursor: "pointer" });
+            if (!pp) return (
+              <div data-proximo-plan style={{ background: "#15131A", border: "1px dashed #5AA0E6", borderRadius: 12, padding: 12, marginBottom: 12 }}>
+                {!creandoProximo ? (
+                  <button onClick={() => { setFechaProximo(primerDiaMesSiguiente()); setBaseProximo("copia"); setCreandoProximo(true); }} className="font-body" style={{ width: "100%", background: "none", border: "none", color: "#5AA0E6", fontWeight: 700, fontSize: 12, cursor: "pointer", padding: 2 }}>📅 Cargar el próximo plan (empieza en una fecha)</button>
+                ) : (<>
+                  <div className="font-body" style={{ color: "#5AA0E6", fontWeight: 700, fontSize: 12, marginBottom: 4 }}>📅 Próximo plan de {alumno.nombre}</div>
+                  <div className="font-body" style={{ color: "#8B8698", fontSize: 10, marginBottom: 10 }}>Lo armás ahora y {alumno.nombre} sigue viendo el actual. El día que elijas le aparece el nuevo solo, y el actual se guarda solo en "Versiones guardadas" con su mes y fechas.</div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                    <label className="font-body" style={{ flex: "1 1 140px", color: "#8B8698", fontSize: 10 }}>Empieza el<br /><input type="date" value={fechaProximo} min={todayISO()} onChange={(e) => setFechaProximo(e.target.value)} style={{ ...inp, width: "100%", marginTop: 3 }} /></label>
+                    <label className="font-body" style={{ flex: "1 1 160px", color: "#8B8698", fontSize: 10 }}>Arrancar desde<br />
+                      <select value={baseProximo} onChange={(e) => setBaseProximo(e.target.value)} style={{ ...inp, width: "100%", marginTop: 3 }}>
+                        <option value="copia">Una copia del plan actual</option>
+                        <option value="vacio">Plan vacío</option>
+                        {templates.map((t) => <option key={t.id} value={t.id}>Plantilla: {t.nombre}</option>)}
+                      </select>
+                    </label>
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={() => setCreandoProximo(false)} className="font-body" style={{ flex: 1, background: "transparent", border: "1px solid #322E3D", borderRadius: 8, color: "#8B8698", fontSize: 11, padding: 9, cursor: "pointer" }}>Cancelar</button>
+                    <button onClick={() => {
+                      if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaProximo)) return;
+                      const t = templates.find((x) => x.id === baseProximo);
+                      const plan = baseProximo === "vacio" ? mkPlanVacio() : clonarPlan(t ? t.plan : alumno.plan);
+                      if (!t && baseProximo !== "vacio") plan.meta = { ...plan.meta, fechaInicio: fechaProximo };
+                      onUpdateAlumno(alumno.id, { planProximo: { id: uid(), fecha: fechaProximo, plan } });
+                      setCreandoProximo(false); setViendoProximo(true);
+                    }} className="font-body" style={{ flex: 2, background: "#5AA0E6", border: "none", borderRadius: 8, color: "#0B1A2E", fontWeight: 700, fontSize: 11, padding: 9, cursor: "pointer" }}>Crear y editar</button>
+                  </div>
+                </>)}
+              </div>
+            );
+            return (
+              <div data-proximo-plan style={{ background: "#15131A", border: "1px solid #5AA0E6", borderRadius: 12, padding: 10, marginBottom: 12 }}>
+                <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                  <button onClick={() => setViendoProximo(false)} className="font-body" style={tab(!viendoProximo, "#FF6B35")}>Plan actual</button>
+                  <button onClick={() => setViendoProximo(true)} className="font-body" style={tab(viendoProximo, "#5AA0E6")}>📅 Próximo · {mostrarFecha(pp.fecha)}</button>
+                </div>
+                {!viendoProximo ? (
+                  <div className="font-body" style={{ color: "#8B8698", fontSize: 10 }}>Este es el que ve {alumno.nombre} hoy. El {mostrarFecha(pp.fecha)} ({diasParaProximo <= 0 ? "hoy" : diasParaProximo === 1 ? "mañana" : `en ${diasParaProximo} días`}) cambia solo al próximo y este se guarda en "Versiones guardadas".</div>
+                ) : (
+                  <div style={{ display: "flex", gap: 6, alignItems: "flex-end", flexWrap: "wrap" }}>
+                    <label className="font-body" style={{ flex: "1 1 130px", color: "#8B8698", fontSize: 10 }}>Empieza el<br /><input type="date" value={pp.fecha} min={todayISO()} onChange={(e) => { if (/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) onUpdateAlumno(alumno.id, { planProximo: { ...pp, fecha: e.target.value, plan: { ...pp.plan, meta: { ...pp.plan.meta, fechaInicio: e.target.value } } } }); }} style={{ ...inp, width: "100%", marginTop: 3 }} /></label>
+                    <button onClick={() => { if (window.confirm(`¿Pasar ${alumno.nombre} al próximo plan ya? El actual se guarda en "Versiones guardadas".`)) { onUpdateAlumno(alumno.id, activarPlanProximo({ ...alumno, planProximo: { ...pp, fecha: todayISO() } })); setViendoProximo(false); } }} className="font-body" style={{ background: "rgba(125,214,192,0.12)", border: "1px solid #7DD6C0", borderRadius: 8, color: "#7DD6C0", fontWeight: 700, fontSize: 10, padding: "8px 10px", cursor: "pointer" }}>Empezar hoy</button>
+                    <button onClick={() => { if (window.confirm("¿Borrar el próximo plan? El actual no se toca.")) { onUpdateAlumno(alumno.id, { planProximo: null }); setViendoProximo(false); } }} className="font-body" style={{ background: "transparent", border: "1px solid #5A2A2A", borderRadius: 8, color: "#E66", fontSize: 10, padding: "8px 10px", cursor: "pointer" }}>Borrar</button>
+                    <div className="font-body" style={{ flexBasis: "100%", color: "#5AA0E6", fontSize: 10, marginTop: 4 }}>Estás editando el próximo plan: {alumno.nombre} todavía no lo ve. Se guarda solo.</div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {pp && viendoProximo ? (
+            <PlanEditor key={"prox-" + pp.id} plan={pp.plan} onChange={(plan) => onUpdateAlumno(alumno.id, { planProximo: { ...pp, plan } })} version={version} onAddToLibrary={onAddToLibrary} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={onAgregarRolPersonalizado} />
+          ) : (
+            <PlanEditor plan={alumno.plan} onChange={cambiarPlanConHistorial} version={version} onGuardarHistorialRM={(ejercicio, valor) => onGuardarHistorialRM(alumno.id, ejercicio, valor)} onAddToLibrary={onAddToLibrary} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={onAgregarRolPersonalizado} historialRMAlumno={alumno.historialRM} onConfirmarRM={(ejercicio, valor, de) => onUpdateAlumno(alumno.id, { avisosRM: [...(alumno.avisosRM || []), { id: uid(), ejercicio, de, a: valor, fecha: new Date().toISOString(), por: "coach", confirmado: true }].slice(-30) })} />
+          )}
         </div>
       )}
 
@@ -3462,7 +4304,7 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
                 <input type="file" accept="image/*" style={{ display: "none" }} onChange={async (e) => {
                   const file = e.target.files && e.target.files[0]; e.target.value = "";
                   if (!file) return;
-                  const dataUrl = await archivoADataURL(file, 500, 0.85);
+                  const dataUrl = await archivoADataURL(file, 256, 0.8);
                   onUpdateAlumno(alumno.id, { fotoPerfil: dataUrl });
                 }} />
               </label>
@@ -3484,6 +4326,9 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
             );
           })()}
           <button onClick={() => descargarInformePDF(alumno)} className="font-body" style={{ width: "100%", background: "#FF6B35", border: "none", borderRadius: 10, color: "#121017", fontWeight: 700, fontSize: 12, padding: 11, cursor: "pointer", marginBottom: 6 }}>📄 Descargar informe (PDF)</button>
+          {(alumno.biomecanica || []).length > 0 && (
+            <button onClick={() => descargarInformeBiomecanicaPDF(alumno)} className="font-body" style={{ width: "100%", background: "transparent", border: "1px solid #FF6B35", borderRadius: 10, color: "#FF6B35", fontWeight: 700, fontSize: 12, padding: 11, cursor: "pointer", marginBottom: 6 }}>🦵 Informe de biomecánica (PDF)</button>
+          )}
           <div className="font-body" style={{ fontSize: 9, color: "#6B6678", textAlign: "center", marginBottom: 16 }}>Se abre y guarda un archivo — tocá "Imprimir / Guardar como PDF" ahí adentro, y de ahí lo podés mandar por WhatsApp como cualquier otro archivo.</div>
 
           <button onClick={() => setCarpetaMedicionesAbierta(true)} className="font-body" style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 12, padding: 12, cursor: "pointer", marginBottom: 16, textAlign: "left" }}>
@@ -3544,6 +4389,7 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
             <MiniInput label="Lesiones" value={alumno.lesiones} onChange={(v) => onUpdateAlumno(alumno.id, { lesiones: v })} wide />
             <MiniInput label="Equipo" value={alumno.equipo} onChange={(v) => onUpdateAlumno(alumno.id, { equipo: v })} wide />
           </div>
+          <CuotaAlumno alumno={alumno} onUpdate={(patch) => onUpdateAlumno(alumno.id, patch)} />
           <div className="font-body" style={{ fontSize: 11, color: "#FF6B35", fontWeight: 600, marginBottom: 8 }}>COMPETENCIAS</div>
           <div style={{ marginBottom: 16 }}>
             {(alumno.competencias || []).map((c) => (
@@ -3572,6 +4418,9 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
               <button onClick={() => setAgregandoCompetencia(true)} className="font-body" style={{ width: "100%", background: "rgba(255,107,53,0.1)", border: "1px dashed #FF6B35", borderRadius: 8, color: "#FF6B35", fontWeight: 700, fontSize: 11, padding: 9, cursor: "pointer" }}>+ Agregar competencia</button>
             )}
           </div>
+          <div className="font-body" style={{ fontSize: 11, color: "#7DD6C0", fontWeight: 600, marginBottom: 8 }}>🏊 MARCAS DE NATACIÓN</div>
+          <MarcasNatacion alumno={alumno} onChange={(patch) => onUpdateAlumno(alumno.id, patch)} />
+          <CruceGimnasioPileta alumno={alumno} />
           <div className="font-body" style={{ fontSize: 11, color: "#8B8698", fontWeight: 600, marginBottom: 8 }}>CALENDARIO DE ENTRENAMIENTOS</div>
           <CalendarioSesiones historialSesiones={alumno.historialSesiones} />
           <div className="font-body" style={{ fontSize: 11, color: "#8B8698", fontWeight: 600, marginBottom: 8 }}>RM POR EJERCICIO (KG)</div>
@@ -4096,28 +4945,169 @@ function EncuestaSemanalModal({ onSubmit, onClose }) {
 
 // ---------- Largada: juego de activación neuromuscular ----------
 // El pitido se genera en el momento (onda de 1000 Hz), así no hace falta ningún archivo de audio.
-let _pitidoUrl = null;
-function urlPitido() {
-  if (_pitidoUrl) return _pitidoUrl;
-  const rate = 22050, n = Math.floor(rate * 0.45);
-  const buf = new ArrayBuffer(44 + n * 2); const v = new DataView(buf);
-  const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
-  w(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); w(8, "WAVE"); w(12, "fmt "); v.setUint32(16, 16, true);
-  v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true);
-  v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, "data"); v.setUint32(40, n * 2, true);
-  for (let i = 0; i < n; i++) { const env = Math.min(1, i / 200, (n - i) / 400); v.setInt16(44 + i * 2, Math.sin((2 * Math.PI * 1000 * i) / rate) * 0.9 * env * 32767, true); }
-  _pitidoUrl = URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
-  return _pitidoUrl;
+// Suena con Web Audio, que en el celular sale casi sin demora (el <audio> común tardaba entre
+// 0,1 y 0,3 s y por eso el pitido llegaba después de que la pantalla se ponía verde).
+let _pitidoCtx = null, _pitidoBuf = null;
+function audioPitido() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return null;
+  if (!_pitidoCtx) {
+    // En iPhone, esto hace que suene aunque el celular esté en silencio (como el <audio> de antes).
+    try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (e) { /* no disponible */ }
+    _pitidoCtx = new AC({ latencyHint: "interactive" });
+    const rate = _pitidoCtx.sampleRate, n = Math.floor(rate * 0.45);
+    _pitidoBuf = _pitidoCtx.createBuffer(1, n, rate);
+    const d = _pitidoBuf.getChannelData(0);
+    for (let i = 0; i < n; i++) { const env = Math.min(1, i / 200, (n - i) / 400); d[i] = Math.sin((2 * Math.PI * 1000 * i) / rate) * 0.9 * env; }
+  }
+  return _pitidoCtx;
+}
+// Devuelve el momento (en reloj de performance.now) en que el pitido sale realmente por el parlante.
+// El celular tarda en sacar el sonido (más con auriculares bluetooth), así que la pantalla espera
+// a ese momento para que pitido y largada se vean y escuchen juntos.
+function sonarPitido(volumen = 1, adelanto = 0) {
+  const ctx = audioPitido();
+  if (!ctx) return null;
+  const src = ctx.createBufferSource(), g = ctx.createGain();
+  g.gain.value = volumen;
+  src.buffer = _pitidoBuf; src.connect(g); g.connect(ctx.destination);
+  const T = ctx.currentTime + adelanto;
+  src.start(T);
+  try {
+    const ts = ctx.getOutputTimestamp && ctx.getOutputTimestamp();
+    if (ts && ts.performanceTime > 0 && ts.contextTime > 0) return ts.performanceTime + (T - ts.contextTime) * 1000;
+  } catch (e) { /* no disponible */ }
+  return performance.now() + (adelanto + (ctx.outputLatency || 0) + (ctx.baseLatency || 0)) * 1000;
 }
 
-function JuegoLargada({ reacciones, onGuardar, onClose }) {
+// Escena del juego: nadadores de costado en sus partidores (un andarivel por fila).
+// En "marcas" están quietos y agachados; con la señal se tiran todos juntos al agua.
+const PIEL_LARGADA = "#E9B48F";
+const ANDARIVELES_LARGADA = [{ gorra: "#7DD6C0" }, { gorra: "#FF6B35", vos: true }, { gorra: "#FFC94A" }, { gorra: "#B8B3C4" }];
+function EscenaLargada({ largaron }) {
+  const H = 92;
+  return (
+    <svg viewBox={`0 0 290 ${ANDARIVELES_LARGADA.length * H + 8}`} style={{ width: "100%", maxWidth: 420, display: "block", borderRadius: 16, background: "#14121B", border: "1px solid #322E3D" }} aria-hidden="true">
+      <style>{`
+        .tb-nad { transform-box: fill-box; transform-origin: 40% 60%; }
+        .tb-larga .tb-nad { animation: tbZambullida 1.05s cubic-bezier(.3,.6,.4,1) forwards; }
+        .tb-salp { transform-box: fill-box; transform-origin: 50% 100%; opacity: 0; transform: scale(0.2); }
+        .tb-larga .tb-salp { animation: tbSalpicon 0.9s ease-out 0.55s forwards; }
+        .tb-estirado { opacity: 0; }
+        .tb-larga .tb-agachado { animation: tbOcultar 0.14s linear 0.06s forwards; }
+        .tb-larga .tb-estirado { animation: tbMostrar 0.14s linear 0.06s forwards; }
+        @keyframes tbOcultar { to { opacity: 0; } }
+        @keyframes tbMostrar { to { opacity: 1; } }
+        @keyframes tbZambullida {
+          0% { transform: translate(0, 0) rotate(0deg); }
+          22% { transform: translate(38px, -16px) rotate(-6deg); }
+          48% { transform: translate(92px, 2px) rotate(26deg); }
+          72% { transform: translate(136px, 30px) rotate(30deg); opacity: 1; }
+          100% { transform: translate(190px, 36px) rotate(6deg); opacity: 0.15; }
+        }
+        @keyframes tbSalpicon {
+          0% { opacity: 0.95; transform: scale(0.2); }
+          60% { opacity: 0.8; transform: scale(1); }
+          100% { opacity: 0; transform: scale(1.25); }
+        }
+      `}</style>
+      <g className={largaron ? "tb-larga" : ""}>
+        {ANDARIVELES_LARGADA.map((a, i) => {
+          const y = 4 + i * H, sup = y + 58;
+          return (
+            <g key={i}>
+              {/* borde de la pileta y partidor */}
+              <rect x="0" y={sup} width="72" height={H - 58} fill="#26232F" />
+              <rect x="50" y={y + 46} width="9" height={12} fill="#4A4558" />
+              <path d={`M36 ${y + 43} L72 ${y + 47} L72 ${y + 50} L36 ${y + 48} Z`} fill="#6B6678" />
+              <text x="6" y={sup + 22} fill="#8B8698" fontSize="11" fontFamily="Oswald, sans-serif">{i + 1}</text>
+              {a.vos && <text x="20" y={sup + 22} fill="#FF6B35" fontSize="10" fontWeight="700" fontFamily="Inter, sans-serif">VOS</text>}
+              {/* nadador agachado (posición de salida de atletismo) */}
+              <g className="tb-nad">
+                {/* agachado en salida de atletismo: pie adelante en el borde, manos agarrando el partidor,
+                    cadera alta y cabeza abajo mirando el agua */}
+                <g className="tb-agachado" strokeLinecap="round" strokeLinejoin="round" fill="none">
+                  <path d={`M41 ${y + 43.5} L45.5 ${y + 35.5} L50 ${y + 26}`} stroke={PIEL_LARGADA} strokeWidth="5.4" />
+                  <path d={`M41 ${y + 43.5} L37.5 ${y + 42.5}`} stroke={PIEL_LARGADA} strokeWidth="3.4" />
+                  <path d={`M50 ${y + 26} L59.5 ${y + 36.5} L63.5 ${y + 45.6}`} stroke={PIEL_LARGADA} strokeWidth="6" />
+                  <path d={`M63.5 ${y + 45.6} L69.5 ${y + 46.2}`} stroke={PIEL_LARGADA} strokeWidth="3.4" />
+                  <path d={`M50 ${y + 26} L65.5 ${y + 29.2}`} stroke={PIEL_LARGADA} strokeWidth="8.5" />
+                  <path d={`M48.6 ${y + 25.4} L53.6 ${y + 27}`} stroke="#2B2F4A" strokeWidth="8.8" />
+                  <path d={`M65.5 ${y + 29.5} L71.8 ${y + 46.3}`} stroke={PIEL_LARGADA} strokeWidth="3.8" />
+                  <path d={`M70.6 ${y + 45.6} L73.4 ${y + 47.6}`} stroke={PIEL_LARGADA} strokeWidth="3" />
+                  <circle cx="72.6" cy={y + 35.2} r="4.3" fill={PIEL_LARGADA} stroke="none" />
+                  <path d={`M68.4 ${y + 34} A4.5 4.5 0 0 1 76.7 ${y + 33.4} Z`} fill={a.gorra} stroke="none" />
+                  <circle cx="75.8" cy={y + 36.2} r="1.3" fill="#121017" stroke="none" />
+                </g>
+                {/* en el aire: cuerpo estirado en flecha, brazos adelante tapando las orejas */}
+                <g className="tb-estirado" strokeLinecap="round" fill="none">
+                  <path d={`M22 ${y + 33.5} L46 ${y + 32}`} stroke={PIEL_LARGADA} strokeWidth="5.4" />
+                  <path d={`M46 ${y + 32} L63 ${y + 31}`} stroke={PIEL_LARGADA} strokeWidth="8.5" />
+                  <path d={`M43 ${y + 32.2} L50 ${y + 31.8}`} stroke="#2B2F4A" strokeWidth="9.2" />
+                  <path d={`M62 ${y + 30} L86 ${y + 29}`} stroke={PIEL_LARGADA} strokeWidth="3.6" />
+                  <circle cx="68" cy={y + 31.4} r="4.4" fill={PIEL_LARGADA} />
+                  <path d={`M63.8 ${y + 30.4} A4.6 4.6 0 0 1 72.2 ${y + 29.6} Z`} fill={a.gorra} />
+                  <circle cx="71.4" cy={y + 31.8} r="1.3" fill="#121017" />
+                </g>
+              </g>
+              {/* agua: va encima del nadador para que se vea cómo entra */}
+              <rect x="72" y={sup} width="288" height={H - 58} fill="rgba(70,150,190,0.55)" />
+              <line x1="72" y1={sup} x2="360" y2={sup} stroke="#7DD6C0" strokeWidth="1.5" opacity="0.7" />
+              <line x1="0" y1={y + H - 1} x2="360" y2={y + H - 1} stroke="#FF6B35" strokeWidth="2" strokeDasharray="5 5" opacity="0.45" />
+              <g className="tb-salp">
+                <path d={`M150 ${sup} q-9 -16 -16 -8 M158 ${sup} q2 -20 10 -12 M164 ${sup} q12 -14 18 -4`} stroke="#DDF4FF" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+                <ellipse cx="158" cy={sup + 1} rx="18" ry="3.5" fill="#DDF4FF" opacity="0.8" />
+              </g>
+            </g>
+          );
+        })}
+      </g>
+    </svg>
+  );
+}
+
+// Ranking de Largada: mejor tiempo de reacción de cada uno. El "equipo" de un alumno/a es su
+// subgrupo del plantel si tiene uno; si no, todo el plantel activo.
+function rankingLargada(alumnos, alumno) {
+  const equipo = (alumnos || []).filter((a) => a.activo !== false && (!alumno?.plantelGrupoId || a.plantelGrupoId === alumno.plantelGrupoId));
+  return equipo
+    .map((a) => { const rs = (a.reacciones || []).map((r) => r.ms).filter((x) => typeof x === "number"); return rs.length ? { id: a.id, nombre: a.nombre, mejor: Math.min(...rs), intentos: rs.length } : null; })
+    .filter(Boolean)
+    .sort((x, y) => x.mejor - y.mejor);
+}
+function nombreCorto(n) { const p = String(n || "").trim().split(/\s+/); return p.length > 1 ? `${p[0]} ${p[p.length - 1][0]}.` : p[0] || "—"; }
+function RankingLargada({ ranking, yoId, max = 5, titulo = "🏆 RANKING DEL EQUIPO" }) {
+  if (!ranking || ranking.length === 0) return null;
+  const pos = ranking.findIndex((r) => r.id === yoId);
+  const filas = ranking.slice(0, max);
+  const medalla = (i) => (i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}`);
+  const fila = (r, i) => {
+    const yo = r.id === yoId;
+    return (
+      <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", borderRadius: 8, background: yo ? "rgba(255,107,53,0.14)" : "transparent", border: yo ? "1px solid rgba(255,107,53,0.5)" : "1px solid transparent" }}>
+        <span className="font-display" style={{ width: 22, textAlign: "center", fontSize: i < 3 ? 15 : 12, color: "#8B8698" }}>{medalla(i)}</span>
+        <span className="font-body" style={{ flex: 1, textAlign: "left", fontSize: 12.5, fontWeight: yo ? 700 : 500, color: "#F4F1EA" }}>{yo ? "Vos" : nombreCorto(r.nombre)}</span>
+        <span className="font-display" style={{ fontSize: 14, color: i === 0 ? "#FFC94A" : "#7DD6C0", fontVariantNumeric: "tabular-nums" }}>{r.mejor} ms</span>
+      </div>
+    );
+  };
+  return (
+    <div style={{ width: "100%", maxWidth: yoId ? 320 : "none", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 12, padding: 10, boxSizing: "border-box" }}>
+      {titulo && <div className="font-body" style={{ fontSize: 10, color: "#FF6B35", fontWeight: 700, marginBottom: 4, textAlign: "left", letterSpacing: "0.04em" }}>{titulo}</div>}
+      {filas.map(fila)}
+      {pos >= max && (<><div className="font-body" style={{ color: "#6B6678", fontSize: 10, textAlign: "center" }}>⋯</div>{fila(ranking[pos], pos)}</>)}
+      {yoId && pos === -1 && <div className="font-body" style={{ color: "#8B8698", fontSize: 10.5, padding: "4px 8px", textAlign: "left" }}>Hacé tu primera largada para entrar al ranking.</div>}
+    </div>
+  );
+}
+
+function JuegoLargada({ reacciones, onGuardar, onClose, ranking, yoId }) {
   const [fase, setFase] = useState("listo"); // listo → marcas → ya → resultado | falsa
   const faseRef = useRef("listo");
   const [ms, setMs] = useState(null);
-  const [vivo, setVivo] = useState(0);
   const [intentos, setIntentos] = useState([]);
   const [esRecord, setEsRecord] = useState(false);
-  const t0 = useRef(0), timer = useRef(null), raf = useRef(null), audio = useRef(null);
+  const t0 = useRef(0), timer = useRef(null), raf = useRef(null), relojRef = useRef(null), oidoRef = useRef(0);
   const todos = (reacciones || []).map((r) => r.ms);
   const mejor = todos.length ? Math.min(...todos) : null;
   const cambiarFase = (f) => { faseRef.current = f; setFase(f); };
@@ -4125,27 +5115,37 @@ function JuegoLargada({ reacciones, onGuardar, onClose }) {
   useEffect(() => () => limpiar(), []);
 
   const senal = () => {
-    try { const a = audio.current; a.currentTime = 0; a.volume = 1; const p = a.play(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* sin sonido: queda la señal visual */ }
-    if (navigator.vibrate) navigator.vibrate(40);
-    t0.current = performance.now();
-    cambiarFase("ya");
-    const tick = () => { setVivo(performance.now() - t0.current); raf.current = requestAnimationFrame(tick); };
-    raf.current = requestAnimationFrame(tick);
+    // El pitido se programa apenas adelantado y la pantalla cambia justo cuando el sonido sale por
+    // el parlante: así los nadadores se tiran a la vez que se escucha. El cronómetro arranca ahí.
+    let oido = performance.now();
+    try { const o = sonarPitido(1, 0.06); if (o) oido = Math.max(oido, o); } catch (e) { /* sin sonido: queda la señal visual */ }
+    oidoRef.current = oido;
+    const esperar = () => {
+      if (performance.now() < oido - 6) { raf.current = requestAnimationFrame(esperar); return; }
+      if (navigator.vibrate) navigator.vibrate(40);
+      t0.current = oido;
+      cambiarFase("ya");
+      const tick = () => {
+        if (relojRef.current) relojRef.current.textContent = `${(Math.max(0, performance.now() - t0.current) / 1000).toFixed(3)} s`;
+        raf.current = requestAnimationFrame(tick);
+      };
+      raf.current = requestAnimationFrame(tick);
+    };
+    raf.current = requestAnimationFrame(esperar);
   };
   const empezar = () => {
-    limpiar(); setMs(null); setVivo(0); setEsRecord(false);
-    if (!audio.current) { audio.current = new Audio(urlPitido()); audio.current.preload = "auto"; }
+    limpiar(); setMs(null); setEsRecord(false); oidoRef.current = 0;
     // Este toque "desbloquea" el audio: los celulares solo dejan sonar después de un toque del usuario.
-    const a = audio.current; a.volume = 0;
-    a.play().then(() => { a.pause(); a.currentTime = 0; a.volume = 1; }).catch(() => { a.volume = 1; });
+    try { const ctx = audioPitido(); if (ctx && ctx.state !== "running") ctx.resume(); sonarPitido(0); } catch (e) { /* sin sonido */ }
     cambiarFase("marcas");
     timer.current = setTimeout(senal, 1800 + Math.random() * 2700);
   };
   const toque = () => {
     const f = faseRef.current;
-    if (f === "marcas") { limpiar(); cambiarFase("falsa"); setMs(null); }
-    else if (f === "ya") {
-      const dt = performance.now() - t0.current; // se mide en el instante del toque
+    const yaSono = oidoRef.current > 0 && performance.now() >= oidoRef.current; // el pitido ya salió aunque la pantalla no cambió
+    if (f === "marcas" && !yaSono) { limpiar(); cambiarFase("falsa"); setMs(null); }
+    else if (f === "ya" || f === "marcas") {
+      const dt = performance.now() - oidoRef.current; // se mide en el instante del toque, desde que sonó
       limpiar();
       const r = Math.round(dt);
       setMs(r);
@@ -4170,26 +5170,26 @@ function JuegoLargada({ reacciones, onGuardar, onClose }) {
         <div style={{ fontSize: 54 }}>⚡</div>
         <div className="font-display" style={{ fontSize: 32, fontWeight: 700, marginTop: 6 }}>LARGADA</div>
         <div className="font-body" style={{ color: "#7DD6C0", fontSize: 13, fontWeight: 700, marginTop: 2 }}>Activación neuromuscular</div>
-        <div className="font-body" style={{ color: "#8B8698", fontSize: 14, lineHeight: 1.5, maxWidth: 300, margin: "16px 0 18px" }}>Tocá <b style={{ color: "#F4F1EA" }}>Empezar</b> y esperá. Cuando suene el pitido y la pantalla se ponga <b style={{ color: "#33D6A6" }}>verde</b>, tocá lo más rápido que puedas. Si tocás antes, es salida en falso. Subí el volumen.</div>
+        <div className="font-body" style={{ color: "#8B8698", fontSize: 14, lineHeight: 1.5, maxWidth: 300, margin: "16px 0 18px" }}>Tocá <b style={{ color: "#F4F1EA" }}>Empezar</b> y esperá. Cuando suene el pitido y los nadadores se tiren al agua, tocá lo más rápido que puedas. Si tocás antes, es salida en falso. Subí el volumen.</div>
         {mejor !== null && <div className="font-display" style={{ fontSize: 15, color: "#FFC94A", marginBottom: 14 }}>🏆 Tu mejor tiempo: {mejor} ms</div>}
         <button onClick={empezar} className="font-display" style={btn("#FF6B35", "#121017")}>EMPEZAR</button>
+        {ranking && ranking.length > 0 && <div style={{ marginTop: 18, width: "100%", display: "flex", justifyContent: "center" }}><RankingLargada ranking={ranking} yoId={yoId} /></div>}
         <div className="font-body" style={{ color: "#6B6678", fontSize: 10, marginTop: 16, maxWidth: 280 }}>Menos de 100 ms cuenta como anticipación, igual que en una largada de natación.</div>
       </>)}
-      {fase === "marcas" && (<>
-        <div className="font-display" style={{ fontSize: 40, fontWeight: 700, color: "#FFC94A" }}>A SUS MARCAS…</div>
-        <div className="font-body" style={{ color: "#8B8698", fontSize: 14, marginTop: 14 }}>Esperá el pitido. No toques todavía.</div>
-      </>)}
-      {fase === "ya" && (<>
-        <div className="font-display" style={{ fontSize: 96, fontWeight: 700, lineHeight: 1 }}>¡YA!</div>
-        <div className="font-display" style={{ fontSize: 44, fontWeight: 600, marginTop: 20, fontVariantNumeric: "tabular-nums" }}>{(vivo / 1000).toFixed(3)} s</div>
-        <div className="font-body" style={{ fontSize: 15, marginTop: 14, fontWeight: 700 }}>¡TOCÁ!</div>
+      {(fase === "marcas" || fase === "ya") && (<>
+        <div className="font-display" style={{ fontSize: fase === "ya" ? 64 : 36, fontWeight: 700, lineHeight: 1, color: fase === "ya" ? "#0B2A2E" : "#FFC94A", minHeight: 64, display: "flex", alignItems: "center" }}>{fase === "ya" ? "¡YA!" : "A SUS MARCAS…"}</div>
+        <div style={{ width: "100%", maxWidth: 420, margin: "14px 0" }}><EscenaLargada largaron={fase === "ya"} /></div>
+        {fase === "ya"
+          ? <><div ref={relojRef} className="font-display" style={{ fontSize: 40, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>0.000 s</div><div className="font-body" style={{ fontSize: 15, marginTop: 6, fontWeight: 700 }}>¡TOCÁ!</div></>
+          : <div className="font-body" style={{ color: "#8B8698", fontSize: 14, minHeight: 64 }}>Esperá el pitido. Cuando se tiren al agua, tocá.</div>}
       </>)}
       {fase === "resultado" && (<>
         {esRecord && <div className="font-display" style={{ color: "#FFC94A", fontSize: 18, marginBottom: 6 }}>🏆 ¡NUEVO MEJOR TIEMPO!</div>}
         <div className="font-display" style={{ fontSize: 78, fontWeight: 700, color: "#7DD6C0", lineHeight: 1 }}>{ms}<span style={{ fontSize: 28 }}> ms</span></div>
         <div className="font-display" style={{ fontSize: 22, marginTop: 8 }}>{nivel(ms)}</div>
         {intentos.length > 1 && <div className="font-body" style={{ color: "#8B8698", fontSize: 12, marginTop: 14 }}>Esta sesión: {intentos.map((x) => `${x} ms`).join(" · ")} — promedio {Math.round(intentos.reduce((a, b) => a + b, 0) / intentos.length)} ms</div>}
-        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 26 }}>
+        {ranking && ranking.length > 0 && <div style={{ marginTop: 16, width: "100%", display: "flex", justifyContent: "center" }}><RankingLargada ranking={ranking} yoId={yoId} max={3} /></div>}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 18 }}>
           <button onClick={empezar} className="font-display" style={btn("#FF6B35", "#121017")}>OTRA VEZ</button>
           <button onClick={() => { limpiar(); onClose(); }} className="font-body" style={btn("#26232F", "#F4F1EA")}>Terminar</button>
         </div>
@@ -4203,7 +5203,7 @@ function JuegoLargada({ reacciones, onGuardar, onClose }) {
   ), document.body);
 }
 
-function AthleteInicio({ alumno, goEntrenar, onCheckin, onUpdateFoto, onMarcarAvisoVisto, onGuardarReaccion }) {
+function AthleteInicio({ alumno, goEntrenar, onCheckin, onUpdateFoto, onMarcarAvisoVisto, onGuardarReaccion, rankingReaccion }) {
   const [juego, setJuego] = useState(false);
   const primerDia = alumno.plan.dias[0];
   const total = flatEjercicios(primerDia).length;
@@ -4222,7 +5222,7 @@ function AthleteInicio({ alumno, goEntrenar, onCheckin, onUpdateFoto, onMarcarAv
             <input type="file" accept="image/*" style={{ display: "none" }} onChange={async (e) => {
               const file = e.target.files && e.target.files[0]; e.target.value = "";
               if (!file) return;
-              const dataUrl = await archivoADataURL(file, 500, 0.85);
+              const dataUrl = await archivoADataURL(file, 256, 0.8);
               onUpdateFoto(dataUrl);
             }} />
           </label>
@@ -4271,7 +5271,7 @@ function AthleteInicio({ alumno, goEntrenar, onCheckin, onUpdateFoto, onMarcarAv
             <span style={{ color: "#FF6B35", fontSize: 18 }}>▶</span>
           </button>
         )}
-        {juego && <JuegoLargada reacciones={alumno.reacciones} onGuardar={onGuardarReaccion} onClose={() => setJuego(false)} />}
+        {juego && <JuegoLargada reacciones={alumno.reacciones} onGuardar={onGuardarReaccion} onClose={() => setJuego(false)} ranking={rankingReaccion} yoId={alumno.id} />}
 
         {/* Check-in diario de ánimo — tu coach lo ve para saber cómo venís */}
         <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 14, padding: 16, marginBottom: 14 }}>
@@ -4343,7 +5343,7 @@ function formatObjetivo(obj) {
   return `Serie ${series} · Repeticiones ${reps}`;
 }
 
-function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizados }) {
+function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizados, onCerrarAvisosRM }) {
   // Si hay rutinas extra (además de la principal), la alumna puede elegir cuál está viendo/usando.
   const [rutinaActivaId, setRutinaActivaId] = useState(null); // null = la principal
   const planActivo = rutinaActivaId ? (alumno.planesSecundarios || []).find((p) => p.id === rutinaActivaId)?.plan || alumno.plan : alumno.plan;
@@ -4403,10 +5403,14 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
   const activeVideo = videoDe(activePE);
   const activeEsBusqueda = activeVideo.includes("youtube.com/results");
   const pesosSug = pesosSugeridos(planActivo.rm, activePE.nombre, rmDeSemana(activePE, semana));
+  const pesosAprox = pesosSug ? null : pesosAproxPorRIR(planActivo.rm, activePE.nombre, rmDeSemana(activePE, semana), objetivo);
 
   return (
     <div>
       <TopBar title="Entrenando" subtitle={`${dias[diaIdx].nombre}`} />
+      <div style={{ padding: "0 20px" }}>
+        <AvisosRM avisos={(alumno.avisosRM || []).filter((x) => x.por === "coach" && !x.visto_athlete).slice(-3)} titulo="Tu coach actualizó tu RM" onCerrar={onCerrarAvisosRM} />
+      </div>
 
       {selectorRutinas}
 
@@ -4462,7 +5466,8 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
               </div>
             )}
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {bloque.ejercicios.map((pe, iLocal) => {
+              {(() => {
+                const renderPE = (pe) => {
                 const i = ejercicios.findIndex((e) => e.id === pe.id);
                 const done = tieneNota(pe.id);
                 const obj = pe.tipo === "tabata" ? `Tabata ${pe.tabata.trabajo}s/${pe.tabata.descanso}s × ${pe.tabata.rounds}` : (pe.semanas[semana] || pe.semanas[0] || "—");
@@ -4478,8 +5483,11 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
                         </button>
                         <div className="font-body" style={{ color: "#8B8698", fontSize: 11, marginTop: 2 }}>
                           {formatObjetivo(obj)}{rmDeSemana(pe, semana) && ` · ${rmDeSemana(pe, semana)}`}
-                          {(() => { const sug = pesosSugeridos(planActivo.rm, pe.nombre, rmDeSemana(pe, semana)); return sug && sug.length ? <span style={{ color: "#7DD6C0", fontWeight: 700 }}> · {sug.map((p) => `${p}kg`).join("/")}</span> : null; })()}
+                          {(() => { const sug = pesosSugeridos(planActivo.rm, pe.nombre, rmDeSemana(pe, semana)); if (sug && sug.length) return <span style={{ color: "#7DD6C0", fontWeight: 700 }}> · {sug.map((p) => `${p}kg`).join("/")}</span>; const apx = pe.tipo === "tabata" ? null : pesosAproxPorRIR(planActivo.rm, pe.nombre, rmDeSemana(pe, semana), obj); return apx ? <span style={{ color: "#FFC94A", fontWeight: 700 }}> · ≈{apx.map((p) => `${p}kg`).join("/")} aprox.</span> : null; })()}
                         </div>
+                        {pe.nota && pe.nota.trim() && (
+                          <div className="font-body" style={{ color: "#FFC94A", fontSize: 10.5, fontWeight: 600, marginTop: 3, lineHeight: 1.35 }}>📝 {pe.nota}</div>
+                        )}
                       </div>
                       {rolPE && <span className="font-body" style={{ fontSize: 8, fontWeight: 700, color: rolPE.color, background: `${rolPE.color}22`, borderRadius: 999, padding: "3px 7px", flexShrink: 0 }}>{rolPE.label}</span>}
                       {activeId === pe.id && pe.video && <span className="font-body" style={{ fontSize: 8, color: "#FF6B35", flexShrink: 0 }}>▶ tocá de nuevo</span>}
@@ -4490,15 +5498,20 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
                         🔗 SIN DESCANSO
                       </div>
                     )}
-                    {pe.circuito && i < ejercicios.length - 1 && (
-                      <div className="font-body" style={{ display: "flex", alignItems: "center", gap: 6, margin: "2px 0 2px 20px", color: "#AA6EE6", fontSize: 9, fontWeight: 700 }}>
-                        <div style={{ width: 2, height: 12, background: "#AA6EE6" }} />
-                        🔁 CIRCUITO
-                      </div>
-                    )}
                   </div>
                 );
-              })}
+                };
+                // Los ejercicios unidos como circuito se muestran juntos, en un recuadro aparte del resto.
+                return agruparCircuitos(bloque.ejercicios).map((grupo) => grupo.length < 2 ? renderPE(grupo[0]) : (
+                  <div key={"c" + grupo[0].id} style={{ border: "1px solid #AA6EE6", borderRadius: 14, background: "rgba(170,110,230,0.06)", padding: "10px 8px 8px", margin: "6px 0" }}>
+                    <div className="font-body" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 4px 8px" }}>
+                      <span style={{ color: "#AA6EE6", fontSize: 11, fontWeight: 800, letterSpacing: 0.5 }}>🔁 CIRCUITO · {grupo.length} EJERCICIOS</span>
+                      <span style={{ color: "#8B8698", fontSize: 9.5 }}>Hacelos seguidos, uno tras otro</span>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{grupo.map((pe) => renderPE(pe))}</div>
+                  </div>
+                ));
+              })()}
             </div>
           </div>
         ))}
@@ -4525,6 +5538,13 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
                   <div className="font-body" style={{ color: "#8B8698", fontSize: 10 }}>{maxSemanas > 1 ? `Objetivo — semana ${semana + 1}` : "Objetivo"}</div>
                   <div className="font-display" style={{ color: "#F4F1EA", fontSize: 18, fontWeight: 700 }}>{formatObjetivo(objetivo)}</div>
                 </div>
+                {pesosAprox && (
+                  <div style={{ background: "rgba(255,201,74,0.10)", border: "1px dashed #FFC94A", borderRadius: 12, padding: "10px 14px" }}>
+                    <div className="font-body" style={{ color: "#FFC94A", fontSize: 10, fontWeight: 700 }}>PESO APROXIMADO ({rmDeSemana(activePE, semana)})</div>
+                    <div className="font-display" style={{ color: "#F4F1EA", fontSize: 20, fontWeight: 700 }}>≈ {pesosAprox.map((p) => `${p}kg`).join(" / ")}</div>
+                    <div className="font-body" style={{ color: "#B9B4C4", fontSize: 10, marginTop: 3, lineHeight: 1.35 }}>Es una guía calculada con tu RM. Elegí el peso según cómo te sientas hoy: con RIR {String(rmDeSemana(activePE, semana)).match(/rir\s*(\d+(?:[.,]\d+)?)/i)?.[1]} te tienen que quedar unas {String(rmDeSemana(activePE, semana)).match(/rir\s*(\d+(?:[.,]\d+)?)/i)?.[1]} repeticiones en reserva. Si te cuesta más o menos, ajustalo.</div>
+                  </div>
+                )}
                 {pesosSug && pesosSug.length > 0 && (
                   <div style={{ background: "rgba(125,214,192,0.12)", border: "1px solid #7DD6C0", borderRadius: 12, padding: "10px 14px" }}>
                     <div className="font-body" style={{ color: "#7DD6C0", fontSize: 10, fontWeight: 700 }}>{pesosSug.length > 1 ? "PESOS A USAR" : "PESO A USAR"} ({rmDeSemana(activePE, semana)})</div>
@@ -4747,27 +5767,624 @@ function CompetitionCountdown({ competencias }) {
   );
 }
 
-function AthleteProgreso({ alumno, onGuardarHistorialRM }) {
+// ---------- Marcas de natación ----------
+// Tiempos por prueba (ej. 100 Libre 1:02.35). Se cargan a mano, o se pegan de una vez copiando el
+// listado de marcas de SwimMoments (o de cualquier resultado de torneo): la app reconoce cada
+// línea con distancia, estilo y tiempo. SwimMoments no ofrece una conexión abierta para que otra
+// app lea las marcas sola, por eso se guarda también el link al perfil del nadador para abrirlo.
+const ESTILOS_NATACION = ["Libre", "Espalda", "Pecho", "Mariposa", "Combinado"];
+const DISTANCIAS_NATACION = [50, 100, 200, 400, 800, 1500];
+function aSegundos(txt) {
+  const t = String(txt || "").trim().replace(",", ".");
+  let m = t.match(/^(\d{1,2})[:'.](\d{2})[.,:](\d{1,2})$/);
+  if (m) return parseInt(m[1]) * 60 + parseInt(m[2]) + parseInt(m[3].padEnd(2, "0")) / 100;
+  m = t.match(/^(\d{1,2}):(\d{2})$/);
+  if (m) return parseInt(m[1]) * 60 + parseInt(m[2]);
+  m = t.match(/^(\d{1,3})(?:\.(\d{1,2}))?$/);
+  if (m) return parseInt(m[1]) + (m[2] ? parseInt(m[2].padEnd(2, "0")) / 100 : 0);
+  return null;
+}
+function fmtTiempo(seg) {
+  if (seg == null || isNaN(seg)) return "—";
+  const min = Math.floor(seg / 60);
+  const resto = seg - min * 60;
+  const ss = resto.toFixed(2).padStart(5, "0");
+  return min ? `${min}:${ss}` : resto.toFixed(2);
+}
+function estiloDesdeTexto(t) {
+  const n = normalizarTexto(t);
+  if (/combinad|medley|\bci\b|\bim\b/.test(n)) return "Combinado";
+  if (/libre|crol|croll|free|\bl\b/.test(n)) return "Libre";
+  if (/espalda|back|\be\b/.test(n)) return "Espalda";
+  if (/pecho|braza|breast|\bp\b/.test(n)) return "Pecho";
+  if (/mariposa|butterfly|fly|\bm\b/.test(n)) return "Mariposa";
+  return null;
+}
+// Lee un texto pegado y devuelve las marcas que encuentra, una por línea.
+function leerMarcasPegadas(texto) {
+  const out = [];
+  String(texto || "").split(/\n+/).forEach((linea) => {
+    const dist = linea.match(/\b(50|100|200|400|800|1500)\s*(m|mts|metros)?\b/i);
+    const tiempo = linea.match(/\b(\d{1,2}[:'.]\d{2}[.,:]\d{1,2}|\d{2}[.,]\d{2})\b/);
+    const estilo = estiloDesdeTexto(linea.replace(dist ? dist[0] : "", " "));
+    if (!dist || !tiempo || !estilo) return;
+    const seg = aSegundos(tiempo[1]);
+    if (!seg) return;
+    const f = linea.match(/\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b/) || null;
+    const fi = linea.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+    let fecha = todayISO();
+    if (fi) fecha = fi[0];
+    else if (f) fecha = `${f[3].length === 2 ? "20" + f[3] : f[3]}-${f[2].padStart(2, "0")}-${f[1].padStart(2, "0")}`;
+    const pileta = /\b25\s*m\b|pileta corta|\bsc\b|scm/i.test(linea) ? "25" : /\b50\s*m\b.*pileta|pileta larga|\blc\b|lcm/i.test(linea) ? "50" : "";
+    out.push({ id: uid(), distancia: parseInt(dist[1]), estilo, segundos: seg, fecha, pileta, torneo: "", origen: "pegado" });
+  });
+  return out;
+}
+
+// ---------- SwimRecords (swimrecords.com.ar) ----------
+// Sitio público con los resultados de los torneos de natación de Argentina. Se leen sus datos
+// públicos (los mismos que muestra su página de Atletas) para traer solos los tiempos de cada
+// alumno/a: se busca al nadador una vez, se vincula, y después sus tiempos nuevos se suman solos.
+const SR_URL = "https://npmzwmeljjammwnlfpdp.supabase.co/rest/v1";
+const SR_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wbXp3bWVsamphbW13bmxmcGRwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4MTAzNjksImV4cCI6MjA4ODM4NjM2OX0.6Ac9_Vuk5Os2e9BsY6qGuuouuK8XvctqRgY7nPXyRUQ";
+async function srGet(ruta) {
+  const r = await fetch(`${SR_URL}/${ruta}`, { headers: { apikey: SR_KEY, Authorization: `Bearer ${SR_KEY}` } });
+  if (!r.ok) throw new Error("SwimRecords no respondió (" + r.status + ").");
+  return r.json();
+}
+// Busca nadadores por nombre, tolerando errores (ej. "Agustina Hain" encuentra "HEIN, AGOSTINA").
+async function buscarEnSwimRecords(texto) {
+  const palabras = normalizarTexto(texto).replace(/[^a-z ñ]/g, " ").split(/\s+/).filter((w) => w.length >= 3);
+  if (!palabras.length) return [];
+  // las vocales van como comodín (_) para que "hain" también encuentre "hein"
+  const patrones = palabras.map((w) => `canonical_name.ilike.*${encodeURIComponent(w.replace(/[aeiouñ]/g, "_"))}*`);
+  const filas = await srGet(`hytek_athlete_index?select=id,slug,canonical_name,club_last_seen,birth_year,gender,swim_count&merged_into_id=is.null&or=(${patrones.join(",")})&order=swim_count.desc.nullslast&limit=400`);
+  const puntuar = (f) => {
+    const partes = normalizarTexto(f.canonical_name).replace(/[^a-z ñ]/g, " ").split(/\s+/).filter(Boolean);
+    let total = 0, todas = true;
+    for (const w of palabras) {
+      const d = Math.min(...partes.map((p) => (p.startsWith(w) ? 0 : distanciaEdicion(w, p))));
+      if (d > Math.max(1, Math.floor(w.length / 4))) todas = false;
+      total += Math.min(d, 5);
+    }
+    return { total, todas };
+  };
+  return filas
+    .map((f) => ({ f, ...puntuar(f) }))
+    .sort((a, b) => (b.todas - a.todas) || a.total - b.total || (b.f.swim_count || 0) - (a.f.swim_count || 0))
+    .filter((x, i, arr) => x.todas || (!arr.some((y) => y.todas) && i < 8))
+    .slice(0, 12)
+    .map(({ f }) => ({ id: f.id, slug: f.slug, nombre: f.canonical_name, club: f.club_last_seen || "", anio: f.birth_year || null, pruebas: f.swim_count || 0 }));
+}
+// Trae todos los tiempos individuales de un nadador (incluye fichas duplicadas que SwimRecords ya
+// unió a esta) y los devuelve con el mismo formato que las marcas cargadas a mano.
+async function traerTiemposSwimRecords(fichas) {
+  const base = (Array.isArray(fichas) ? fichas : [fichas]).filter(Boolean);
+  if (!base.length) return [];
+  const unidos = await srGet(`hytek_athlete_index?select=id&merged_into_id=in.(${base.join(",")})`);
+  const ids = [...new Set([...base, ...unidos.map((x) => x.id)])];
+  const res = await srGet(`hytek_athlete_results?select=id,competition_id,event_name,distance,stroke,time_finals,status,splits&athlete_id=in.(${ids.join(",")})`);
+  const compIds = [...new Set(res.map((r) => r.competition_id).filter(Boolean))];
+  const comps = {};
+  for (let i = 0; i < compIds.length; i += 80) {
+    (await srGet(`hytek_competitions?select=id,name,start_date,pool_type&id=in.(${compIds.slice(i, i + 80).join(",")})`)).forEach((c) => { comps[c.id] = c; });
+  }
+  const out = [];
+  for (const r of res) {
+    if (r.status && String(r.status).trim()) continue; // descalificado / no se presentó
+    if (/relevo|relay/i.test(`${r.stroke || ""} ${r.event_name || ""}`)) continue;
+    const segundos = aSegundos(r.time_finals);
+    if (!segundos || !r.distance) continue;
+    const estilo = ESTILOS_NATACION.includes(r.stroke) ? r.stroke : estiloDesdeTexto(String(r.event_name || "").replace(/^Evento\s+\d+/i, ""));
+    if (!estilo) continue;
+    const c = comps[r.competition_id] || {};
+    const ev = String(r.event_name || "");
+    const pileta = /\b(SC|CC)\b/.test(ev) ? "25" : /\b(LC|CL)\b/.test(ev) ? "50" : c.pool_type === "SC" ? "25" : c.pool_type === "LC" ? "50" : "";
+    out.push({ id: `sr-${r.id}`, distancia: r.distance, estilo, segundos, fecha: c.start_date || "", pileta, torneo: c.name || "", origen: "swimrecords", parciales: Array.isArray(r.splits) ? r.splits.slice(0, 32) : null });
+  }
+  return out;
+}
+
+// ---- Encontrar solo la ficha de SwimRecords de un alumno/a ----
+// SwimRecords a veces tiene al mismo nadador repetido con el nombre cortado (ej. "ARBELECHE
+// GALLARDO, H" y "ARBELECHE GALLA"), así que un alumno puede quedar vinculado a varias fichas:
+// la principal (nombre y apellido coinciden) y las cortadas del mismo club y año de nacimiento.
+const _palabrasNombre = (s) => normalizarTexto(s).replace(/[^a-z ñ]/g, " ").split(/\s+/).filter(Boolean);
+function _coincidePalabra(deAlumno, deFicha) {
+  if (!deAlumno || !deFicha) return false;
+  if (deAlumno === deFicha) return true;
+  if (deFicha.length >= 3 && deAlumno.startsWith(deFicha)) return true; // nombre cortado en SwimRecords
+  const tol = Math.min(deAlumno.length, deFicha.length) >= 6 ? 2 : 1;
+  return distanciaEdicion(deAlumno, deFicha) <= tol;
+}
+// 3 = apellido y nombre coinciden · 2 = apellido + inicial · 1 = solo apellido (nombre cortado) · 0 = no
+function parecidoConFicha(nombreAlumno, nombreFicha) {
+  const al = _palabrasNombre(nombreAlumno);
+  const [ape, nom = ""] = String(nombreFicha || "").split(",");
+  const apes = _palabrasNombre(ape), noms = _palabrasNombre(nom);
+  const usados = al.filter((w) => apes.some((x) => _coincidePalabra(w, x)));
+  if (!usados.length) return 0;
+  const resto = al.filter((w) => !usados.includes(w));
+  if (!noms.length) return 1;
+  if (noms.some((x) => x.length > 1 && resto.some((w) => _coincidePalabra(w, x)))) return 3;
+  if (noms.length === 1 && noms[0].length === 1) return resto.some((w) => w[0] === noms[0]) ? 2 : 0;
+  return 0;
+}
+const _cacheClubSR = {};
+async function plantelSwimRecords(club) {
+  const k = normalizarTexto(club).trim();
+  if (!k) return [];
+  const c = _cacheClubSR[k];
+  if (c && Date.now() - c.t < 30 * 60 * 1000) return c.filas;
+  const filas = await srGet(`hytek_athlete_index?select=id,canonical_name,club_last_seen,birth_year,swim_count&merged_into_id=is.null&club_last_seen=ilike.${encodeURIComponent(club.trim())}&limit=1000`);
+  _cacheClubSR[k] = { t: Date.now(), filas };
+  return filas;
+}
+// Arma el vínculo a partir de la ficha principal: le suma las fichas cortadas del mismo nadador.
+async function vinculoDesdeFicha(principal, nombreAlumno) {
+  let extras = [];
+  if (principal.club) {
+    const plantel = await plantelSwimRecords(principal.club).catch(() => []);
+    extras = plantel.filter((f) => f.id !== principal.id && f.birth_year === principal.anio && Math.max(parecidoConFicha(nombreAlumno, f.canonical_name), parecidoConFicha(principal.nombre.replace(",", " "), f.canonical_name)) >= 1);
+  }
+  return { ids: [principal.id, ...extras.map((f) => f.id)], nombre: principal.nombre, club: principal.club, anio: principal.anio };
+}
+// Busca solo la ficha de un alumno/a: primero en el plantel del club, después en todo SwimRecords
+// (solo si es nadador/a). Si hay dudas (dos personas posibles), no vincula nada.
+async function encontrarFichaSwimRecords(alumno, club) {
+  const nombre = alumno.nombre || "";
+  if (_palabrasNombre(nombre).length < 2) return null;
+  const elegir = (filas) => {
+    const pts = filas.map((f) => ({ f, p: parecidoConFicha(nombre, f.canonical_name) }));
+    const mejor = Math.max(0, ...pts.map((x) => x.p));
+    if (mejor < 2) return null;
+    const top = pts.filter((x) => x.p === mejor);
+    if (new Set(top.map((x) => x.f.birth_year)).size > 1) return null; // dos personas distintas: mejor no adivinar
+    const f = top.sort((a, b) => (b.f.swim_count || 0) - (a.f.swim_count || 0))[0].f;
+    return { id: f.id, nombre: f.canonical_name, club: f.club_last_seen || "", anio: f.birth_year || null };
+  };
+  let principal = club ? elegir(await plantelSwimRecords(club)) : null;
+  if (!principal && /nata|swim|pileta/i.test(`${alumno.deportes || ""} ${alumno.pruebasNatacion || ""} ${alumno.equipo || ""}`)) {
+    const enc = await buscarEnSwimRecords(nombre);
+    principal = elegir(enc.map((e) => ({ id: e.id, canonical_name: e.nombre, club_last_seen: e.club, birth_year: e.anio, swim_count: e.pruebas })));
+  }
+  return principal ? vinculoDesdeFicha(principal, nombre) : null;
+}
+const SwimRecordsCtx = React.createContext(null);
+const haceCuanto = (iso) => {
+  if (!iso) return "";
+  const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (min < 2) return "recién";
+  if (min < 60) return `hace ${min} min`;
+  const h = Math.round(min / 60);
+  return h < 24 ? `hace ${h} h` : `hace ${Math.round(h / 24)} días`;
+};
+
+// Vínculo del alumno/a con su ficha de SwimRecords: buscar, vincular, actualizar y avisos de
+// mejores marcas.
+function BloqueSwimRecords({ alumno, onChange, puedeVincular }) {
+  const sr = React.useContext(SwimRecordsCtx);
+  const v = alumno.swimrecords || {};
+  const vinculado = Array.isArray(v.ids) && v.ids.length > 0;
+  const [buscando, setBuscando] = useState(false);
+  const [texto, setTexto] = useState(alumno.nombre || "");
+  const [resultados, setResultados] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState(null);
+  const [info, setInfo] = useState(null);
+  if (!sr) return null;
+  const buscar = async () => {
+    setCargando(true); setError(null); setResultados(null);
+    try { setResultados(await buscarEnSwimRecords(texto)); } catch (e) { setError("No se pudo conectar con SwimRecords. Probá de nuevo en un rato."); }
+    setCargando(false);
+  };
+  const vincular = async (r) => {
+    setCargando(true); setError(null);
+    try {
+      const vin = await vinculoDesdeFicha(r, alumno.nombre || r.nombre);
+      const res = await sr.sincronizar(alumno.id, { ...vin, automatico: false });
+      setInfo(res ? `✓ Vinculado. Se cargaron ${res.nuevas} ${res.nuevas === 1 ? "tiempo" : "tiempos"} de SwimRecords.` : "✓ Vinculado.");
+      setBuscando(false); setResultados(null);
+    } catch (e) { setError("No se pudieron traer los tiempos. Probá de nuevo en un rato."); }
+    setCargando(false);
+  };
+  const actualizar = async () => {
+    setCargando(true); setError(null);
+    try {
+      const res = await sr.sincronizar(alumno.id);
+      setInfo(res && res.nuevas ? `✓ ${res.nuevas} ${res.nuevas === 1 ? "tiempo nuevo" : "tiempos nuevos"}.` : "✓ Ya estaba todo al día.");
+    } catch (e) { setError("No se pudo conectar con SwimRecords. Probá de nuevo en un rato."); }
+    setCargando(false);
+  };
+  const mejoras = (v.mejoras || []).filter((m) => !m.visto);
+  const caja = { background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: 9, marginTop: 6 };
+  const inp = { background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "7px 8px", fontSize: 11, boxSizing: "border-box" };
+  return (
+    <div style={{ marginTop: 4 }}>
+      {mejoras.length > 0 && (
+        <div style={{ background: "rgba(51,214,166,0.1)", border: "1px solid #33D6A6", borderRadius: 8, padding: "8px 10px", marginBottom: 6 }}>
+          <div style={{ display: "flex", alignItems: "center" }}>
+            <div className="font-body" style={{ flex: 1, color: "#33D6A6", fontSize: 10, fontWeight: 700 }}>🎉 {mejoras.length === 1 ? "NUEVA MEJOR MARCA" : "NUEVAS MEJORES MARCAS"}</div>
+            <button onClick={() => onChange({ swimrecords: { ...v, mejoras: (v.mejoras || []).map((m) => ({ ...m, visto: true })) } })} style={{ background: "none", border: "none", color: "#8B8698", cursor: "pointer" }}>✕</button>
+          </div>
+          {mejoras.map((m) => (
+            <div key={m.id} className="font-body" style={{ color: "#F4F1EA", fontSize: 11, marginTop: 3 }}>
+              <b>{m.prueba}</b>: {fmtTiempo(m.de)} → <b style={{ color: "#33D6A6" }}>{fmtTiempo(m.a)}</b> <span style={{ color: "#33D6A6", fontSize: 9, fontWeight: 700 }}>(−{(m.de - m.a).toFixed(2)} s)</span>{m.torneo ? <span style={{ color: "#8B8698", fontSize: 9 }}> · {m.torneo}</span> : null}
+            </div>
+          ))}
+        </div>
+      )}
+      {(info || error) && (
+        <div className="font-body" style={{ display: "flex", gap: 8, alignItems: "center", background: error ? "rgba(232,93,93,0.1)" : "rgba(125,214,192,0.08)", border: `1px solid ${error ? "#E85D5D" : "#7DD6C0"}`, borderRadius: 8, padding: "7px 9px", marginBottom: 6, color: "#F4F1EA", fontSize: 10.5 }}>
+          <span style={{ flex: 1 }}>{error || info}</span>
+          <button onClick={() => { setInfo(null); setError(null); }} style={{ background: "none", border: "none", color: "#8B8698", cursor: "pointer" }}>✕</button>
+        </div>
+      )}
+      {vinculado ? (
+        <div style={{ ...caja, display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="font-body" style={{ color: "#F4F1EA", fontSize: 11, fontWeight: 700 }}>🔗 SwimRecords: {v.nombre}</div>
+            <div className="font-body" style={{ color: "#8B8698", fontSize: 9.5, marginTop: 2 }}>
+              {[v.club, v.anio].filter(Boolean).join(" · ")}{v.ids.length > 1 ? ` · ${v.ids.length} fichas` : ""}{v.ultimaSync ? ` · actualizado ${haceCuanto(v.ultimaSync)}` : ""}
+            </div>
+            <div className="font-body" style={{ color: "#6B6678", fontSize: 9, marginTop: 2 }}>{v.automatico ? "Vinculado solo por nombre y club. " : ""}Los tiempos nuevos se suman solos.</div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <button disabled={cargando} onClick={actualizar} className="font-body" style={{ background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#7DD6C0", fontWeight: 700, fontSize: 10, padding: "5px 9px", cursor: "pointer", whiteSpace: "nowrap" }}>{cargando ? "…" : "↻ Actualizar"}</button>
+            {puedeVincular && <button onClick={() => { if (window.confirm("¿Desvincular de SwimRecords? Los tiempos ya cargados quedan.")) onChange({ swimrecords: { noVincular: true } }); }} className="font-body" style={{ background: "none", border: "none", color: "#8B8698", fontSize: 9.5, cursor: "pointer" }}>{v.automatico ? "No es este/a" : "Desvincular"}</button>}
+          </div>
+        </div>
+      ) : puedeVincular ? (
+        buscando ? (
+          <div style={caja}>
+            <div className="font-body" style={{ color: "#8B8698", fontSize: 9.5, marginBottom: 6 }}>Buscá al nadador/a en SwimRecords (no importa si el nombre está un poco distinto).</div>
+            <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+              <input value={texto} onChange={(e) => setTexto(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") buscar(); }} placeholder="Nombre y apellido" className="font-body" style={{ ...inp, flex: 1, minWidth: 0 }} />
+              <button disabled={cargando} onClick={buscar} className="font-body" style={{ background: "#7DD6C0", border: "none", borderRadius: 6, color: "#0B2A2E", fontWeight: 700, fontSize: 11, padding: "0 12px", cursor: "pointer" }}>{cargando ? "…" : "Buscar"}</button>
+            </div>
+            {resultados && resultados.length === 0 && <div className="font-body" style={{ color: "#6B6678", fontSize: 10.5 }}>No apareció nadie con ese nombre. Probá solo con el apellido.</div>}
+            {(resultados || []).map((r) => (
+              <button key={r.id} disabled={cargando} onClick={() => vincular(r)} className="font-body" style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, padding: "8px 9px", marginBottom: 5, cursor: "pointer", textAlign: "left" }}>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: "block", color: "#F4F1EA", fontSize: 11, fontWeight: 700 }}>{r.nombre}</span>
+                  <span style={{ display: "block", color: "#8B8698", fontSize: 9.5 }}>{[r.club, r.anio, `${r.pruebas} pruebas`].filter(Boolean).join(" · ")}</span>
+                </span>
+                <span style={{ color: "#7DD6C0", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}>Es este/a ›</span>
+              </button>
+            ))}
+            <button onClick={() => { setBuscando(false); setResultados(null); }} className="font-body" style={{ width: "100%", background: "none", border: "none", color: "#8B8698", fontSize: 10, padding: 4, cursor: "pointer" }}>Cancelar</button>
+          </div>
+        ) : (
+          <button onClick={() => { setBuscando(true); setTexto(alumno.nombre || ""); }} className="font-body" style={{ width: "100%", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, color: "#F4F1EA", fontWeight: 700, fontSize: 11, padding: 9, cursor: "pointer", marginTop: 6 }}>🔎 Buscar sus tiempos en SwimRecords</button>
+        )
+      ) : null}
+    </div>
+  );
+}
+
+// Parciales de una carrera (vienen acumulados: "28.86", "1:00.45", ...) → tramos con su tiempo.
+function tramosDeParciales(m) {
+  const acum = (m.parciales || []).map(aSegundos).filter((x) => x != null);
+  if (acum.length < 2) return null;
+  const largo = m.distancia / acum.length;
+  return acum.map((t, i) => ({ desde: Math.round(i * largo), hasta: Math.round((i + 1) * largo), tramo: t - (i ? acum[i - 1] : 0), acum: t }));
+}
+// Compara dos carreras tramo por tramo (como los gráficos de "Time Splits"): en verde el tramo
+// más rápido, en rojo el más lento, y cuánto se ganó o perdió en cada uno.
+function ParcialesComparados({ marcas }) {
+  const conParciales = marcas.filter((m) => tramosDeParciales(m));
+  const porFecha = [...conParciales].sort((x, y) => (y.fecha || "").localeCompare(x.fecha || ""));
+  const [idA, setIdA] = useState(porFecha[0]?.id);
+  const otras = porFecha.filter((m) => m.id !== idA);
+  const mejorOtra = otras.length ? otras.reduce((x, y) => (y.segundos < x.segundos ? y : x)) : null;
+  const [idB, setIdB] = useState(null);
+  const [abierto, setAbierto] = useState(false);
+  if (!conParciales.length) return null;
+  const A = conParciales.find((m) => m.id === idA) || porFecha[0];
+  const B = conParciales.find((m) => m.id === idB && m.id !== A.id) || mejorOtra;
+  const ta = tramosDeParciales(A), tb = B ? tramosDeParciales(B) : null;
+  const comparables = tb && tb.length === ta.length;
+  const etiqueta = (m) => `${fmtTiempo(m.segundos)} · ${m.fecha ? mostrarFecha(m.fecha) : "sin fecha"}`;
+  const sel = { background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "4px 6px", fontSize: 10, maxWidth: "100%" };
+  const maxDif = comparables ? Math.max(0.01, ...ta.map((t, i) => Math.abs(t.tramo - tb[i].tramo))) : 1;
+  if (!abierto) {
+    return (
+      <button onClick={() => setAbierto(true)} className="font-body" style={{ width: "100%", background: "rgba(170,110,230,0.1)", border: "1px solid #AA6EE6", borderRadius: 8, color: "#C9A5F0", fontWeight: 700, fontSize: 10.5, padding: 7, margin: "4px 0 6px", cursor: "pointer" }}>
+        📊 Ver parciales{otras.length ? " y comparar carreras" : ""} ({conParciales.length} {conParciales.length === 1 ? "carrera" : "carreras"} con parciales)
+      </button>
+    );
+  }
+  return (
+    <div style={{ background: "#151319", border: "1px solid #AA6EE6", borderRadius: 10, padding: 9, margin: "4px 0 8px" }}>
+      <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
+        <div className="font-body" style={{ flex: 1, color: "#C9A5F0", fontSize: 10, fontWeight: 700 }}>📊 PARCIALES TRAMO POR TRAMO</div>
+        <button onClick={() => setAbierto(false)} style={{ background: "none", border: "none", color: "#8B8698", cursor: "pointer" }}>✕</button>
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+        <label className="font-body" style={{ color: "#FFC94A", fontSize: 9.5, display: "flex", flexDirection: "column", gap: 2, flex: 1, minWidth: 130 }}>● Carrera A
+          <select value={A.id} onChange={(e) => setIdA(e.target.value)} style={sel}>{porFecha.map((m) => <option key={m.id} value={m.id}>{etiqueta(m)}</option>)}</select>
+        </label>
+        {otras.length > 0 && (
+          <label className="font-body" style={{ color: "#5AA0E6", fontSize: 9.5, display: "flex", flexDirection: "column", gap: 2, flex: 1, minWidth: 130 }}>● Comparar con B
+            <select value={B ? B.id : ""} onChange={(e) => setIdB(e.target.value)} style={sel}>{otras.map((m) => <option key={m.id} value={m.id}>{etiqueta(m)}{mejorOtra && m.id === mejorOtra.id ? " (mejor)" : ""}</option>)}</select>
+          </label>
+        )}
+      </div>
+      {B && !comparables && <div className="font-body" style={{ color: "#8B8698", fontSize: 9.5, marginBottom: 6 }}>Estas dos carreras tienen los parciales tomados distinto, así que se muestran solo los de A.</div>}
+      <div className="font-body" style={{ display: "grid", gridTemplateColumns: comparables ? "54px 1fr 1fr 1fr" : "54px 1fr 1fr", gap: "3px 6px", fontSize: 10, alignItems: "center" }}>
+        <span style={{ color: "#6B6678", fontSize: 8.5 }}>TRAMO</span>
+        <span style={{ color: "#FFC94A", fontSize: 8.5, textAlign: "right" }}>A</span>
+        {comparables && <span style={{ color: "#5AA0E6", fontSize: 8.5, textAlign: "right" }}>B</span>}
+        <span style={{ color: "#6B6678", fontSize: 8.5, textAlign: "right" }}>{comparables ? "DIFERENCIA" : "ACUMULADO"}</span>
+        {ta.map((t, i) => {
+          const b = comparables ? tb[i] : null;
+          const d = b ? t.tramo - b.tramo : null;
+          const colA = b ? (d < 0 ? "#33D6A6" : d > 0 ? "#E85D5D" : "#F4F1EA") : "#F4F1EA";
+          const colB = b ? (d > 0 ? "#33D6A6" : d < 0 ? "#E85D5D" : "#F4F1EA") : "#F4F1EA";
+          return (
+            <React.Fragment key={i}>
+              <span style={{ color: "#8B8698" }}>{t.desde}–{t.hasta}</span>
+              <span style={{ color: colA, fontWeight: 700, textAlign: "right" }}>{t.tramo.toFixed(2)}</span>
+              {comparables && <span style={{ color: colB, fontWeight: 700, textAlign: "right" }}>{b.tramo.toFixed(2)}</span>}
+              {comparables ? (
+                <span style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }}>
+                  <span style={{ width: 40, height: 6, background: "#26232F", borderRadius: 3, position: "relative", overflow: "hidden" }}>
+                    <span style={{ position: "absolute", top: 0, bottom: 0, [d <= 0 ? "right" : "left"]: "50%", width: `${(Math.abs(d) / maxDif) * 50}%`, background: d <= 0 ? "#33D6A6" : "#E85D5D" }} />
+                  </span>
+                  <span style={{ color: d < 0 ? "#33D6A6" : d > 0 ? "#E85D5D" : "#8B8698", fontWeight: 700, minWidth: 38, textAlign: "right" }}>{d > 0 ? "+" : ""}{d.toFixed(2)}</span>
+                </span>
+              ) : <span style={{ color: "#B8B3C4", textAlign: "right" }}>{fmtTiempo(t.acum)}</span>}
+            </React.Fragment>
+          );
+        })}
+      </div>
+      {comparables && (() => {
+        const dif = A.segundos - B.segundos;
+        const gana = ta.map((t, i) => t.tramo - tb[i].tramo);
+        const peor = gana.indexOf(Math.max(...gana)), mejor = gana.indexOf(Math.min(...gana));
+        return (
+          <div className="font-body" style={{ color: "#B8B3C4", fontSize: 9.5, marginTop: 8, lineHeight: 1.4 }}>
+            Total: A {fmtTiempo(A.segundos)} vs B {fmtTiempo(B.segundos)} → <b style={{ color: dif <= 0 ? "#33D6A6" : "#E85D5D" }}>{dif <= 0 ? `A fue ${Math.abs(dif).toFixed(2)} s más rápida` : `A fue ${dif.toFixed(2)} s más lenta`}</b>.
+            {gana[mejor] < 0 && <> Donde más ganó: <b>{ta[mejor].desde}–{ta[mejor].hasta} m</b> ({gana[mejor].toFixed(2)} s).</>}
+            {gana[peor] > 0 && <> Donde más perdió: <b>{ta[peor].desde}–{ta[peor].hasta} m</b> (+{gana[peor].toFixed(2)} s).</>}
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+// Cruce gimnasio ↔ pileta de los últimos meses: cuánto entrenó, cómo subieron sus RM y cuánto
+// bajaron sus tiempos en la misma época. Muestra tendencias juntas (no dice que una cause la otra).
+function cruceGimnasioPileta(alumno, dias = 90) {
+  const desde = new Date(Date.now() - dias * 864e5).toISOString().slice(0, 10);
+  const sesiones = (alumno.historialSesiones || []).filter((f) => f >= desde).length;
+  // RM: con fecha si hay avisos de cambio en el período; si no, desde el primer valor cargado
+  const rms = Object.entries(alumno.historialRM || {})
+    .filter(([, h]) => Array.isArray(h) && h.length > 1)
+    .map(([ej, h]) => ({ ej, de: h[0], a: h[h.length - 1] }))
+    .filter((r) => r.a !== r.de)
+    .sort((x, y) => (y.a - y.de) / y.de - (x.a - x.de) / x.de)
+    .slice(0, 3);
+  const grupos = {};
+  (alumno.marcasNatacion || []).forEach((m) => { const k = `${m.distancia} ${m.estilo}${m.pileta ? ` (pileta ${m.pileta})` : ""}`; (grupos[k] = grupos[k] || []).push(m); });
+  const pileta = Object.entries(grupos).map(([prueba, ms]) => {
+    const antes = ms.filter((m) => m.fecha && m.fecha < desde), ahora = ms.filter((m) => m.fecha && m.fecha >= desde);
+    if (!antes.length || !ahora.length) return null;
+    const de = Math.min(...antes.map((m) => m.segundos)), a = Math.min(...ahora.map((m) => m.segundos));
+    return { prueba, de, a, dif: a - de, pct: (a - de) / de };
+  }).filter(Boolean).sort((x, y) => x.pct - y.pct);
+  return { dias, sesiones, rms, mejoras: pileta.filter((x) => x.dif < 0).slice(0, 4), empeoro: pileta.filter((x) => x.dif > 0).slice(-2) };
+}
+function CruceGimnasioPileta({ alumno }) {
+  const c = cruceGimnasioPileta(alumno);
+  if (!c.rms.length && !c.mejoras.length && !c.empeoro.length) return null;
+  const fila = { display: "flex", justifyContent: "space-between", gap: 8, fontSize: 10.5, padding: "3px 0", borderTop: "1px solid #26232F" };
+  return (
+    <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 12, padding: 12, marginBottom: 16 }}>
+      <div className="font-body" style={{ fontSize: 11, color: "#FF6B35", fontWeight: 700, marginBottom: 2 }}>🏋️ ↔ 🏊 GIMNASIO Y PILETA</div>
+      <div className="font-body" style={{ fontSize: 9.5, color: "#8B8698", marginBottom: 8 }}>Últimos 3 meses: {c.sesiones} {c.sesiones === 1 ? "sesión" : "sesiones"} de gimnasio.</div>
+      {c.rms.length > 0 && <div className="font-body" style={{ color: "#B8B3C4", fontSize: 9, fontWeight: 700, margin: "4px 0 2px" }}>FUERZA (RM)</div>}
+      {c.rms.map((r) => (
+        <div key={r.ej} className="font-body" style={fila}>
+          <span style={{ color: "#F4F1EA", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.ej}</span>
+          <span style={{ color: r.a > r.de ? "#33D6A6" : "#E85D5D", fontWeight: 700, whiteSpace: "nowrap" }}>{r.de} → {r.a} kg ({r.a > r.de ? "+" : ""}{Math.round(((r.a - r.de) / r.de) * 100)}%)</span>
+        </div>
+      ))}
+      {(c.mejoras.length > 0 || c.empeoro.length > 0) && <div className="font-body" style={{ color: "#B8B3C4", fontSize: 9, fontWeight: 700, margin: "8px 0 2px" }}>PILETA (mejor marca antes vs. estos 3 meses)</div>}
+      {[...c.mejoras, ...c.empeoro].map((x) => (
+        <div key={x.prueba} className="font-body" style={fila}>
+          <span style={{ color: "#F4F1EA" }}>{x.prueba}</span>
+          <span style={{ color: x.dif < 0 ? "#33D6A6" : "#E85D5D", fontWeight: 700, whiteSpace: "nowrap" }}>{fmtTiempo(x.de)} → {fmtTiempo(x.a)} ({x.dif < 0 ? "" : "+"}{x.dif.toFixed(2)} s)</span>
+        </div>
+      ))}
+      {c.rms.some((r) => r.a > r.de) && c.mejoras.length > 0 && (() => {
+        const r = [...c.rms].sort((x, y) => (y.a - y.de) - (x.a - x.de))[0];
+        return (
+          <div className="font-body" style={{ color: "#7DD6C0", fontSize: 10, marginTop: 8, lineHeight: 1.4 }}>
+            En la misma época en que su {r.ej.toLowerCase()} subió {Math.round((r.a - r.de) * 10) / 10} kg, bajó {Math.abs(c.mejoras[0].dif).toFixed(2)} s en {c.mejoras[0].prueba}.
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+function MarcasNatacion({ alumno, onChange, onSincronizar, puedeVincular = true }) {
+  const marcas = alumno.marcasNatacion || [];
+  const [agregando, setAgregando] = useState(false);
+  const [pegando, setPegando] = useState(false);
+  const [textoPegado, setTextoPegado] = useState("");
+  const [msg, setMsg] = useState(null);
+  const [nueva, setNueva] = useState({ distancia: 100, estilo: "Libre", tiempo: "", fecha: todayISO(), pileta: "50", torneo: "" });
+  const [abierta, setAbierta] = useState(null);
+  const pruebas = {};
+  // cada prueba por separado según la pileta (los tiempos de 25 m y de 50 m no se comparan)
+  marcas.forEach((m) => { const k = `${m.distancia} ${m.estilo}${m.pileta ? ` · pileta ${m.pileta}` : ""}`; (pruebas[k] = pruebas[k] || []).push(m); });
+  const lista = Object.entries(pruebas).map(([k, ms]) => {
+    const orden = [...ms].sort((a, b) => (a.fecha || "").localeCompare(b.fecha || ""));
+    const mejor = ms.reduce((x, y) => (y.segundos < x.segundos ? y : x));
+    const ultima = orden[orden.length - 1];
+    const anterior = orden.length > 1 ? orden[orden.length - 2] : null;
+    return { k, ms: orden, mejor, ultima, anterior, dist: ms[0].distancia, estilo: ms[0].estilo, pileta: ms[0].pileta || "", estiloIdx: ESTILOS_NATACION.indexOf(ms[0].estilo) };
+  }).sort((a, b) => (b.pileta || "").localeCompare(a.pileta || "") || a.estiloIdx - b.estiloIdx || a.dist - b.dist);
+  const agregar = () => {
+    const seg = aSegundos(nueva.tiempo);
+    if (!seg) { setMsg({ error: true, t: "Escribí el tiempo así: 1:02.35 o 28.40" }); return; }
+    onChange({ marcasNatacion: [...marcas, { id: uid(), distancia: Number(nueva.distancia), estilo: nueva.estilo, segundos: seg, fecha: nueva.fecha, pileta: nueva.pileta, torneo: nueva.torneo.trim(), origen: "manual" }] });
+    const previa = (pruebas[`${nueva.distancia} ${nueva.estilo} · pileta ${nueva.pileta}`] || []).reduce((x, y) => (x == null || y.segundos < x ? y.segundos : x), null);
+    setMsg({ t: previa != null && seg < previa ? `🎉 Nueva mejor marca en ${nueva.distancia} ${nueva.estilo}: ${fmtTiempo(seg)} (bajó ${(previa - seg).toFixed(2)} s)` : `✓ Marca guardada: ${nueva.distancia} ${nueva.estilo} ${fmtTiempo(seg)}` });
+    setNueva({ ...nueva, tiempo: "", torneo: "" });
+    setAgregando(false);
+  };
+  const importar = () => {
+    const leidas = leerMarcasPegadas(textoPegado).filter((n) => !marcas.some((m) => m.distancia === n.distancia && m.estilo === n.estilo && Math.abs(m.segundos - n.segundos) < 0.005 && (m.fecha || "") === (n.fecha || "")));
+    if (!leidas.length) { setMsg({ error: true, t: "No encontré marcas nuevas en el texto. Cada línea tiene que tener distancia, estilo y tiempo (ej: 100 Libre 1:02.35)." }); return; }
+    onChange({ marcasNatacion: [...marcas, ...leidas] });
+    setMsg({ t: `✓ Se cargaron ${leidas.length} ${leidas.length === 1 ? "marca" : "marcas"}.` });
+    setTextoPegado(""); setPegando(false);
+  };
+  const inp = { background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "6px 8px", fontSize: 11, boxSizing: "border-box" };
+  const btnSec = { flex: 1, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, color: "#8B8698", fontWeight: 700, fontSize: 10.5, padding: 8, cursor: "pointer" };
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ marginBottom: 8 }}><BloqueSwimRecords alumno={alumno} onChange={onChange} onSincronizar={onSincronizar} puedeVincular={puedeVincular} /></div>
+      {msg && (
+        <div className="font-body" style={{ display: "flex", gap: 8, alignItems: "center", background: msg.error ? "rgba(232,93,93,0.1)" : "rgba(51,214,166,0.1)", border: `1px solid ${msg.error ? "#E85D5D" : "#33D6A6"}`, borderRadius: 8, padding: "7px 9px", marginBottom: 8, color: "#F4F1EA", fontSize: 10.5 }}>
+          <span style={{ flex: 1 }}>{msg.t}</span>
+          <button onClick={() => setMsg(null)} style={{ background: "none", border: "none", color: "#8B8698", cursor: "pointer" }}>✕</button>
+        </div>
+      )}
+      {lista.length === 0 && <div className="font-body" style={{ color: "#6B6678", fontSize: 10.5, marginBottom: 8 }}>Todavía no hay marcas cargadas.</div>}
+      {lista.map((p) => {
+        const mejoro = p.anterior && p.ultima.segundos < p.anterior.segundos;
+        return (
+          <div key={p.k} style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, marginBottom: 6, overflow: "hidden" }}>
+            <button onClick={() => setAbierta(abierta === p.k ? null : p.k)} className="font-body" style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", padding: "8px 10px", cursor: "pointer", textAlign: "left" }}>
+              <span style={{ flex: 1, color: "#F4F1EA", fontSize: 12, fontWeight: 600 }}>{p.dist} {p.estilo}{p.pileta && <span style={{ color: "#8B8698", fontSize: 9.5, fontWeight: 500 }}> · pileta {p.pileta}</span>}</span>
+              {p.anterior && <span style={{ color: mejoro ? "#33D6A6" : "#E85D5D", fontSize: 9, fontWeight: 700 }}>{mejoro ? "▼ " : "▲ +"}{Math.abs(p.ultima.segundos - p.anterior.segundos).toFixed(2)}s</span>}
+              <span className="font-display" style={{ color: "#7DD6C0", fontSize: 15, fontWeight: 700 }}>{fmtTiempo(p.mejor.segundos)}</span>
+              <span style={{ color: "#8B8698", fontSize: 10 }}>{abierta === p.k ? "▲" : "▼"}</span>
+            </button>
+            {abierta === p.k && (
+              <div style={{ padding: "0 10px 8px" }}>
+                {p.ms.length > 1 && (() => {
+                  const dif = p.ms[0].segundos - p.mejor.segundos;
+                  return dif > 0 ? <div className="font-body" style={{ color: "#33D6A6", fontSize: 10, fontWeight: 700, marginBottom: 4 }}>▼ Bajó {dif.toFixed(2)} s desde su primera marca ({fmtTiempo(p.ms[0].segundos)})</div> : null;
+                })()}
+                <ParcialesComparados marcas={p.ms} />
+                {[...p.ms].reverse().map((m) => (
+                  <div key={m.id} className="font-body" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10.5, color: "#B8B3C4", padding: "4px 0", borderTop: "1px solid #26232F" }}>
+                    <span style={{ width: 62, color: m.id === p.mejor.id ? "#7DD6C0" : "#F4F1EA", fontWeight: 700 }}>{fmtTiempo(m.segundos)}{m.id === p.mejor.id ? " ★" : ""}</span>
+                    <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.fecha ? mostrarFecha(m.fecha) : "Sin fecha"}{m.pileta ? ` · pileta ${m.pileta} m` : ""}{m.torneo ? ` · ${m.torneo}` : ""}{m.origen === "swimrecords" ? " · SwimRecords" : ""}</span>
+                    <button onClick={() => onChange({ marcasNatacion: marcas.filter((x) => x.id !== m.id), ...(m.origen === "swimrecords" && alumno.swimrecords ? { swimrecords: { ...alumno.swimrecords, ocultas: [...(alumno.swimrecords.ocultas || []), m.id] } } : {}) })} style={{ background: "none", border: "none", color: "#E85D5D", fontSize: 10, cursor: "pointer" }}>Quitar</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {agregando ? (
+        <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 6 }}>
+          <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+            <select value={nueva.distancia} onChange={(e) => setNueva({ ...nueva, distancia: e.target.value })} className="font-body" style={{ ...inp, width: 70 }}>{DISTANCIAS_NATACION.map((d) => <option key={d} value={d}>{d} m</option>)}</select>
+            <select value={nueva.estilo} onChange={(e) => setNueva({ ...nueva, estilo: e.target.value })} className="font-body" style={{ ...inp, flex: 1 }}>{ESTILOS_NATACION.map((s) => <option key={s}>{s}</option>)}</select>
+            <input value={nueva.tiempo} onChange={(e) => setNueva({ ...nueva, tiempo: e.target.value })} placeholder="1:02.35" inputMode="decimal" className="font-body" style={{ ...inp, width: 76 }} />
+          </div>
+          <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+            <input type="date" value={nueva.fecha} onChange={(e) => setNueva({ ...nueva, fecha: e.target.value })} className="font-body" style={{ ...inp, width: 120 }} />
+            <select value={nueva.pileta} onChange={(e) => setNueva({ ...nueva, pileta: e.target.value })} className="font-body" style={{ ...inp, width: 92 }}><option value="50">Pileta 50</option><option value="25">Pileta 25</option></select>
+            <input value={nueva.torneo} onChange={(e) => setNueva({ ...nueva, torneo: e.target.value })} placeholder="Torneo (opcional)" className="font-body" style={{ ...inp, flex: 1, minWidth: 0 }} />
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={() => setAgregando(false)} className="font-body" style={btnSec}>Cancelar</button>
+            <button onClick={agregar} className="font-body" style={{ flex: 1, background: "#7DD6C0", border: "none", borderRadius: 8, color: "#0B2A2E", fontWeight: 700, fontSize: 11, padding: 8, cursor: "pointer" }}>Guardar marca</button>
+          </div>
+        </div>
+      ) : pegando ? (
+        <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 6 }}>
+          <div className="font-body" style={{ color: "#8B8698", fontSize: 9.5, marginBottom: 6 }}>Copiá el listado de tiempos (de los resultados de un torneo, por ejemplo) y pegalo acá. Se reconoce cada línea con distancia, estilo y tiempo, por ejemplo: "100 Libre 1:02.35 12/08/2026".</div>
+          <textarea value={textoPegado} onChange={(e) => setTextoPegado(e.target.value)} rows={5} placeholder={"50 Libre 28.40\n100 Espalda 1:08.12 03/09/2026"} className="font-body" style={{ ...inp, width: "100%", resize: "vertical", marginBottom: 6 }} />
+          <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={() => setPegando(false)} className="font-body" style={btnSec}>Cancelar</button>
+            <button onClick={importar} className="font-body" style={{ flex: 1, background: "#7DD6C0", border: "none", borderRadius: 8, color: "#0B2A2E", fontWeight: 700, fontSize: 11, padding: 8, cursor: "pointer" }}>Cargar marcas</button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+          <button onClick={() => { setAgregando(true); setMsg(null); }} className="font-body" style={{ flex: 1, background: "rgba(125,214,192,0.1)", border: "1px dashed #7DD6C0", borderRadius: 8, color: "#7DD6C0", fontWeight: 700, fontSize: 11, padding: 9, cursor: "pointer" }}>+ Agregar marca</button>
+          <button onClick={() => { setPegando(true); setMsg(null); }} className="font-body" style={{ flex: 1, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, color: "#F4F1EA", fontWeight: 700, fontSize: 11, padding: 9, cursor: "pointer" }}>📋 Pegar tiempos</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Cartel de "RM actualizado" (ej. "Sentadilla trasera: 50 → 55 kg"), para que la otra parte se
+// entere sin tener que ir a buscarlo. Se cierra con la ✕ y no vuelve a aparecer.
+function AvisosRM({ avisos, titulo, onCerrar }) {
+  if (!avisos || !avisos.length) return null;
+  return (
+    <div style={{ background: "rgba(125,214,192,0.08)", border: "1px solid #7DD6C0", borderRadius: 12, padding: "10px 12px", marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
+        <div className="font-body" style={{ flex: 1, color: "#7DD6C0", fontSize: 10, fontWeight: 700 }}>🔄 {titulo.toUpperCase()}</div>
+        {onCerrar && <button onClick={onCerrar} className="font-body" style={{ background: "none", border: "none", color: "#8B8698", cursor: "pointer", fontSize: 12 }}>✕</button>}
+      </div>
+      {avisos.map((x) => (
+        <div key={x.id} className="font-body" style={{ color: "#F4F1EA", fontSize: 11, marginBottom: 3 }}>
+          <b>{x.ejercicio}</b>: {x.de != null && x.de !== x.a ? <>{x.de} → <b style={{ color: "#33D6A6" }}>{x.a} kg</b> <span style={{ color: x.a > x.de ? "#33D6A6" : "#E85D5D", fontSize: 9, fontWeight: 700 }}>({x.a > x.de ? "+" : ""}{Math.round((x.a - x.de) * 10) / 10} kg)</span></> : <b style={{ color: "#33D6A6" }}>{x.a} kg</b>}
+          {x.confirmado && <span style={{ color: "#8B8698", fontSize: 9 }}> · confirmado</span>}
+        </div>
+      ))}
+      <div className="font-body" style={{ color: "#8B8698", fontSize: 9, marginTop: 4 }}>Los pesos sugeridos de tu plan ya se calculan con el valor nuevo.</div>
+    </div>
+  );
+}
+
+function AthleteProgreso({ alumno, onGuardarHistorialRM, onCerrarAvisosRM, onUpdateMarcas }) {
   const promedioAnimo = alumno.wellness.checkins.length ? (alumno.wellness.checkins.reduce((a, c) => a + c.valor, 0) / alumno.wellness.checkins.length).toFixed(1) : "—";
   const ejerciciosConHistorial = Object.keys(alumno.historialRM || {}).filter((k) => (alumno.historialRM[k] || []).length > 0);
   const [ejercicioRM, setEjercicioRM] = useState(ejerciciosConHistorial[0] || null);
   const [agregandoRM, setAgregandoRM] = useState(false);
   const [nombreEjNuevo, setNombreEjNuevo] = useState("");
   const [valorEjNuevo, setValorEjNuevo] = useState("");
+  const [gruposAbiertos, setGruposAbiertos] = useState({});
+  const [ultimoCambio, setUltimoCambio] = useState(null);
   useEffect(() => {
     if (!ejercicioRM || !ejerciciosConHistorial.includes(ejercicioRM)) setEjercicioRM(ejerciciosConHistorial[0] || null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ejerciciosConHistorial.join(",")]);
+  // Nombres conocidos para relacionar lo que escribe el/la alumno/a: sus RM, los de su plan y los
+  // ejercicios de su plan (sin la variante).
+  const nombresConocidos = [...new Set([
+    ...ejerciciosConHistorial,
+    ...(alumno.plan.rm || []).map((r) => r.ejercicio).filter(Boolean),
+    ...(alumno.plan.dias || []).flatMap((d) => (d.bloques || []).flatMap((b) => (b.ejercicios || []).map((e) => String(e.nombre || "").split(/\s[—–-]\s/)[0].trim()))).filter(Boolean),
+  ])];
+  const relacionado = nombreEjNuevo.trim() ? ejercicioRelacionado(nombreEjNuevo, nombresConocidos) : null;
+  const sugerencias = nombreEjNuevo.trim()
+    ? nombresConocidos.filter((n) => n !== relacionado && (coincideBusqueda(n, nombreEjNuevo) || mismoEjercicio(n, nombreEjNuevo))).slice(0, 6)
+    : ejerciciosConHistorial.slice(0, 8);
   const registrarRM = () => {
-    const nombre = (nombreEjNuevo || ejercicioRM || "").trim();
-    const valor = parseFloat(valorEjNuevo);
-    if (!nombre || isNaN(valor)) return;
+    const escrito = (nombreEjNuevo || ejercicioRM || "").trim();
+    const valor = parseFloat(String(valorEjNuevo).replace(",", "."));
+    if (!escrito || isNaN(valor)) return;
+    const nombre = relacionado || escrito;
+    const hist = (alumno.historialRM || {})[nombre] || [];
+    const anterior = hist.length ? hist[hist.length - 1] : null;
     onGuardarHistorialRM(nombre, valor);
     setEjercicioRM(nombre);
+    setGruposAbiertos((g) => ({ ...g, [grupoRM(nombre).id]: true }));
+    setUltimoCambio({ nombre, escrito, de: anterior, a: valor });
     setNombreEjNuevo("");
     setValorEjNuevo("");
     setAgregandoRM(false);
   };
+  const avisosCoach = (alumno.avisosRM || []).filter((x) => x.por === "coach" && !x.visto_athlete).slice(-3);
+  const ultimoDe = (ej) => { const h = alumno.historialRM[ej] || []; return h.length ? h[h.length - 1] : null; };
+  const difDe = (ej) => { const h = alumno.historialRM[ej] || []; return h.length > 1 ? h[h.length - 1] - h[h.length - 2] : null; };
+  const grupos = agruparPorGrupoRM(ejerciciosConHistorial, (x) => x);
   return (
     <div>
       <TopBar title="Progreso" subtitle="Tu evolución" />
@@ -4777,23 +6394,41 @@ function AthleteProgreso({ alumno, onGuardarHistorialRM }) {
           <StatMini label="Ánimo prom." value={promedioAnimo} color="#7DD6C0" />
           <StatMini label="PRs cargados" value={alumno.plan.rm.filter((r) => r.valor).length} />
         </div>
+        <AvisosRM avisos={avisosCoach} titulo="Tu coach actualizó tu RM" onCerrar={onCerrarAvisosRM} />
         <CalendarioSesiones historialSesiones={alumno.historialSesiones} />
         <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 14, padding: 14, marginBottom: 14 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
             <div className="font-body" style={{ fontSize: 11, color: "#8B8698", fontWeight: 600 }}>RM POR EJERCICIO (KG)</div>
-            <button onClick={() => { setAgregandoRM(!agregandoRM); setNombreEjNuevo(ejercicioRM || ""); }} className="font-body" style={{ background: "none", border: "none", color: "#7DD6C0", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{agregandoRM ? "✕ Cerrar" : "+ Registrar RM"}</button>
+            <button onClick={() => { setAgregandoRM(!agregandoRM); setNombreEjNuevo(ejercicioRM || ""); setUltimoCambio(null); }} className="font-body" style={{ background: "none", border: "none", color: "#7DD6C0", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{agregandoRM ? "✕ Cerrar" : "+ Registrar RM"}</button>
           </div>
           <div className="font-body" style={{ fontSize: 9, color: "#6B6678", marginBottom: 10 }}>Cargá el peso máximo que levantaste en cada ejercicio — tu coach lo ve y arma tus porcentajes con eso.</div>
+          {ultimoCambio && (
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 8, background: "rgba(51,214,166,0.1)", border: "1px solid #33D6A6", borderRadius: 8, padding: "8px 10px", marginBottom: 10 }}>
+              <div className="font-body" style={{ flex: 1, fontSize: 11, color: "#F4F1EA" }}>
+                <b style={{ color: "#33D6A6" }}>✓ {ultimoCambio.nombre} {ultimoCambio.de != null && ultimoCambio.de !== ultimoCambio.a ? "actualizado" : "cargado"}</b>
+                {" "}{ultimoCambio.de != null && ultimoCambio.de !== ultimoCambio.a ? <>{ultimoCambio.de} → <b>{ultimoCambio.a} kg</b> ({ultimoCambio.a > ultimoCambio.de ? "+" : ""}{Math.round((ultimoCambio.a - ultimoCambio.de) * 10) / 10} kg)</> : <b>{ultimoCambio.a} kg</b>}
+                {normalizarTexto(ultimoCambio.escrito) !== normalizarTexto(ultimoCambio.nombre) && <div style={{ fontSize: 9, color: "#8B8698", marginTop: 2 }}>Escribiste "{ultimoCambio.escrito}" y lo guardamos en {ultimoCambio.nombre}.</div>}
+                <div style={{ fontSize: 9, color: "#8B8698", marginTop: 2 }}>Tu coach ya lo puede ver.</div>
+              </div>
+              <button onClick={() => setUltimoCambio(null)} style={{ background: "none", border: "none", color: "#8B8698", cursor: "pointer", fontSize: 12 }}>✕</button>
+            </div>
+          )}
           {agregandoRM && (
             <div style={{ background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 10 }}>
               <div className="font-body" style={{ fontSize: 9, color: "#8B8698", marginBottom: 4 }}>Ejercicio (uno ya existente, o escribí uno nuevo)</div>
               <input value={nombreEjNuevo} onChange={(e) => setNombreEjNuevo(e.target.value)} placeholder="Ej: Press de pecho" className="font-body" style={{ width: "100%", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "7px 8px", fontSize: 11, boxSizing: "border-box", marginBottom: 6 }} />
-              {ejerciciosConHistorial.length > 0 && (
+              {relacionado && normalizarTexto(relacionado).trim() !== normalizarTexto(nombreEjNuevo).trim() && (
+                <div className="font-body" style={{ fontSize: 10, color: "#7DD6C0", marginBottom: 6 }}>Se va a guardar en <b>{relacionado}</b> (es el mismo ejercicio).</div>
+              )}
+              {sugerencias.length > 0 && (
                 <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 6 }}>
-                  {ejerciciosConHistorial.map((ej) => (
+                  {sugerencias.map((ej) => (
                     <button key={ej} onClick={() => setNombreEjNuevo(ej)} className="font-body" style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 999, color: "#8B8698", fontSize: 9, padding: "4px 8px", cursor: "pointer" }}>{ej}</button>
                   ))}
                 </div>
+              )}
+              {(relacionado || ejercicioRM) && ultimoDe(relacionado || nombreEjNuevo) != null && (
+                <div className="font-body" style={{ fontSize: 9, color: "#8B8698", marginBottom: 6 }}>Último cargado: {ultimoDe(relacionado || nombreEjNuevo)} kg</div>
               )}
               <div style={{ display: "flex", gap: 6 }}>
                 <input value={valorEjNuevo} onChange={(e) => setValorEjNuevo(e.target.value)} placeholder="Valor en kg" inputMode="decimal" className="font-body" style={{ flex: 1, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "7px 8px", fontSize: 11, boxSizing: "border-box" }} />
@@ -4804,18 +6439,44 @@ function AthleteProgreso({ alumno, onGuardarHistorialRM }) {
           {ejerciciosConHistorial.length === 0 ? (
             <div className="font-body" style={{ color: "#8B8698", fontSize: 11, textAlign: "center", padding: "20px 0" }}>Todavía no hay RM cargado. Tocá "+ Registrar RM" arriba.</div>
           ) : (
-            <>
-              {ejerciciosConHistorial.length > 1 && (
-                <div style={{ display: "flex", gap: 6, marginBottom: 10, overflowX: "auto", paddingBottom: 2 }}>
-                  {ejerciciosConHistorial.map((ej) => (
-                    <Pill key={ej} active={ejercicioRM === ej} onClick={() => setEjercicioRM(ej)}>{ej}</Pill>
-                  ))}
+            // Agrupados (Piernas, Cadera y glúteo, Empuje...): se toca el grupo y se abren sus
+            // ejercicios; se toca un ejercicio y aparece su gráfico.
+            grupos.map((g) => {
+              const abierto = gruposAbiertos[g.id] ?? (grupos.length === 1 || g.items.includes(ejercicioRM));
+              return (
+                <div key={g.id} style={{ border: "1px solid #322E3D", borderRadius: 10, marginBottom: 6, overflow: "hidden" }}>
+                  <button onClick={() => setGruposAbiertos((x) => ({ ...x, [g.id]: !abierto }))} className="font-body" style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, background: "#26232F", border: "none", padding: "9px 10px", cursor: "pointer", textAlign: "left" }}>
+                    <span style={{ fontSize: 14 }}>{g.emoji}</span>
+                    <span style={{ flex: 1, color: "#F4F1EA", fontSize: 11, fontWeight: 700 }}>{g.label}</span>
+                    <span style={{ color: "#8B8698", fontSize: 10 }}>{g.items.length} {abierto ? "▲" : "▼"}</span>
+                  </button>
+                  {abierto && g.items.map((ej) => {
+                    const dif = difDe(ej);
+                    const sel = ejercicioRM === ej;
+                    return (
+                      <div key={ej} style={{ borderTop: "1px solid #322E3D" }}>
+                        <button onClick={() => setEjercicioRM(sel ? null : ej)} className="font-body" style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, background: sel ? "rgba(255,107,53,0.08)" : "transparent", border: "none", padding: "8px 10px", cursor: "pointer", textAlign: "left" }}>
+                          <span style={{ flex: 1, minWidth: 0, color: "#F4F1EA", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ej}</span>
+                          {dif != null && dif !== 0 && <span style={{ color: dif > 0 ? "#33D6A6" : "#E85D5D", fontSize: 9, fontWeight: 700 }}>{dif > 0 ? "▲ +" : "▼ "}{Math.round(dif * 10) / 10}</span>}
+                          <span className="font-display" style={{ color: "#FF6B35", fontSize: 14, fontWeight: 700 }}>{ultimoDe(ej)} <span style={{ fontSize: 9, color: "#8B8698" }}>kg</span></span>
+                        </button>
+                        {sel && <div style={{ padding: "0 10px 10px" }}><MiniChart data={alumno.historialRM[ej] || []} color="#FF6B35" unidad="kg" /></div>}
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
-              <MiniChart data={alumno.historialRM[ejercicioRM] || []} color="#FF6B35" unidad="kg" />
-            </>
+              );
+            })
           )}
         </div>
+        {onUpdateMarcas && (
+          <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 14, padding: 14, marginBottom: 14 }}>
+            <div className="font-body" style={{ fontSize: 11, color: "#8B8698", fontWeight: 600, marginBottom: 4 }}>🏊 MIS MARCAS DE NATACIÓN</div>
+            <div className="font-body" style={{ fontSize: 9, color: "#6B6678", marginBottom: 10 }}>Tus tiempos de los torneos (de SwimRecords) se cargan solos. También podés sumar otros a mano.</div>
+            <MarcasNatacion alumno={alumno} onChange={onUpdateMarcas} puedeVincular={false} />
+          </div>
+        )}
+        <CruceGimnasioPileta alumno={alumno} />
         <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 14, padding: 14, marginBottom: 14 }}>
           <div className="font-body" style={{ fontSize: 11, color: "#8B8698", fontWeight: 600, marginBottom: 10 }}>PESO CORPORAL (KG)</div>
           <MiniChart data={alumno.historialPeso} color="#7DD6C0" unidad="kg" />
@@ -5123,6 +6784,7 @@ const COACH_TABS = [
   { id: "alumnos", label: "Alumnos/as", icon: "👥" },
   { id: "plantillas", label: "Plantillas", icon: "📋" },
   { id: "ejercicios", label: "Ejercicios", icon: "🏋️" },
+  { id: "biomecanica", label: "Biomecánica", icon: <SentadillaIcon /> },
   { id: "buscar", label: "Buscar", icon: "🔍" },
 ];
 const ATHLETE_TABS = [
@@ -5131,7 +6793,56 @@ const ATHLETE_TABS = [
   { id: "progreso", label: "Progreso", icon: "📈" },
   { id: "nutricion", label: "Calculadora", icon: "🧮" },
   { id: "chat", label: "Chat", icon: "💬" },
+  // Biomecánica es solo para entrenadores/as: los alumnos/as ven sus resultados en el informe.
 ];
+
+// Ícono del apartado Biomecánica: un muñequito haciendo una sentadilla con barra.
+function SentadillaIcon({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#F4F1EA" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" style={{ display: "block" }}>
+      <circle cx="13.5" cy="3.6" r="2" fill="#F4F1EA" stroke="none" />
+      <path d="M6.5 7.2h13" />
+      <path d="M5.2 5.8v2.8M20.8 5.8v2.8" strokeWidth="2.4" />
+      <path d="M13 6.4L9.6 13.2" />
+      <path d="M9.6 13.2L16.4 14.2L14.6 21" />
+      <path d="M14.6 21h2.6" />
+    </svg>
+  );
+}
+
+// Apartado Biomecánica: la app de análisis de video (SwimBull) vestida con la identidad de
+// Team Bull. Vive en public/biomecanica y se muestra acá adentro; todo corre en el celular
+// (el video no sale del dispositivo).
+// Usa los mismos alumnos de Team Bull: cada medición que se guarda allá llega acá y queda en la
+// ficha del alumno (alumno.biomecanica), así se sube a la nube y entra en su informe.
+function BiomecanicaScreen({ alumnos, onGuardar, onBorrar }) {
+  const frameRef = useRef(null);
+  const enviarAlumnos = () => {
+    const w = frameRef.current?.contentWindow;
+    if (!w) return;
+    w.postMessage({ tb: "bio", type: "alumnos", alumnos: alumnos.map((a) => ({ id: a.id, nombre: a.nombre, equipo: a.equipo || "", nivel: a.nivel || "", deportes: a.deportes || "", pruebas: a.pruebasNatacion || "", peso: Number(a.peso) || null, altura: Number(a.altura) || null, bio: a.biomecanica || [] })), nube: { url: SUPABASE_URL, key: SUPABASE_KEY } }, window.location.origin);
+  };
+  useEffect(() => { enviarAlumnos(); }, [alumnos]);
+  useEffect(() => {
+    const onMsg = (e) => {
+      if (e.origin !== window.location.origin || e.source !== frameRef.current?.contentWindow) return;
+      const d = e.data;
+      if (!d || d.tb !== "bio") return;
+      if (d.type === "hola") enviarAlumnos();
+      else if (d.type === "guardar" && d.evaluacion && alumnos.some((a) => a.id === d.alumnoId)) onGuardar(d.alumnoId, d.evaluacion);
+      else if (d.type === "borrar" && alumnos.some((a) => a.id === d.alumnoId)) onBorrar(d.alumnoId, d.evaluacionId);
+    };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  });
+  return (
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", width: "100%", minWidth: 0, overflow: "hidden" }}>
+      <TopBar title="Biomecánica" subtitle="Grabá y medí la técnica de cada alumno/a" />
+      {/* width 1px + minWidth 100%: en iPhone un iframe se estira al ancho de su contenido si no */}
+      <iframe ref={frameRef} src="/biomecanica/index.html" title="Biomecánica" allow="camera; microphone; fullscreen; autoplay; clipboard-write; web-share" allowFullScreen style={{ flex: 1, width: 1, minWidth: "100%", maxWidth: "100%", border: "none", background: "#121017", display: "block" }} />
+    </div>
+  );
+}
 
 function BullLogo({ size = 44 }) {
   return <img src={BULL_LOGO_B64} alt="Team Bull" style={{ width: size, height: "auto", objectFit: "contain", display: "block", margin: "0 auto", filter: "drop-shadow(0 4px 10px rgba(0,0,0,0.5))" }} />;
@@ -5232,11 +6943,16 @@ function AuthScreen({ onLogin, coaches }) {
   const [usuarioRecuperar, setUsuarioRecuperar] = useState("");
   const [pinRecuperar, setPinRecuperar] = useState("");
   const [resultadoRecuperar, setResultadoRecuperar] = useState(null);
-  const intentar = (e) => {
+  const [entrando, setEntrando] = useState(false);
+  const intentar = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
+    if (entrando) return;
     try {
       const u = usuario.trim(), p = password.trim();
-      if (!onLogin(u, p)) { setError("Usuario o contraseña incorrectos."); return; }
+      setEntrando(true);
+      const r = await onLogin(u, p);
+      setEntrando(false);
+      if (r !== true) { setError(typeof r === "string" ? r : "Usuario o contraseña incorrectos."); return; }
       try {
         if (recordar) window.localStorage.setItem(REMEMBER_KEY, JSON.stringify({ usuario: u, password: p }));
         else window.localStorage.removeItem(REMEMBER_KEY);
@@ -5244,6 +6960,7 @@ function AuthScreen({ onLogin, coaches }) {
         // localStorage no disponible: seguimos sin recordar
       }
     } catch (err) {
+      setEntrando(false);
       // Si algo se rompe (por ejemplo datos guardados de una versión vieja), avisamos en vez de quedarnos sin hacer nada
       setError(`Hubo un problema al ingresar (${err?.message || "error desconocido"}). Probá restablecer los datos de este dispositivo, abajo.`);
     }
@@ -5270,7 +6987,12 @@ function AuthScreen({ onLogin, coaches }) {
           <div className="font-body" style={{ color: "#8B8698", fontSize: 10, marginBottom: 8 }}>Ingresá tu usuario y tu PIN de recuperación (el que configuraste en Ajustes). Si nunca lo configuraste, pedile a otro entrenador que te lo comparta, o escribile a tu coach.</div>
           <input value={usuarioRecuperar} onChange={(e) => setUsuarioRecuperar(e.target.value)} placeholder="Usuario" className="font-body" style={{ width: "100%", background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, color: "#F4F1EA", padding: "8px 10px", fontSize: 12, boxSizing: "border-box", marginBottom: 6 }} />
           <input value={pinRecuperar} onChange={(e) => setPinRecuperar(e.target.value)} placeholder="PIN de recuperación" className="font-body" style={{ width: "100%", background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, color: "#F4F1EA", padding: "8px 10px", fontSize: 12, boxSizing: "border-box", marginBottom: 8 }} />
-          <button type="button" onClick={() => {
+          <button type="button" onClick={async () => {
+            if (MODO_SEGURO) {
+              try { const r = await apiDatos({ accion: "recuperar", usuario: usuarioRecuperar.trim(), pin: pinRecuperar.trim() }); setResultadoRecuperar(r.json && typeof r.json.ok === "boolean" ? r.json : { ok: false, texto: "No se pudo consultar. Probá de nuevo." }); }
+              catch { setResultadoRecuperar({ ok: false, texto: "Sin conexión: probá de nuevo con internet." }); }
+              return;
+            }
             const c = (coaches || []).find((co) => co.usuario === usuarioRecuperar.trim());
             if (!c) { setResultadoRecuperar({ ok: false, texto: "No existe ese usuario." }); return; }
             if (!c.recoveryPin) { setResultadoRecuperar({ ok: false, texto: "Ese usuario todavía no configuró un PIN de recuperación.", sinPin: true, telefono: c.telefono || "" }); return; }
@@ -5297,7 +7019,7 @@ function AuthScreen({ onLogin, coaches }) {
         <span style={{ fontSize: 12, color: "#8B8698" }}>Recordar contraseña en este dispositivo</span>
       </label>
       {error && <div className="font-body" style={{ color: "#E85D5D", fontSize: 11, marginBottom: 10 }}>{error}</div>}
-      <button type="submit" className="font-body" style={{ width: "100%", background: "#FF6B35", color: "#121017", border: "none", borderRadius: 12, padding: "13px 0", fontWeight: 700, fontSize: 14, cursor: "pointer", marginTop: 8 }}>Ingresar</button>
+      <button type="submit" className="font-body" style={{ width: "100%", background: "#FF6B35", color: "#121017", border: "none", borderRadius: 12, padding: "13px 0", fontWeight: 700, fontSize: 14, cursor: "pointer", marginTop: 8 }}>{entrando ? "Ingresando..." : "Ingresar"}</button>
       <div className="font-body" style={{ fontSize: 10, color: "#6B6678", marginTop: 14, textAlign: "center" }}>¿Sos alumno/a nuevo/a? Pedile el usuario y la contraseña a tu entrenador.</div>
       <div className="font-body" style={{ fontSize: 9, color: "#4A4658", marginTop: 10, textAlign: "center" }}>Tu navegador también puede ofrecerte guardar esta contraseña.</div>
       <button type="button" onClick={() => { if (window.confirm("¿Restablecer todos los datos guardados en este dispositivo? Esto no se puede deshacer.")) restablecerDatos(); }} className="font-body" style={{ background: "none", border: "none", color: "#4A4658", fontSize: 10, marginTop: 18, cursor: "pointer", textDecoration: "underline" }}>¿No podés entrar? Restablecer datos de este dispositivo</button>
@@ -5380,7 +7102,150 @@ function enviarNotificacion(userId, title, body) {
   }).catch(() => {}); // si falla, no interrumpe el envío del mensaje en sí
 }
 
+// ---------- Sincronización sin pisar cambios ----------
+// Antes, cada celular subía TODOS los datos tal como los tenía: si el alumno tenía la app abierta
+// desde antes y registraba algo, su copia vieja pisaba lo que el coach había cambiado mientras
+// tanto (por ejemplo, un RM aceptado volvía al valor anterior). Ahora, antes de subir, se trae
+// lo último de la nube y se combina: de cada dato se queda lo que cambió en este celular, y lo
+// demás se toma de la nube. Las listas (alumnos, mensajes, sesiones, etc.) se unen por elemento.
+function igualesProfundo(a, b) {
+  if (a === b) return true;
+  if (typeof a !== typeof b || a === null || b === null || typeof a !== "object") return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) return a.length === b.length && a.every((x, i) => igualesProfundo(x, b[i]));
+  const ka = Object.keys(a).filter((k) => a[k] !== undefined), kb = Object.keys(b).filter((k) => b[k] !== undefined);
+  return ka.length === kb.length && ka.every((k) => igualesProfundo(a[k], b[k]));
+}
+// Igual, sin contar _uidMax: ese contador sube solo en cada celular y, si se tomara como un cambio,
+// dos celulares quietos se pasarían guardándose el uno al otro cada 20 segundos.
+const igualesSalvoUid = (a, b) => igualesProfundo({ ...(a || {}), _uidMax: 0 }, { ...(b || {}), _uidMax: 0 });
+function claveElemento(x) {
+  if (x && typeof x === "object" && !Array.isArray(x) && x.id != null) return "id:" + x.id;
+  if (typeof x === "string") return "s:" + x;
+  if (x && typeof x === "object") return "j:" + JSON.stringify(x);
+  return null; // números sueltos (ej: historial de peso): pueden repetirse, no se unen por valor
+}
+// base: lo último que este celular sabe que estaba en la nube; local: lo de este celular; remoto: la nube ahora.
+function fusionar3(base, local, remoto) {
+  if (igualesProfundo(local, base)) return remoto;
+  if (remoto === undefined || igualesProfundo(remoto, base)) return local;
+  if (igualesProfundo(local, remoto)) return local;
+  if (Array.isArray(local) && Array.isArray(remoto)) {
+    const b = Array.isArray(base) ? base : [];
+    if ([...b, ...local, ...remoto].some((x) => claveElemento(x) === null)) return local;
+    const mapa = (arr) => new Map(arr.map((x) => [claveElemento(x), x]));
+    const mb = mapa(b), mr = mapa(remoto), ml = mapa(local);
+    const out = [];
+    local.forEach((x) => {
+      const k = claveElemento(x);
+      if (mb.has(k) && !mr.has(k)) {
+        // lo borraron en otro celular: se borra, salvo que acá se haya modificado
+        if (!igualesProfundo(x, mb.get(k))) out.push(x);
+        return;
+      }
+      out.push(mr.has(k) ? fusionar3(mb.get(k), x, mr.get(k)) : x);
+    });
+    remoto.forEach((x) => { const k = claveElemento(x); if (!ml.has(k) && !mb.has(k)) out.push(x); }); // agregados en otro celular
+    return out;
+  }
+  if (local && remoto && typeof local === "object" && typeof remoto === "object" && !Array.isArray(local) && !Array.isArray(remoto)) {
+    const b = base && typeof base === "object" && !Array.isArray(base) ? base : {};
+    const out = {};
+    new Set([...Object.keys(local), ...Object.keys(remoto)]).forEach((k) => {
+      if (!(k in local)) { if (!(k in b)) out[k] = remoto[k]; return; } // borrado acá: no vuelve
+      if (!(k in remoto)) { if (!(k in b) || !igualesProfundo(local[k], b[k])) out[k] = local[k]; return; }
+      out[k] = fusionar3(b[k], local[k], remoto[k]);
+    });
+    return out;
+  }
+  return local; // el mismo dato cambiado en los dos lados: gana el último que guarda (este celular)
+}
+// Deja los datos de la nube con la misma forma que los usa la app (para poder compararlos).
+function normalizarDatos(d) {
+  if (!d) return d;
+  return { ...d, ...(d.alumnos ? { alumnos: sanearAlumnos(d.alumnos) || d.alumnos } : {}), templates: combinarPlantillas(d.templates) };
+}
+
+// ---------- Modo seguro ----------
+// Cuando en Vercel están cargadas SUPABASE_SERVICE_ROLE_KEY y TB_SECRET, los datos ya no se leen
+// directo de Supabase con la clave pública (que cualquiera puede ver en el código): se pasa por
+// /api/datos con usuario y contraseña, y cada alumno/a recibe solo lo suyo. Sin esas variables,
+// todo sigue como antes.
+const MODO_SEGURO_KEY = "teambull_modo_seguro";
+let MODO_SEGURO = (() => { try { return window.localStorage.getItem(MODO_SEGURO_KEY) === "1"; } catch { return false; } })();
+let PASE = null; // pase firmado que devuelve el servidor al ingresar (solo en memoria)
+// Versión (updated_at) de lo último que este celular trajo o guardó en la nube. Antes de bajar todo
+// se pregunta solo la versión: si nadie cambió nada, no se baja ni se compara nada.
+let VERSION_NUBE = null;
+async function versionRemota() {
+  try {
+    if (MODO_SEGURO) {
+      if (!PASE) return undefined;
+      const r = await apiDatos(null, "?version=1");
+      return r.status === 200 && r.json ? r.json.updated_at ?? null : undefined;
+    }
+    const res = await fetch(`${SUPABASE_TABLE_URL}&select=updated_at`, { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }, cache: "no-store" });
+    if (!res.ok) return undefined;
+    const rows = await res.json();
+    return rows?.[0]?.updated_at ?? null;
+  } catch {
+    return undefined;
+  }
+}
+async function apiDatos(cuerpo, query) {
+  const headers = { Accept: "application/json" };
+  if (PASE) headers.Authorization = `Bearer ${PASE}`;
+  let body;
+  if (cuerpo) {
+    const json = JSON.stringify(cuerpo);
+    if (typeof CompressionStream !== "undefined" && json.length > 2048) {
+      body = await new Response(new Blob([json]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer();
+      headers["x-tb-gzip"] = "1";
+      headers["Content-Type"] = "application/octet-stream";
+    } else { body = json; headers["Content-Type"] = "application/json"; }
+  }
+  const res = await fetch("/api/datos" + (query || ""), { method: cuerpo ? "POST" : "GET", headers, body, cache: "no-store" });
+  let json = null;
+  try { json = await res.json(); } catch { json = null; }
+  return { status: res.status, json };
+}
+// ¿Está activo el modo seguro en el servidor? (una vez que lo está, este celular lo recuerda)
+async function detectarModoSeguro() {
+  try {
+    const r = await apiDatos({ accion: "estado" });
+    if (r.json && typeof r.json.seguro === "boolean") {
+      MODO_SEGURO = r.json.seguro;
+      try { if (MODO_SEGURO) window.localStorage.setItem(MODO_SEGURO_KEY, "1"); else window.localStorage.removeItem(MODO_SEGURO_KEY); } catch {}
+    }
+  } catch {
+    // sin red: nos quedamos con lo que recordaba este celular
+  }
+  return MODO_SEGURO;
+}
+async function ingresarSeguro(usuario, password) {
+  try {
+    const r = await apiDatos({ accion: "login", usuario, password });
+    if (r.status === 401) return { ok: false, error: "Usuario o contraseña incorrectos." };
+    if (!r.json || !r.json.token) return { ok: false, error: `No se pudo ingresar (${r.json?.error || "HTTP " + r.status}).` };
+    PASE = r.json.token;
+    VERSION_NUBE = r.json.updated_at || null;
+    return { ok: true, rol: r.json.rol, id: r.json.id, data: r.json.data };
+  } catch {
+    return { ok: false, error: "Sin conexión: para ingresar hace falta internet." };
+  }
+}
+
 async function cargarGuardadoRemoto() {
+  if (MODO_SEGURO) {
+    if (!PASE) return { ok: false, data: null, detalle: "Todavía no ingresaste." };
+    try {
+      const r = await apiDatos();
+      if (r.status === 200 && r.json) { VERSION_NUBE = r.json.updated_at || null; return { ok: true, data: r.json.data || null }; }
+      return { ok: false, data: null, detalle: r.status === 401 ? "Tu sesión venció: cerrá sesión y volvé a ingresar." : `HTTP ${r.status} — ${r.json?.error || ""}` };
+    } catch (e) {
+      return { ok: false, data: null, detalle: `Sin red o bloqueado: ${e?.message || "error desconocido"}` };
+    }
+  }
   try {
     const res = await fetch(SUPABASE_TABLE_URL, {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
@@ -5394,20 +7259,31 @@ async function cargarGuardadoRemoto() {
       return { ok: false, data: null, detalle };
     }
     const rows = await res.json();
+    VERSION_NUBE = rows?.[0]?.updated_at || null;
     return { ok: true, data: rows?.[0]?.data || null };
   } catch (e) {
     return { ok: false, data: null, detalle: `Sin red o bloqueado: ${e?.message || "error desconocido"}` }; // sin internet o Supabase caído
   }
 }
 async function guardarTodoRemoto(data) {
+  if (MODO_SEGURO) {
+    if (!PASE) return { ok: false, detalle: "Todavía no ingresaste." };
+    try {
+      const r = await apiDatos({ accion: "guardar", data });
+      if (r.status === 200 && r.json?.ok) { VERSION_NUBE = r.json.updated_at || null; return { ok: true }; }
+      return { ok: false, detalle: r.status === 401 ? "Tu sesión venció: cerrá sesión y volvé a ingresar." : `HTTP ${r.status} — ${r.json?.error || ""}` };
+    } catch (e) {
+      return { ok: false, detalle: `Sin red o bloqueado: ${e?.message || "error desconocido"}` };
+    }
+  }
   try {
-    const res = await fetch(SUPABASE_TABLE_URL, {
+    const res = await fetch(`${SUPABASE_TABLE_URL}&select=updated_at`, {
       method: "PATCH",
       headers: {
         apikey: SUPABASE_KEY,
         Authorization: `Bearer ${SUPABASE_KEY}`,
         "Content-Type": "application/json",
-        Prefer: "return=minimal",
+        Prefer: "return=representation",
       },
       body: JSON.stringify({ data, updated_at: new Date().toISOString() }),
     });
@@ -5419,6 +7295,7 @@ async function guardarTodoRemoto(data) {
       try { const cuerpo = await res.text(); if (cuerpo) detalle += ` — ${cuerpo.slice(0, 150)}`; } catch {}
       return { ok: false, detalle };
     }
+    try { VERSION_NUBE = (await res.json())?.[0]?.updated_at || null; } catch { VERSION_NUBE = null; }
     return { ok: true };
   } catch (e) {
     // sin internet: el cambio queda guardado localmente y se subirá en el próximo cambio con conexión
@@ -5436,12 +7313,27 @@ function cargarGuardado() {
     return null;
   }
 }
-function guardarTodo(data) {
+// La copia en el celular se escribe como mucho cada 0,6 s (no en cada letra que escribís): pasar
+// todos los datos a texto es lo que más trababa la app al tipear en un plan largo. Al salir de la
+// app o pasarla a segundo plano se escribe en el momento, así no se pierde nada.
+let _pendienteLocal = null, _timerLocal = null;
+function escribirLocal() {
+  clearTimeout(_timerLocal); _timerLocal = null;
+  if (!_pendienteLocal) return;
+  const data = _pendienteLocal; _pendienteLocal = null;
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...data, _uidMax: _uid }));
   } catch {
     // almacenamiento lleno o no disponible: seguimos sin persistir
   }
+}
+function guardarTodo(data) {
+  _pendienteLocal = data;
+  if (!_timerLocal) _timerLocal = setTimeout(escribirLocal, 600);
+}
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", escribirLocal);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") escribirLocal(); });
 }
 // "Repara" un alumno guardado en versiones anteriores completando los campos que puedan faltar,
 // para que la app nunca se rompa por datos viejos en el dispositivo.
@@ -5449,6 +7341,15 @@ function sanearAlumno(a) {
   try {
     return {
       ...a,
+      planProximo: a.planProximo && a.planProximo.plan && /^\d{4}-\d{2}-\d{2}$/.test(a.planProximo.fecha || "") ? {
+        ...a.planProximo,
+        plan: {
+          meta: { ...(a.planProximo.plan.meta || {}) },
+          calentamiento: Array.isArray(a.planProximo.plan.calentamiento) ? a.planProximo.plan.calentamiento : [],
+          dias: Array.isArray(a.planProximo.plan.dias) ? a.planProximo.plan.dias : [],
+          rm: Array.isArray(a.planProximo.plan.rm) ? a.planProximo.plan.rm : [],
+        },
+      } : null,
       plan: {
         meta: { objetivo: "", actividad: "", macrociclo: "", mesociclo: "", fecha: "", fechaInicio: "", masaAdiposa: "", masaMuscular: "", descanso: "", ...(a.plan?.meta || {}) },
         calentamiento: Array.isArray(a.plan?.calentamiento) ? a.plan.calentamiento : [],
@@ -5509,6 +7410,12 @@ function sanearAlumno(a) {
       // Qué texto del aviso ya vio el/la alumno/a (y cuándo): si el coach cambia el texto, vuelve a aparecer.
       avisoVistoTexto: typeof a.avisoVistoTexto === "string" ? a.avisoVistoTexto : "",
       avisoVistoFecha: typeof a.avisoVistoFecha === "string" ? a.avisoVistoFecha : null,
+      // Mediciones del apartado Biomecánica (versión compacta: solo números, sin videos).
+      biomecanica: Array.isArray(a.biomecanica) ? a.biomecanica.filter((e) => e && e.id) : [],
+      avisosRM: Array.isArray(a.avisosRM) ? a.avisosRM.filter((x) => x && x.id) : [],
+      marcasNatacion: Array.isArray(a.marcasNatacion) ? a.marcasNatacion.filter((x) => x && x.id) : [],
+      swimrecords: a.swimrecords && typeof a.swimrecords === "object" ? a.swimrecords : null,
+      cuota: a.cuota && typeof a.cuota === "object" ? { ...a.cuota, pagos: Array.isArray(a.cuota.pagos) ? a.cuota.pagos : [] } : null,
     };
   } catch {
     return a;
@@ -5569,6 +7476,8 @@ export default function GymPlannerCoachApp() {
   const setNotificacionesActivas = (v) => { setNotificacionesActivasState(v); guardarPreferenciaNotificaciones(v); };
   const [modoPausa, setModoPausa] = useState(guardado.modoPausa || false);
   const [diasAvisoPlan, setDiasAvisoPlan] = useState(guardado.diasAvisoPlan || 7);
+  // Club del equipo en SwimRecords (para encontrar solos a los alumnos/as que nadan).
+  const [clubSwimRecords, setClubSwimRecords] = useState(typeof guardado.clubSwimRecords === "string" ? guardado.clubSwimRecords : "SER");
   const [rolesPersonalizados, setRolesPersonalizados] = useState(guardado.rolesPersonalizados || []);
   const [gruposMuscularesPersonalizados, setGruposMuscularesPersonalizados] = useState(guardado.gruposMuscularesPersonalizados || []);
   const [favoritosIds, setFavoritosIds] = useState(guardado.favoritosIds || Array.from(FAVORITOS_SET));
@@ -5610,6 +7519,12 @@ export default function GymPlannerCoachApp() {
   // registrado si entrabas tocando directo en esa lista, no desde el Dashboard ni el buscador.
   const abrirAlumno = (id) => { setSelectedCoachAlumno(id); if (id) updateAlumno(id, { ultimoAcceso: new Date().toISOString() }); };
   const [tab, setTab] = useState("dashboard");
+  // El apartado Biomecánica queda abierto (oculto) al cambiar de pestaña, para no perder
+  // un video o un análisis a medio hacer.
+  const [bioMontada, setBioMontada] = useState(false);
+  useEffect(() => { if (tab === "biomecanica") setBioMontada(true); }, [tab]);
+  // Se carga sola en segundo plano unos segundos después de entrar, así al tocar la pestaña ya está lista.
+  useEffect(() => { if (session?.role !== "coach" || bioMontada) return; const t = setTimeout(() => setBioMontada(true), 2500); return () => clearTimeout(t); }, [session, bioMontada]);
   const [libVersion, setLibVersion] = useState(0);
   const [ejerciciosCustom, setEjerciciosCustom] = useState(() => {
     const guardados = guardado.ejerciciosCustom;
@@ -5624,7 +7539,7 @@ export default function GymPlannerCoachApp() {
   const verificarGuardado = async () => {
     if (verificando) return;
     setVerificando(true);
-    const data = { coachNombre, coaches, alumnos, templates, mensajeRecordatorio, modoPausa, diasAvisoPlan, rolesPersonalizados, gruposMuscularesPersonalizados, logActividad, grupos, plantelGrupos, videosGuardados, ejerciciosCustom, favoritosIds, ejerciciosOcultosIds, _uidMax: _uid };
+    const data = { coachNombre, coaches, alumnos, templates, mensajeRecordatorio, modoPausa, diasAvisoPlan, clubSwimRecords, rolesPersonalizados, gruposMuscularesPersonalizados, logActividad, grupos, plantelGrupos, videosGuardados, ejerciciosCustom, favoritosIds, ejerciciosOcultosIds, _uidMax: _uid };
     guardarTodo(data);
     if (remotoSincronizadoRef.current) {
       const r = await guardarTodoRemoto(data);
@@ -5644,11 +7559,62 @@ export default function GymPlannerCoachApp() {
   // hechos desde otro celular por una mala conexión momentánea en este.
   const remotoSincronizadoRef = useRef(false);
   const [remotoSincronizado, setRemotoSincronizado] = useState(false);
+  // Lo último que sabemos que quedó en la nube (para combinar sin pisar) y los datos actuales.
+  const baseRemotaRef = useRef(null);
+  const datosActualesRef = useRef(null);
+  const colaGuardadoRef = useRef(Promise.resolve());
+  // Aplica en pantalla datos que llegaron de la nube (ya combinados con los de este celular).
+  const aplicarDatos = (d) => {
+    if (!d) return;
+    if (d.coachNombre) setCoachNombre(d.coachNombre);
+    if (d.mensajeRecordatorio) setMensajeRecordatorio(d.mensajeRecordatorio);
+    if (typeof d.modoPausa === "boolean") setModoPausa(d.modoPausa);
+    if (typeof d.diasAvisoPlan === "number") setDiasAvisoPlan(d.diasAvisoPlan);
+    if (typeof d.clubSwimRecords === "string") setClubSwimRecords(d.clubSwimRecords);
+    if (Array.isArray(d.rolesPersonalizados)) setRolesPersonalizados(d.rolesPersonalizados);
+    if (Array.isArray(d.gruposMuscularesPersonalizados)) setGruposMuscularesPersonalizados(d.gruposMuscularesPersonalizados);
+    if (Array.isArray(d.favoritosIds)) { d.favoritosIds.forEach((id) => FAVORITOS_SET.add(id)); setFavoritosIds(Array.from(FAVORITOS_SET)); }
+    if (Array.isArray(d.ejerciciosOcultosIds)) { d.ejerciciosOcultosIds.forEach((id) => EJERCICIOS_OCULTOS_SET.add(id)); setEjerciciosOcultosIds(Array.from(EJERCICIOS_OCULTOS_SET)); setLibVersion((v) => v + 1); }
+    if (Array.isArray(d.grupos)) setGrupos(d.grupos);
+    if (Array.isArray(d.plantelGrupos)) setPlantelGrupos(d.plantelGrupos);
+    if (d.videosGuardados && typeof d.videosGuardados === "object") setVideosGuardados(d.videosGuardados);
+    if (Array.isArray(d.ejerciciosCustom)) mergeEjerciciosCustom(d.ejerciciosCustom);
+    if (Array.isArray(d.logActividad)) setLogActividad(d.logActividad);
+    if (d.coaches) setCoaches(d.coaches);
+    if (Array.isArray(d.alumnos)) setAlumnos(d.alumnos);
+    if (Array.isArray(d.templates)) setTemplates(d.templates);
+    if (typeof d._uidMax === "number" && d._uidMax > _uid) _uid = d._uidMax;
+  };
   const [detalleErrorSync, setDetalleErrorSync] = useState("");
 
+  // Pone en pantalla los datos que llegaron de la nube al arrancar (o al ingresar en modo seguro).
+  const aplicarRemotoInicial = (remoto) => {
+    if (remoto) {
+      if (remoto.coachNombre) setCoachNombre(remoto.coachNombre);
+      if (remoto.mensajeRecordatorio) setMensajeRecordatorio(remoto.mensajeRecordatorio);
+      if (typeof remoto.modoPausa === "boolean") setModoPausa(remoto.modoPausa);
+      if (typeof remoto.diasAvisoPlan === "number") setDiasAvisoPlan(remoto.diasAvisoPlan);
+      if (typeof remoto.clubSwimRecords === "string") setClubSwimRecords(remoto.clubSwimRecords);
+      if (Array.isArray(remoto.rolesPersonalizados)) setRolesPersonalizados(remoto.rolesPersonalizados);
+      if (Array.isArray(remoto.gruposMuscularesPersonalizados)) setGruposMuscularesPersonalizados(remoto.gruposMuscularesPersonalizados);
+      if (Array.isArray(remoto.favoritosIds)) { remoto.favoritosIds.forEach((id) => FAVORITOS_SET.add(id)); setFavoritosIds(Array.from(FAVORITOS_SET)); }
+      if (Array.isArray(remoto.ejerciciosOcultosIds)) { remoto.ejerciciosOcultosIds.forEach((id) => EJERCICIOS_OCULTOS_SET.add(id)); setEjerciciosOcultosIds(Array.from(EJERCICIOS_OCULTOS_SET)); setLibVersion((v) => v + 1); }
+      if (Array.isArray(remoto.grupos)) setGrupos(remoto.grupos);
+      if (Array.isArray(remoto.plantelGrupos)) setPlantelGrupos(remoto.plantelGrupos);
+      if (remoto.videosGuardados && typeof remoto.videosGuardados === "object") setVideosGuardados(remoto.videosGuardados);
+      if (Array.isArray(remoto.ejerciciosCustom)) mergeEjerciciosCustom(remoto.ejerciciosCustom);
+      if (Array.isArray(remoto.logActividad)) setLogActividad(remoto.logActividad);
+      if (remoto.coaches) setCoaches(remoto.coaches);
+      if (remoto.alumnos) setAlumnos(sanearAlumnos(remoto.alumnos) || ALUMNOS_INICIAL);
+      setTemplates(combinarPlantillas(remoto.templates));
+      if (typeof remoto._uidMax === "number" && remoto._uidMax > _uid) _uid = remoto._uidMax;
+    }
+  };
   useEffect(() => {
     let cancelado = false;
     (async () => {
+      // En modo seguro los datos llegan recién al ingresar (con usuario y contraseña).
+      if (await detectarModoSeguro()) { if (!cancelado) setRemotoListo(true); return; }
       let intento = await cargarGuardadoRemoto();
       // Si falla, reintentamos un par de veces más antes de resignarnos — una mala conexión
       // momentánea no debería hacer que arranquemos "a ciegas" con datos locales viejos.
@@ -5662,25 +7628,8 @@ export default function GymPlannerCoachApp() {
         remotoSincronizadoRef.current = true;
         setRemotoSincronizado(true);
         const remoto = intento.data;
-        if (remoto) {
-          if (remoto.coachNombre) setCoachNombre(remoto.coachNombre);
-          if (remoto.mensajeRecordatorio) setMensajeRecordatorio(remoto.mensajeRecordatorio);
-          if (typeof remoto.modoPausa === "boolean") setModoPausa(remoto.modoPausa);
-          if (typeof remoto.diasAvisoPlan === "number") setDiasAvisoPlan(remoto.diasAvisoPlan);
-          if (Array.isArray(remoto.rolesPersonalizados)) setRolesPersonalizados(remoto.rolesPersonalizados);
-          if (Array.isArray(remoto.gruposMuscularesPersonalizados)) setGruposMuscularesPersonalizados(remoto.gruposMuscularesPersonalizados);
-          if (Array.isArray(remoto.favoritosIds)) { remoto.favoritosIds.forEach((id) => FAVORITOS_SET.add(id)); setFavoritosIds(Array.from(FAVORITOS_SET)); }
-          if (Array.isArray(remoto.ejerciciosOcultosIds)) { remoto.ejerciciosOcultosIds.forEach((id) => EJERCICIOS_OCULTOS_SET.add(id)); setEjerciciosOcultosIds(Array.from(EJERCICIOS_OCULTOS_SET)); setLibVersion((v) => v + 1); }
-          if (Array.isArray(remoto.grupos)) setGrupos(remoto.grupos);
-          if (Array.isArray(remoto.plantelGrupos)) setPlantelGrupos(remoto.plantelGrupos);
-          if (remoto.videosGuardados && typeof remoto.videosGuardados === "object") setVideosGuardados(remoto.videosGuardados);
-          if (Array.isArray(remoto.ejerciciosCustom)) mergeEjerciciosCustom(remoto.ejerciciosCustom);
-          if (Array.isArray(remoto.logActividad)) setLogActividad(remoto.logActividad);
-          if (remoto.coaches) setCoaches(remoto.coaches);
-          if (remoto.alumnos) setAlumnos(sanearAlumnos(remoto.alumnos) || ALUMNOS_INICIAL);
-          setTemplates(combinarPlantillas(remoto.templates));
-          if (typeof remoto._uidMax === "number" && remoto._uidMax > _uid) _uid = remoto._uidMax;
-        }
+        baseRemotaRef.current = remoto ? normalizarDatos(remoto) : null;
+        aplicarRemotoInicial(remoto);
       }
       setRemotoListo(true);
     })();
@@ -5698,24 +7647,8 @@ export default function GymPlannerCoachApp() {
         remotoSincronizadoRef.current = true;
         setRemotoSincronizado(true);
         const remoto = intento.data;
-        if (remoto) {
-          if (remoto.coachNombre) setCoachNombre(remoto.coachNombre);
-          if (remoto.mensajeRecordatorio) setMensajeRecordatorio(remoto.mensajeRecordatorio);
-          if (typeof remoto.modoPausa === "boolean") setModoPausa(remoto.modoPausa);
-          if (typeof remoto.diasAvisoPlan === "number") setDiasAvisoPlan(remoto.diasAvisoPlan);
-          if (Array.isArray(remoto.rolesPersonalizados)) setRolesPersonalizados(remoto.rolesPersonalizados);
-          if (Array.isArray(remoto.gruposMuscularesPersonalizados)) setGruposMuscularesPersonalizados(remoto.gruposMuscularesPersonalizados);
-          if (Array.isArray(remoto.favoritosIds)) { remoto.favoritosIds.forEach((id) => FAVORITOS_SET.add(id)); setFavoritosIds(Array.from(FAVORITOS_SET)); }
-          if (Array.isArray(remoto.ejerciciosOcultosIds)) { remoto.ejerciciosOcultosIds.forEach((id) => EJERCICIOS_OCULTOS_SET.add(id)); setEjerciciosOcultosIds(Array.from(EJERCICIOS_OCULTOS_SET)); setLibVersion((v) => v + 1); }
-          if (Array.isArray(remoto.grupos)) setGrupos(remoto.grupos);
-          if (Array.isArray(remoto.plantelGrupos)) setPlantelGrupos(remoto.plantelGrupos);
-          if (remoto.videosGuardados && typeof remoto.videosGuardados === "object") setVideosGuardados(remoto.videosGuardados);
-          if (Array.isArray(remoto.ejerciciosCustom)) mergeEjerciciosCustom(remoto.ejerciciosCustom);
-          if (Array.isArray(remoto.logActividad)) setLogActividad(remoto.logActividad);
-          if (remoto.coaches) setCoaches(remoto.coaches);
-          if (remoto.alumnos) setAlumnos(sanearAlumnos(remoto.alumnos) || ALUMNOS_INICIAL);
-          setTemplates(combinarPlantillas(remoto.templates));
-        }
+        baseRemotaRef.current = remoto ? normalizarDatos(remoto) : null;
+        aplicarRemotoInicial(remoto);
       }
     }, 15000);
     return () => clearInterval(intervalo);
@@ -5723,13 +7656,46 @@ export default function GymPlannerCoachApp() {
 
   useEffect(() => {
     if (!remotoListo) return; // todavía no trajimos lo compartido: no guardamos para no pisarlo
-    const data = { coachNombre, coaches, alumnos, templates, mensajeRecordatorio, modoPausa, diasAvisoPlan, rolesPersonalizados, gruposMuscularesPersonalizados, logActividad, grupos, plantelGrupos, videosGuardados, ejerciciosCustom, favoritosIds, ejerciciosOcultosIds, _uidMax: _uid };
+    const data = { coachNombre, coaches, alumnos, templates, mensajeRecordatorio, modoPausa, diasAvisoPlan, clubSwimRecords, rolesPersonalizados, gruposMuscularesPersonalizados, logActividad, grupos, plantelGrupos, videosGuardados, ejerciciosCustom, favoritosIds, ejerciciosOcultosIds, _uidMax: _uid };
     guardarTodo(data); // copia local rápida (funciona siempre, con o sin internet)
+    datosActualesRef.current = data;
     let cancelado = false;
     if (remotoSincronizadoRef.current) {
       // Guardado en la nube: si falla (aunque sea un error silencioso tipo permisos, que fetch()
       // no detecta solo), lo mostramos como error real en vez de decir "Guardado" igual.
-      guardarTodoRemoto(data).then((r) => {
+      // Los guardados van de a uno (en cola) y cada uno combina con lo último de la nube.
+      const guardarCombinado = async () => {
+        const actual = datosActualesRef.current;
+        if (actual !== data) return { ok: true }; // ya hay un cambio más nuevo en la cola
+        // nadie más guardó desde lo último que sabemos: se sube directo, sin bajar todo antes
+        const v = VERSION_NUBE && baseRemotaRef.current ? await versionRemota() : undefined;
+        if (v && v === VERSION_NUBE) {
+          if (igualesSalvoUid(data, baseRemotaRef.current)) return { ok: true };
+          const r = await guardarTodoRemoto(data);
+          if (r.ok) baseRemotaRef.current = data;
+          return r;
+        }
+        const nube = await cargarGuardadoRemoto();
+        if (!nube.ok || !nube.data || !baseRemotaRef.current) {
+          const r = await guardarTodoRemoto(data);
+          if (r.ok) baseRemotaRef.current = data;
+          return r;
+        }
+        const remotoNorm = normalizarDatos(nube.data);
+        const combinado = fusionar3(baseRemotaRef.current, data, remotoNorm);
+        combinado._uidMax = Math.max(_uid, Number(remotoNorm._uidMax) || 0, Number(data._uidMax) || 0);
+        let r = { ok: true };
+        if (!igualesSalvoUid(combinado, remotoNorm)) r = await guardarTodoRemoto(combinado);
+        if (r.ok) {
+          baseRemotaRef.current = combinado;
+          // si en la nube había cambios de otro celular, se muestran acá también
+          if (!igualesProfundo(combinado, data) && datosActualesRef.current === data) aplicarDatos(combinado);
+        }
+        return r;
+      };
+      const tarea = colaGuardadoRef.current.then(guardarCombinado, guardarCombinado);
+      colaGuardadoRef.current = tarea.catch(() => {});
+      tarea.then((r) => {
         if (cancelado) return;
         if (!r.ok) { setErrorGuardadoRemoto(r.detalle || "No se pudo guardar en la nube."); return; }
         setErrorGuardadoRemoto(null);
@@ -5742,7 +7708,32 @@ export default function GymPlannerCoachApp() {
     }
     return () => { cancelado = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coachNombre, coaches, alumnos, templates, mensajeRecordatorio, modoPausa, diasAvisoPlan, rolesPersonalizados, gruposMuscularesPersonalizados, logActividad, grupos, plantelGrupos, videosGuardados, ejerciciosCustom, favoritosIds, ejerciciosOcultosIds, remotoListo]);
+  }, [coachNombre, coaches, alumnos, templates, mensajeRecordatorio, modoPausa, diasAvisoPlan, clubSwimRecords, rolesPersonalizados, gruposMuscularesPersonalizados, logActividad, grupos, plantelGrupos, videosGuardados, ejerciciosCustom, favoritosIds, ejerciciosOcultosIds, remotoListo]);
+
+  // Trae los cambios de otros celulares (el coach, los alumnos) cada 20 segundos y al volver a la
+  // app, y los combina con los de este — así nadie trabaja sobre una copia vieja.
+  useEffect(() => {
+    if (!remotoSincronizado) return;
+    const traer = async () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      // primero solo la versión: si no cambió nada en la nube, no hace falta bajar todo
+      if (VERSION_NUBE && baseRemotaRef.current) { const v = await versionRemota(); if (v && v === VERSION_NUBE) return; }
+      const nube = await cargarGuardadoRemoto();
+      if (!nube.ok || !nube.data || !baseRemotaRef.current || !datosActualesRef.current) return;
+      const remotoNorm = normalizarDatos(nube.data);
+      if (igualesProfundo(remotoNorm, baseRemotaRef.current)) return;
+      const local = datosActualesRef.current;
+      const combinado = fusionar3(baseRemotaRef.current, local, remotoNorm);
+      baseRemotaRef.current = remotoNorm;
+      if (!igualesProfundo(combinado, local)) aplicarDatos(combinado);
+    };
+    const enCola = () => { const t = colaGuardadoRef.current.then(traer, traer); colaGuardadoRef.current = t.catch(() => {}); };
+    const intervalo = setInterval(enCola, 20000);
+    const alVolver = () => { if (document.visibilityState === "visible") enCola(); };
+    document.addEventListener("visibilitychange", alVolver);
+    return () => { clearInterval(intervalo); document.removeEventListener("visibilitychange", alVolver); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remotoSincronizado]);
 
   // Le avisa al coach por notificación push apenas aparece una alerta nueva (ánimo bajo, cumplimiento
   // bajo, etc.). Guardamos cuáles ya se avisaron en este dispositivo (no solo en la memoria de esta
@@ -5751,7 +7742,7 @@ export default function GymPlannerCoachApp() {
   if (alertasNotificadasRef.current === null) alertasNotificadasRef.current = cargarAlertasNotificadas();
   useEffect(() => {
     if (!remotoListo || !notificacionesActivas) return;
-    const alertasActuales = alumnos.flatMap((a) => generarAlertas(a).map((al) => ({ ...al, key: `${a.id}::${al.tipo}` })));
+    const alertasActuales = alumnos.flatMap((a) => generarAlertas(a, diasAvisoPlan).map((al) => ({ ...al, key: `${a.id}::${al.tipo}` })));
     const clavesActuales = new Set(alertasActuales.map((al) => al.key));
     let cambio = false;
     for (const al of alertasActuales) {
@@ -5768,7 +7759,7 @@ export default function GymPlannerCoachApp() {
     }
     if (cambio) guardarAlertasNotificadas(alertasNotificadasRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [alumnos, remotoListo, notificacionesActivas]);
+  }, [alumnos, remotoListo, notificacionesActivas, diasAvisoPlan]);
   // Archivo mensual automático: cada vez que se abre la app, si ya terminó un mes que todavía
   // no está marcado como archivado para algún alumno, lo marca — no hace falta que el coach
   // toque nada. El informe de ese mes se arma al toque, cuando se lo quiera ver, con los datos
@@ -5832,14 +7823,30 @@ export default function GymPlannerCoachApp() {
     setLibVersion((v) => v + 1);
   };
 
-  const login = (usuario, password) => {
+  const login = async (usuario, password) => {
+    if (MODO_SEGURO) {
+      const r = await ingresarSeguro(usuario, password);
+      if (!r.ok) return r.error;
+      aplicarRemotoInicial(r.data);
+      baseRemotaRef.current = r.data ? normalizarDatos(r.data) : null;
+      remotoSincronizadoRef.current = true;
+      setRemotoSincronizado(true);
+      setDetalleErrorSync("");
+      if (r.rol === "coach") { setSession({ role: "coach", coachId: r.id }); setTab("dashboard"); }
+      else { setSession({ role: "athlete", athleteId: r.id }); setTab("inicio"); }
+      return true;
+    }
     const c = coaches.find((co) => co.usuario === usuario && co.password === password);
     if (c) { setSession({ role: "coach", coachId: c.id }); setTab("dashboard"); return true; }
     const a = alumnos.find((al) => al.usuario === usuario && al.password === password);
     if (a) { setSession({ role: "athlete", athleteId: a.id }); setTab("inicio"); return true; }
     return false;
   };
-  const logout = () => { setSession(null); setSelectedCoachAlumno(null); };
+  const logout = () => {
+    setSession(null); setSelectedCoachAlumno(null); setBioMontada(false);
+    // en modo seguro, sin sesión no se lee ni se guarda nada en la nube hasta volver a ingresar
+    if (MODO_SEGURO) { PASE = null; remotoSincronizadoRef.current = false; setRemotoSincronizado(false); baseRemotaRef.current = null; }
+  };
   // Deja registrado cuándo entra cada alumno/a a la app, para que el coach lo vea en su Dashboard.
   // Se anota al iniciar sesión y cuando vuelve a abrir la app, como máximo una vez cada 10 minutos
   // (así no se llena de guardados innecesarios).
@@ -5970,6 +7977,15 @@ export default function GymPlannerCoachApp() {
   };
   const updateAlumno = (alumnoId, patch) => setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...a, ...patch } : a)));
   const deleteAlumno = (alumnoId) => { const a = alumnos.find((x) => x.id === alumnoId); setAlumnos((prev) => prev.filter((a) => a.id !== alumnoId)); if (a) registrarActividad(`eliminó a ${a.nombre}`); };
+  // El día que empieza un próximo plan, queda como plan del alumno/a y el anterior se archiva solo.
+  const [chequeoPlanes, setChequeoPlanes] = useState(0);
+  useEffect(() => { const t = setInterval(() => setChequeoPlanes((n) => n + 1), 30 * 60 * 1000); return () => clearInterval(t); }, []);
+  useEffect(() => {
+    // En el celular del alumno/a solo toca el suyo. Da lo mismo cuál lo haga primero: el resultado es idéntico.
+    const leToca = (a) => planProximoVencido(a) && (session?.role === "coach" || (session?.role === "athlete" && a.id === session.athleteId));
+    if (!session || !remotoSincronizado || !alumnos.some(leToca)) return;
+    setAlumnos((prev) => prev.map((a) => (leToca(a) ? activarPlanProximo(a) : a)));
+  }, [alumnos, session, remotoSincronizado, chequeoPlanes]);
   const guardarVersion = (alumnoId, nombre) => setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...a, historialPlanes: [{ id: uid(), nombre, fecha: todayISO(), plan: clonarPlan(a.plan) }, ...a.historialPlanes] } : a)));
   const restaurarVersion = (alumnoId, versionId) => setAlumnos((prev) => prev.map((a) => {
     if (a.id !== alumnoId) return a;
@@ -5981,14 +7997,122 @@ export default function GymPlannerCoachApp() {
   const updateNota = (alumnoId, exId, exNombre, texto, claveNota) => setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...a, notasEjercicios: { ...(a.notasEjercicios || {}), [claveNota || exId]: { texto, exNombre, fecha: todayISO() } } } : a)));
   // Guarda un nuevo punto en el histórico de RM de un ejercicio puntual (no solo sentadilla),
   // para que cualquier levantamiento que cargues tenga su propio gráfico de evolución.
-  const agregarHistorialRM = (alumnoId, ejercicio, valor) => {
+  // Si el nombre es el mismo ejercicio escrito distinto ("hip trust" / "Hip thrust"), se guarda en
+  // el que ya existe. Cada cambio de valor queda anotado en avisosRM, para avisarle a la otra parte
+  // ("Sentadilla trasera: 50 → 55 kg").
+  const agregarHistorialRM = (alumnoId, ejercicio, valor, por) => {
+    const quien = por || session?.role || "coach";
+    let aviso = null, nombreAlumno = "";
     setAlumnos((prev) => prev.map((a) => {
       if (a.id !== alumnoId) return a;
-      const actual = (a.historialRM && a.historialRM[ejercicio]) || [];
-      if (actual[actual.length - 1] === valor) return a; // sin cambios reales, no duplicar
-      return { ...a, historialRM: { ...(a.historialRM || {}), [ejercicio]: [...actual, valor] } };
+      const nombre = ejercicioRelacionado(ejercicio, Object.keys(a.historialRM || {})) || ejercicio;
+      const actual = (a.historialRM && a.historialRM[nombre]) || [];
+      const anterior = actual.length ? actual[actual.length - 1] : null;
+      if (anterior === valor) return a; // sin cambios reales, no duplicar
+      aviso = { id: uid(), ejercicio: nombre, de: anterior, a: valor, fecha: new Date().toISOString(), por: quien };
+      nombreAlumno = a.nombre;
+      return { ...a, historialRM: { ...(a.historialRM || {}), [nombre]: [...actual, valor] }, avisosRM: [...(a.avisosRM || []), aviso].slice(-30) };
     }));
+    // al coach le llega una notificación cuando el/la alumno/a actualiza un RM
+    setTimeout(() => {
+      if (aviso && quien === "athlete") enviarNotificacion("coach", `🏋️ ${nombreAlumno} actualizó un RM`, `${aviso.ejercicio}: ${aviso.de != null ? `${aviso.de} → ` : ""}${aviso.a} kg`);
+    }, 0);
   };
+  // Marca como vistos los avisos de RM que le correspondía ver a este rol.
+  const marcarAvisosRMVistos = (alumnoId, quienVe) => setAlumnos((prev) => prev.map((a) => (a.id === alumnoId && (a.avisosRM || []).some((x) => x.por !== quienVe && !x["visto_" + quienVe])
+    ? { ...a, avisosRM: a.avisosRM.map((x) => (x.por !== quienVe ? { ...x, ["visto_" + quienVe]: true } : x)) }
+    : a)));
+
+  // ---- SwimRecords: tiempos de natación que se actualizan solos ----
+  const alumnosRef = useRef(alumnos);
+  alumnosRef.current = alumnos;
+  const srEnCursoRef = useRef(new Set());
+  const srIntentadosRef = useRef(new Set());
+  // Trae los tiempos de SwimRecords del alumno/a y suma los nuevos. Si alguno es mejor que su marca
+  // anterior en la misma prueba y pileta, queda anotado y se avisa (al coach y al alumno/a).
+  const sincronizarSwimRecords = async (alumnoId, vinculoNuevo) => {
+    if (srEnCursoRef.current.has(alumnoId)) return null;
+    srEnCursoRef.current.add(alumnoId);
+    try {
+      const a0 = alumnosRef.current.find((a) => a.id === alumnoId);
+      const v0 = vinculoNuevo || a0?.swimrecords;
+      if (!a0 || !v0?.ids?.length) return null;
+      const tiempos = await traerTiemposSwimRecords(v0.ids);
+      const calcular = (a, vin) => {
+        const ocultas = new Set(vin.ocultas || []);
+        const marcas = a.marcasNatacion || [];
+        const ya = new Set(marcas.map((m) => m.id));
+        const nuevas = tiempos.filter((t) => !ya.has(t.id) && !ocultas.has(t.id));
+        const mejoras = [];
+        // en la primera carga no se avisa nada (son tiempos viejos); después, cada marca que baja
+        if (vin.ultimaSync) {
+          for (const n of [...nuevas].sort((x, y) => (x.fecha || "").localeCompare(y.fecha || ""))) {
+            const previas = [...marcas, ...nuevas.filter((x) => x !== n && (x.fecha || "") < (n.fecha || ""))].filter((m) => m.distancia === n.distancia && m.estilo === n.estilo && (m.pileta || "") === (n.pileta || ""));
+            const mejor = previas.reduce((x, m) => (x == null || m.segundos < x ? m.segundos : x), null);
+            if (mejor != null && n.segundos < mejor - 0.001) mejoras.push({ id: `mej-${n.id}`, prueba: `${n.distancia} ${n.estilo}${n.pileta ? ` (pileta ${n.pileta})` : ""}`, de: mejor, a: n.segundos, fecha: n.fecha, torneo: n.torneo });
+          }
+        }
+        return { nuevas, mejoras };
+      };
+      const vinBase = vinculoNuevo ? { ...vinculoNuevo } : { ...a0.swimrecords };
+      const { nuevas, mejoras } = calcular(a0, vinBase);
+      const ahora = new Date().toISOString();
+      setAlumnos((prev) => prev.map((a) => {
+        if (a.id !== alumnoId) return a;
+        const vin = vinculoNuevo ? { ...vinculoNuevo } : a.swimrecords;
+        if (!vin?.ids?.length) return a; // se desvinculó mientras tanto
+        const r = calcular(a, vin);
+        const yaMej = new Set((vin.mejoras || []).map((m) => m.id));
+        return { ...a, marcasNatacion: [...(a.marcasNatacion || []), ...r.nuevas], swimrecords: { ...vin, ultimaSync: ahora, mejoras: [...(vin.mejoras || []), ...r.mejoras.filter((m) => !yaMej.has(m.id))].slice(-20) } };
+      }));
+      if (mejoras.length) {
+        const txt = mejoras.map((m) => `${m.prueba}: ${fmtTiempo(m.de)} → ${fmtTiempo(m.a)}`).join(" · ");
+        if (session?.role === "coach") enviarNotificacion("coach", `🏊 ${a0.nombre} bajó su marca`, txt);
+        enviarNotificacion(a0.id, "🎉 ¡Nueva mejor marca!", txt);
+      }
+      return { nuevas: nuevas.length, mejoras };
+    } finally {
+      srEnCursoRef.current.delete(alumnoId);
+    }
+  };
+  // Solo, al abrir la app: actualiza los tiempos de los ya vinculados (cada 6 h como mucho) y, si
+  // entra el coach, busca la ficha de los que todavía no están vinculados (una vez por sesión).
+  useEffect(() => {
+    if (!remotoListo || !session) return;
+    let cancelado = false;
+    (async () => {
+      const lista = session.role === "coach"
+        ? alumnosRef.current.filter((a) => a.activo !== false && (a.coachIds === null || a.coachIds.includes(session.coachId)))
+        : alumnosRef.current.filter((a) => a.id === session.athleteId);
+      for (const a of lista) {
+        if (cancelado) return;
+        const v = a.swimrecords;
+        try {
+          if (v?.ids?.length) {
+            if (!v.ultimaSync || Date.now() - new Date(v.ultimaSync).getTime() > 6 * 60 * 60 * 1000) await sincronizarSwimRecords(a.id);
+          } else if (session.role === "coach" && !v?.noVincular && !srIntentadosRef.current.has(a.id)) {
+            srIntentadosRef.current.add(a.id);
+            const vin = await encontrarFichaSwimRecords(a, clubSwimRecords);
+            if (vin && !cancelado) await sincronizarSwimRecords(a.id, { ...vin, automatico: true });
+          }
+        } catch {
+          // sin conexión con SwimRecords: se reintenta la próxima vez que se abra la app
+        }
+      }
+    })();
+    return () => { cancelado = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remotoListo, session?.role, session?.athleteId, alumnos.length, clubSwimRecords]);
+  // Suma un torneo a las Competencias de todos los nadadores vinculados con SwimRecords.
+  const agregarCompetenciaEquipo = (t) => setAlumnos((prev) => prev.map((a) => {
+    if (!a.swimrecords?.ids?.length || a.activo === false) return a;
+    if (session?.role === "coach" && !(a.coachIds === null || a.coachIds.includes(session.coachId))) return a;
+    const comps = a.competencias || [];
+    if (comps.some((c) => c.id === `sr-${t.id}` || (normalizarTexto(c.nombre) === normalizarTexto(t.name) && c.fecha === t.start_date))) return a;
+    return { ...a, competencias: [...comps, { id: `sr-${t.id}`, nombre: t.name, fecha: t.start_date }] };
+  }));
+  const accionesCtx = { updateAlumno: (id, patch) => setAlumnos((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a))) };
+  const swimRecordsCtx = { sincronizar: sincronizarSwimRecords, club: clubSwimRecords, setClub: setClubSwimRecords, agregarCompetencia: agregarCompetenciaEquipo };
 
   const finalizarEntrenamiento = (alumnoId) => {
     setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...a, sesionesCompletadas: (a.sesionesCompletadas || 0) + 1, historialSesiones: [...(a.historialSesiones || []), todayISO()], wellness: { ...a.wellness, encuestaPendiente: true } } : a)));
@@ -6048,7 +8172,7 @@ export default function GymPlannerCoachApp() {
   const editarPlantilla = (id, nuevoPlan) => setTemplates((prev) => prev.map((t) => (t.id === id ? { ...t, plan: nuevoPlan } : t)));
   const eliminarPlantilla = (id) => setTemplates((prev) => prev.filter((t) => t.id !== id));
   const sendMsg = (alumnoId, from, texto) => {
-    setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...a, chat: [...a.chat, { from, texto, hora: "ahora" }] } : a)));
+    setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...a, chat: [...a.chat, { id: uid(), from, texto, hora: "ahora" }] } : a)));
     if (from === "coach") {
       enviarNotificacion(alumnoId, `Mensaje de ${coachNombre}`, texto);
     } else {
@@ -6057,7 +8181,9 @@ export default function GymPlannerCoachApp() {
     }
   };
 
-  const athlete = session?.role === "athlete" ? alumnos.find((a) => a.id === session.athleteId) : null;
+  const athleteGuardado = session?.role === "athlete" ? alumnos.find((a) => a.id === session.athleteId) : null;
+  // Si su próximo plan ya empezó, lo ve aunque este celular todavía no lo haya guardado.
+  const athlete = planProximoVencido(athleteGuardado) ? activarPlanProximo(athleteGuardado) : athleteGuardado;
 
   let body;
   if (!remotoListo) {
@@ -6081,6 +8207,7 @@ export default function GymPlannerCoachApp() {
     if (tab === "dashboard") body = <CoachDashboard alumnos={alumnosVisibles} goAlumnos={(id) => { setTab("alumnos"); abrirAlumno(id); }} coachNombre={coachNombre} onUpdateCoach={setCoachNombre} coaches={coaches} onAddCoach={addCoach} onRemoveCoach={removeCoach} mensajeRecordatorio={mensajeRecordatorio} onUpdateMensajeRecordatorio={setMensajeRecordatorio} notificacionesActivas={notificacionesActivas} onToggleNotificaciones={setNotificacionesActivas} modoPausa={modoPausa} onToggleModoPausa={setModoPausa} diasAvisoPlan={diasAvisoPlan} onSetDiasAvisoPlan={setDiasAvisoPlan} coachId={session?.coachId} onCambiarPassword={cambiarPasswordCoach} onSetRecoveryPin={setRecoveryPin} onSetTelefono={setTelefonoCoach} onReclamarAlumnos={reclamarAlumnosSinDueño} logActividad={logActividad} grupos={grupos} onCrearGrupo={crearGrupo} onEliminarGrupo={eliminarGrupo} />;
     else if (tab === "alumnos") body = <CoachAlumnos alumnos={alumnosVisibles} selectedId={selectedCoachAlumno} setSelectedId={abrirAlumno} templates={templatesVisibles} onAsignarPlantilla={asignarPlantilla} onCopiarPlan={copiarPlan} onCopiarVersionAOtro={copiarVersionAOtro} onCopiarSoloCalentamiento={copiarSoloCalentamiento} onAgregarPlanSecundario={agregarPlanSecundario} onQuitarPlanSecundario={quitarPlanSecundario} onToggleFijoPlanSecundario={toggleFijoPlanSecundario} onGuardarComoPlantilla={guardarComoPlantilla} onUpdatePlan={updatePlan} onUpdateAlumno={updateAlumno} onDeleteAlumno={deleteAlumno} onAddAlumno={addAlumno} onSendMsg={sendMsg} onGuardarVersion={guardarVersion} onRestaurarVersion={restaurarVersion} onEliminarVersion={eliminarVersion} onGuardarHistorialRM={agregarHistorialRM} onAddToLibrary={addCustomExercise} version={libVersion} coaches={coaches} coachIdActual={session.coachId} onCompartirAlumno={compartirAlumnoConCoach} onDejarDeCompartir={dejarDeCompartirAlumno} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={agregarRolPersonalizado} grupos={grupos} onCompartirGrupo={compartirAlumnoConGrupo} plantelGrupos={plantelGrupos} onCrearPlantelGrupo={crearPlantelGrupo} onRenombrarPlantelGrupo={renombrarPlantelGrupo} onEliminarPlantelGrupo={eliminarPlantelGrupo} onAsignarPlantelGrupo={asignarPlantelGrupo} />;
     else if (tab === "plantillas") body = <CoachPlantillas templates={templatesVisibles} alumnos={alumnosVisibles} onAsignar={asignarPlantilla} onAgregarPlanSecundario={agregarPlanSecundario} onCrearPlantilla={crearPlantilla} onEditarPlantilla={editarPlantilla} onEliminarPlantilla={eliminarPlantilla} onAddToLibrary={addCustomExercise} version={libVersion} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={agregarRolPersonalizado} coachIdActual={session.coachId} />;
+    else if (tab === "biomecanica") body = null;
     else if (tab === "ejercicios") body = <CoachEjercicios onAddExercise={addCustomExercise} version={libVersion} onToggleFav={toggleFavorito} onEditVideo={editarVideoLibreria} onEliminarExercise={eliminarExercise} gruposMuscularesPersonalizados={gruposMuscularesPersonalizados} onAgregarGrupoMuscularPersonalizado={agregarGrupoMuscularPersonalizado} />;
     else body = <BuscarGlobal alumnos={alumnosVisibles} templates={templatesVisibles} version={libVersion} onGoAlumno={(id) => { setTab("alumnos"); abrirAlumno(id); }} onGoPlantillas={() => setTab("plantillas")} />;
   } else if (!athlete) {
@@ -6088,14 +8215,14 @@ export default function GymPlannerCoachApp() {
   } else if (athlete.wellness.encuestaPendiente && tab !== "entrenar") {
     body = (
       <div style={{ position: "relative", minHeight: "100%" }}>
-        <AthleteInicio alumno={athlete} goEntrenar={() => setTab("entrenar")} onCheckin={registrarCheckin} onUpdateFoto={(dataUrl) => updateAlumno(athlete.id, { fotoPerfil: dataUrl })} onMarcarAvisoVisto={() => updateAlumno(athlete.id, { avisoVistoTexto: athlete.avisoCoach, avisoVistoFecha: new Date().toISOString() })} onGuardarReaccion={(ms) => updateAlumno(athlete.id, { reacciones: [...(athlete.reacciones || []), { f: new Date().toISOString(), ms }].slice(-30) })} />
+        <AthleteInicio alumno={athlete} rankingReaccion={rankingLargada(alumnos, athlete)} goEntrenar={() => setTab("entrenar")} onCheckin={registrarCheckin} onUpdateFoto={(dataUrl) => updateAlumno(athlete.id, { fotoPerfil: dataUrl })} onMarcarAvisoVisto={() => updateAlumno(athlete.id, { avisoVistoTexto: athlete.avisoCoach, avisoVistoFecha: new Date().toISOString() })} onGuardarReaccion={(ms) => updateAlumno(athlete.id, { reacciones: [...(athlete.reacciones || []), { f: new Date().toISOString(), ms }].slice(-30) })} />
         <EncuestaSemanalModal onClose={() => updateAlumno(athlete.id, { wellness: { ...athlete.wellness, encuestaPendiente: false } })} onSubmit={(data) => enviarEncuestaSemanal(athlete.id, data)} />
       </div>
     );
   } else {
-    if (tab === "inicio") body = <AthleteInicio alumno={athlete} goEntrenar={() => setTab("entrenar")} onCheckin={registrarCheckin} onUpdateFoto={(dataUrl) => updateAlumno(athlete.id, { fotoPerfil: dataUrl })} onMarcarAvisoVisto={() => updateAlumno(athlete.id, { avisoVistoTexto: athlete.avisoCoach, avisoVistoFecha: new Date().toISOString() })} onGuardarReaccion={(ms) => updateAlumno(athlete.id, { reacciones: [...(athlete.reacciones || []), { f: new Date().toISOString(), ms }].slice(-30) })} />;
-    else if (tab === "entrenar") body = <AthleteEntrenar alumno={athlete} onFinalizar={(id) => { finalizarEntrenamiento(id); setTab("inicio"); }} onUpdateNota={(exId, exNombre, texto, claveNota) => updateNota(athlete.id, exId, exNombre, texto, claveNota)} rolesPersonalizados={rolesPersonalizados} />;
-    else if (tab === "progreso") body = <AthleteProgreso alumno={athlete} onGuardarHistorialRM={(ejercicio, valor) => agregarHistorialRM(athlete.id, ejercicio, valor)} />;
+    if (tab === "inicio") body = <AthleteInicio alumno={athlete} rankingReaccion={rankingLargada(alumnos, athlete)} goEntrenar={() => setTab("entrenar")} onCheckin={registrarCheckin} onUpdateFoto={(dataUrl) => updateAlumno(athlete.id, { fotoPerfil: dataUrl })} onMarcarAvisoVisto={() => updateAlumno(athlete.id, { avisoVistoTexto: athlete.avisoCoach, avisoVistoFecha: new Date().toISOString() })} onGuardarReaccion={(ms) => updateAlumno(athlete.id, { reacciones: [...(athlete.reacciones || []), { f: new Date().toISOString(), ms }].slice(-30) })} />;
+    else if (tab === "entrenar") body = <AthleteEntrenar alumno={athlete} onCerrarAvisosRM={() => marcarAvisosRMVistos(athlete.id, "athlete")} onFinalizar={(id) => { finalizarEntrenamiento(id); setTab("inicio"); }} onUpdateNota={(exId, exNombre, texto, claveNota) => updateNota(athlete.id, exId, exNombre, texto, claveNota)} rolesPersonalizados={rolesPersonalizados} />;
+    else if (tab === "progreso") body = <AthleteProgreso alumno={athlete} onGuardarHistorialRM={(ejercicio, valor) => agregarHistorialRM(athlete.id, ejercicio, valor, "athlete")} onCerrarAvisosRM={() => marcarAvisosRMVistos(athlete.id, "athlete")} onUpdateMarcas={(patch) => updateAlumno(athlete.id, patch)} />;
     else if (tab === "nutricion") body = <CalculadoraScreen alumno={athlete} />;
     else body = <ChatScreen alumno={athlete} onSendMsg={sendMsg} />;
   }
@@ -6112,10 +8239,21 @@ export default function GymPlannerCoachApp() {
       )}
       {session && session.role === "coach" && (
         <button onClick={verificarGuardado} className="font-body" style={{ position: "absolute", top: "calc(16px + env(safe-area-inset-top, 0px))", left: 14, right: 90, zIndex: 4, fontSize: 9, color: !remotoSincronizado || errorGuardadoRemoto ? "#FF6B35" : guardadoOk ? "#33D6A6" : "#4A4658", transition: "color 0.3s", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", background: "none", border: "none", padding: 0, textAlign: "left", cursor: "pointer" }}>
-          {verificando ? "Comprobando..." : !remotoSincronizado ? `⚠ Sin conexión con la nube${detalleErrorSync ? ` · ${detalleErrorSync}` : ""}` : errorGuardadoRemoto ? `⚠ No se guardó en la nube · ${errorGuardadoRemoto}` : guardadoOk ? "✓ Guardado" : "● Tocá para confirmar"}
+          {verificando ? "Comprobando..." : !remotoSincronizado ? `⚠ Sin conexión con la nube${detalleErrorSync ? ` · ${detalleErrorSync}` : ""}` : errorGuardadoRemoto ? `⚠ No se guardó en la nube · ${errorGuardadoRemoto}` : guardadoOk ? "✓ Guardado" : "☁ Se guarda solo · tocá para comprobar"}
         </button>
       )}
-      <div style={{ flex: 1, overflowY: "auto", paddingBottom: 8, paddingTop: "env(safe-area-inset-top, 0px)", position: "relative", zIndex: 1 }}>{body}</div>
+      <div style={{ flex: 1, overflowY: "auto", paddingBottom: 8, paddingTop: "env(safe-area-inset-top, 0px)", position: "relative", zIndex: 1 }}>
+        <AccionesCtx.Provider value={accionesCtx}><SwimRecordsCtx.Provider value={swimRecordsCtx}>{body}</SwimRecordsCtx.Provider></AccionesCtx.Provider>
+        {session?.role === "coach" && bioMontada && (
+          <div style={{ display: tab === "biomecanica" && body === null ? "block" : "none", height: "100%" }}>
+            <BiomecanicaScreen
+              alumnos={alumnos.filter((a) => a.activo !== false && (a.coachIds === null || a.coachIds.includes(session.coachId)))}
+              onGuardar={(alumnoId, ev) => setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...a, biomecanica: [...(a.biomecanica || []).filter((x) => x.id !== ev.id), ev] } : a)))}
+              onBorrar={(alumnoId, evId) => setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...a, biomecanica: (a.biomecanica || []).filter((x) => x.id !== evId) } : a)))}
+            />
+          </div>
+        )}
+      </div>
       {session?.role === "coach" && lastUndo && (
         <div style={{ position: "absolute", left: 10, right: 10, bottom: "calc(64px + env(safe-area-inset-bottom, 0px))", zIndex: 8, background: "#1C1A24", border: "1px solid #FF6B35", borderRadius: 10, padding: "8px 10px", display: "flex", alignItems: "center", gap: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.5)" }}>
           <span className="font-body" style={{ flex: 1, color: "#F4F1EA", fontSize: 10, lineHeight: 1.3 }}>{lastUndo.label}</span>
@@ -6129,8 +8267,8 @@ export default function GymPlannerCoachApp() {
             const activo = tab === t.id;
             const colorActivo = session.role === "coach" ? "#FF6B35" : "#7DD6C0";
             return (
-              <button key={t.id} onClick={() => setTab(t.id)} style={{ flex: 1, background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "4px 14px", borderRadius: 12, background: activo ? `${colorActivo}1F` : "transparent", transition: "background 0.15s" }}>
+              <button key={t.id} onClick={() => setTab(t.id)} style={{ flex: 1, minWidth: 0, background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: tabs.length > 5 ? "4px 6px" : "4px 14px", borderRadius: 12, background: activo ? `${colorActivo}1F` : "transparent", transition: "background 0.15s" }}>
                   <span style={{ fontSize: 15, opacity: activo ? 1 : 0.45 }}>{t.icon}</span>
                   <span className="font-body" style={{ fontSize: 8, fontWeight: 700, color: activo ? colorActivo : "#8B8698" }}>{t.label}</span>
                 </div>

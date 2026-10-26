@@ -10,7 +10,8 @@
 import webpush from "web-push";
 
 const SUPABASE_URL = "https://phoqazemsipnxibpxboq.supabase.co";
-const SUPABASE_KEY = "sb_publishable_04mcDE0s7wlA5Z2JVAkfbA_67H7Sbvk";
+// Con el modo seguro activo, team_data solo se puede leer con la clave secreta.
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "sb_publishable_04mcDE0s7wlA5Z2JVAkfbA_67H7Sbvk";
 const DIAS_SEMANA = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 
 async function enviarPush(userId, title, body) {
@@ -106,8 +107,10 @@ export default async function handler(req, res) {
         const semanas = maxSemanas(alumno.plan);
         const fin = new Date(inicio.getTime() + semanas * 7 * 24 * 60 * 60 * 1000);
         const diasRestantes = Math.ceil((fin.getTime() - ahoraArg.getTime()) / (24 * 60 * 60 * 1000));
-        if (diasRestantes === diasAviso) {
-          const enviados = await enviarPush("coach", `📋 Le quedan ${diasAviso} días`, `A ${alumno.nombre} le quedan ${diasAviso} días de su plan actual — es un buen momento para armarle el próximo.`);
+        // Avisa el día elegido y, por las dudas, de nuevo cuando queda 1 día.
+        if (diasRestantes === diasAviso || (diasRestantes === 1 && diasAviso !== 1)) {
+          const txt = diasRestantes === 1 ? "1 día" : `${diasRestantes} días`;
+          const enviados = await enviarPush("coach", `📋 Le ${diasRestantes === 1 ? "queda" : "quedan"} ${txt}`, `A ${alumno.nombre} le ${diasRestantes === 1 ? "queda" : "quedan"} ${txt} de su plan actual — es un buen momento para armarle el próximo.`);
           if (enviados > 0) avisosPlan++;
         }
       }
