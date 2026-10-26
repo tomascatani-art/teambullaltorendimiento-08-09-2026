@@ -1,0 +1,897 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Team Bull · Biomecánica</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="theme-color" content="#121017">
+<meta name="description" content="Análisis biomecánico y de competencia de natación para entrenadores.">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="SwimBull">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/teambull-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&family=Instrument+Sans:wght@400;500;600;700&family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="teambull.css">
+<script>try { if (window.self !== window.top) document.documentElement.classList.add("in-teambull"); } catch (e) { document.documentElement.classList.add("in-teambull"); }</script>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20M10 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM20 20v-1.5a3.5 3.5 0 0 0-2.5-3.35M15.5 4.15a3.5 3.5 0 0 1 0 6.7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M8 4h8v5a4 4 0 0 1-8 0V4zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8.5 20h7M10 17h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-pulse" viewBox="0 0 24 24"><path d="M3 12h4l2.5-6 5 12L17 12h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="19" cy="12" r="1.6" fill="currentColor"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m0 0l-4-4m4 4l4-4M5 19h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V5m0 0L8 9m4-4l4 4M5 19h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-save" viewBox="0 0 24 24"><path d="M6 4h9l3 3v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4zM9 4v5h6M9 20v-6h6v6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><path d="M15 4h3a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-3M10 16l4-4-4-4M14 12H4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z" fill="currentColor"/></symbol>
+    <symbol id="i-prev" viewBox="0 0 24 24"><path d="M6 5v14M18 6l-9 6 9 6z" fill="currentColor" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+    <symbol id="i-next" viewBox="0 0 24 24"><path d="M18 5v14M6 6l9 6-9 6z" fill="currentColor" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+    <symbol id="i-video" viewBox="0 0 24 24"><path d="M4 6h11a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zM16 10l5-3v10l-5-3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+    <symbol id="i-timer" viewBox="0 0 24 24"><path d="M12 21a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM12 9v4l2.5 2M9.5 2.5h5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-horizon" viewBox="0 0 24 24"><path d="M3 18h18M5 18L18 7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M12 18a7 7 0 0 0-1.6-4.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-dasharray="2 2.5"/></symbol>
+    <symbol id="i-vertical" viewBox="0 0 24 24"><path d="M7 3v18M7 21L17 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M7 13a6 6 0 0 0 4.2-1.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-dasharray="2 2.5"/></symbol>
+    <symbol id="i-square" viewBox="0 0 24 24"><path d="M4 4v16h16L4 4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M4 15h5v5" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="i-both" viewBox="0 0 24 24"><rect x="3" y="4" width="13" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8 18h11.5a1.5 1.5 0 0 0 1.5-1.5V9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+    <symbol id="i-gym" viewBox="0 0 24 24"><path d="M6.5 7v10M17.5 7v10M3.5 9.5v5M20.5 9.5v5M6.5 12h11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-angle" viewBox="0 0 24 24"><path d="M4 19h16M4 19L15 6M10 19a6 6 0 0 0-2-4.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  </defs>
+</svg>
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="brand" href="#" id="brand" aria-label="SwimBull, ir a alumnos">
+      <img class="brand-logo" src="icons/teambull-192.png" alt="" width="30" height="30">
+      <span class="brand-name">Biomecánica</span>
+    </a>
+    <nav class="nav" aria-label="Principal">
+      <button class="nav-item" id="btn-mine" data-nav="mine" hidden><svg width="18" height="18"><use href="#i-pulse"/></svg><span>Mi ficha</span></button>
+      <button class="nav-item coach-only" id="btn-athletes" data-nav="athletes"><svg width="18" height="18"><use href="#i-users"/></svg><span>Alumnos</span></button>
+      <button class="nav-item coach-only" id="btn-new" data-nav="new"><svg width="18" height="18"><use href="#i-plus"/></svg><span>Nuevo análisis</span></button>
+      <button class="nav-item coach-only" id="btn-live" data-nav="live"><svg width="18" height="18"><use href="#i-video"/></svg><span>En la pileta</span></button>
+      <button class="nav-item coach-only" id="btn-gym" data-nav="gym"><svg width="18" height="18"><use href="#i-gym"/></svg><span>Gym</span></button>
+      <button class="nav-item" id="btn-records" data-nav="records"><svg width="18" height="18"><use href="#i-trophy"/></svg><span>Récords</span></button>
+      <button class="nav-item" id="btn-current" data-nav="current" hidden><svg width="18" height="18"><use href="#i-pulse"/></svg><span>Análisis abierto</span></button>
+    </nav>
+    <div class="topbar-actions">
+      <button class="btn ghost small install-btn" id="btn-install" hidden><svg width="16" height="16"><use href="#i-download"/></svg>Instalar app</button>
+      <button class="icon-btn quiet" id="btn-theme" aria-label="Cambiar tema claro u oscuro" title="Tema claro u oscuro"><svg width="18" height="18"><use href="#i-moon"/></svg></button>
+      <details class="menu acct" id="user-chip" hidden>
+        <summary class="avatar-btn" aria-label="Cuenta"><span id="user-initial">·</span></summary>
+        <div class="menu-pop">
+          <div class="menu-head"><span class="fine-label">Sesión iniciada</span><span id="user-email" class="mono"></span></div>
+          <button class="menu-item" id="btn-logout"><svg width="16" height="16"><use href="#i-logout"/></svg>Salir</button>
+        </div>
+      </details>
+    </div>
+  </div>
+</header>
+<div class="install-tip" id="install-tip" role="dialog" aria-label="Instalar SwimBull" hidden>
+  <img src="icons/icon-192.png" alt="" width="40" height="40">
+  <div><b>Instalá SwimBull</b><p id="install-tip-text">Tocá Compartir y después "Agregar a inicio" para abrirla como una app, a pantalla completa.</p></div>
+  <button class="icon-btn quiet" id="install-tip-close" aria-label="Cerrar">×</button>
+</div>
+<nav class="tabbar" aria-label="Principal">
+  <button data-go="btn-mine" data-nav="mine" hidden><svg width="22" height="22"><use href="#i-pulse"/></svg><span>Mi ficha</span></button>
+  <button class="coach-only" data-go="btn-athletes" data-nav="athletes"><svg width="22" height="22"><use href="#i-users"/></svg><span>Alumnos</span></button>
+  <button class="coach-only" data-go="btn-new" data-nav="new"><svg width="22" height="22"><use href="#i-plus"/></svg><span>Nuevo</span></button>
+  <button class="coach-only" data-go="btn-live" data-nav="live"><svg width="22" height="22"><use href="#i-video"/></svg><span>Pileta</span></button>
+  <button class="coach-only" data-go="btn-gym" data-nav="gym"><svg width="22" height="22"><use href="#i-gym"/></svg><span>Gym</span></button>
+  <button data-go="btn-records" data-nav="records"><svg width="22" height="22"><use href="#i-trophy"/></svg><span>Récords</span></button>
+  <button data-go="btn-current" data-nav="current" hidden><svg width="22" height="22"><use href="#i-pulse"/></svg><span>Análisis</span></button>
+</nav>
+
+<main>
+
+  <!-- 0. CUENTA -->
+  <section id="view-auth" class="view" hidden>
+    <div class="auth-wrap">
+      <div class="auth-intro">
+        <div class="eyebrow">Plataforma para entrenadores</div>
+        <h1 class="display">Cada largo,<br>medido cuadro a cuadro.</h1>
+        <p class="lead">Técnica con pose automática y competencia con el método de tramos: salida, parciales, virajes y brazadas. Todo queda en la ficha de cada alumno y sale en PDF.</p>
+        <svg class="lanes" viewBox="0 0 520 150" role="img" aria-label="Esquema de pileta con las marcas de 15, 25, 35 y 45 metros">
+          <g class="lanes-lines"><path d="M0 20H520M0 55H520M0 90H520M0 125H520"/></g>
+          <g class="lanes-ticks"><path d="M78 12v121M130 12v121M234 12v121M338 12v121M442 12v121"/></g>
+          <g class="lanes-labels"><text x="78" y="146">5</text><text x="130" y="146">15</text><text x="234" y="146">25</text><text x="338" y="146">35</text><text x="442" y="146">45 m</text></g>
+          <path class="lanes-path" d="M8 72c40 0 60-6 122-6s70 4 104 4 70-5 104-5 70 5 104 5 56-2 70-2"/>
+          <g class="lanes-pts"><circle cx="130" cy="66" r="4"/><circle cx="234" cy="70" r="4"/><circle cx="338" cy="65" r="4"/><circle cx="442" cy="70" r="4"/></g>
+        </svg>
+      </div>
+      <div class="auth-panel">
+        <div class="segmented auth-tabs" role="tablist">
+          <button role="tab" aria-selected="true" data-auth="login">Ingresar</button>
+          <button role="tab" aria-selected="false" data-auth="signup">Crear cuenta</button>
+        </div>
+        <form id="auth-login" class="auth-form" autocomplete="on">
+          <label>Email<input id="l-email" type="email" autocomplete="email" required></label>
+          <label>Contraseña<input id="l-pass" type="password" autocomplete="current-password" required minlength="6"></label>
+          <button class="btn primary block" type="submit">Ingresar</button>
+          <button class="linkish" type="button" id="auth-forgot">Olvidé mi contraseña</button>
+        </form>
+        <form id="auth-signup" class="auth-form" autocomplete="on" hidden>
+          <label>Nombre y apellido<input id="s-name" type="text" autocomplete="name" required maxlength="80"></label>
+          <label>Email<input id="s-email" type="email" autocomplete="email" required></label>
+          <label>Contraseña<input id="s-pass" type="password" autocomplete="new-password" required minlength="8"><small class="field-hint">Mínimo 8 caracteres.</small></label>
+          <button class="btn primary block" type="submit">Crear cuenta</button>
+        </form>
+        <form id="auth-reset" class="auth-form" hidden>
+          <p class="metric-detail">Te mandamos un email con un enlace para elegir una contraseña nueva.</p>
+          <label>Email<input id="r-email" type="email" autocomplete="email" required></label>
+          <button class="btn primary block" type="submit">Enviar enlace</button>
+          <button class="linkish" type="button" id="auth-back">Volver a ingresar</button>
+        </form>
+        <form id="auth-newpass" class="auth-form" hidden>
+          <label>Contraseña nueva<input id="n-pass" type="password" autocomplete="new-password" required minlength="8"></label>
+          <button class="btn primary block" type="submit">Guardar contraseña</button>
+        </form>
+        <p class="notice" id="auth-msg" role="status" hidden></p>
+      </div>
+    </div>
+  </section>
+  <!-- 1. CARGA -->
+  <section id="view-upload" class="view" hidden>
+    <div class="upload-grid">
+      <form id="upload-form" class="panel" autocomplete="off">
+        <div class="page-title"><h1>Nuevo análisis</h1>
+        <p class="lead">El análisis corre en este dispositivo: el video no se envía a ningún servidor.</p></div>
+        <div class="step-label"><span>1</span>Tipo de análisis</div>
+
+        <div class="seg" role="radiogroup" aria-label="Tipo de análisis">
+          <label><input type="radio" name="mode" id="mode-tech" value="tech" checked><span><svg width="20" height="20"><use href="#i-angle"/></svg><b>Técnica</b><small>Toma cercana. Pose automática, ángulos y ciclos.</small></span></label>
+          <label><input type="radio" name="mode" id="mode-race" value="race"><span><svg width="20" height="20"><use href="#i-timer"/></svg><b>Competencia</b><small>Prueba completa. Salida, parciales, virajes, brazadas.</small></span></label>
+          <label><input type="radio" name="mode" id="mode-both" value="both"><span><svg width="20" height="20"><use href="#i-both"/></svg><b>Las dos</b><small>Mismo video: primero la técnica, después marcás la prueba.</small></span></label>
+        </div>
+
+        <div class="step-label"><span>2</span>Video</div>
+        <label class="drop" id="drop">
+          <input type="file" id="file" accept="video/mp4,video/quicktime,video/webm,video/*" required>
+          <span class="drop-ico"><svg width="22" height="22" aria-hidden="true"><use href="#i-upload"/></svg></span>
+          <span class="drop-title" id="drop-title">Elegir video</span>
+          <span class="drop-hint" id="drop-hint">MP4 o MOV. Recomendado: 10 a 60 s de nado continuo, toma lateral, 50 fps o más.</span>
+        </label>
+        <p class="fine" id="drop-fps" hidden></p>
+
+        <div class="step-label"><span>3</span>Datos de la toma</div>
+        <div class="fields">
+          <label class="span2">Alumno
+            <select id="f-athlete"><option value="">Sin asignar (escribir el nombre abajo)</option></select>
+          </label>
+          <label>Nadador<input id="f-name" type="text" placeholder="Nombre y apellido" maxlength="80"></label>
+          <label>Fecha<input id="f-date" type="date"></label>
+          <label>Estilo
+            <select id="f-style" required>
+              <option value="crol">Crol</option>
+              <option value="espalda">Espalda</option>
+              <option value="pecho">Pecho</option>
+              <option value="mariposa">Mariposa</option>
+              <option value="medley" class="only-race-opt">Medley</option>
+            </select>
+          </label>
+          <label class="only-tech">Toma
+            <select id="f-view">
+              <option value="lateral-superficie">Lateral, desde superficie</option>
+              <option value="lateral-subacuatica">Lateral, subacuática</option>
+              <option value="frontal">Frontal</option>
+              <option value="posterior">Posterior</option>
+              <option value="cenital">Cenital</option>
+              <option value="otra">Otra / mixta</option>
+            </select>
+          </label>
+          <label class="span2">Prueba o tarea (opcional)<input id="f-event" type="text" placeholder="Ej.: 200 libre, ritmo de prueba" maxlength="80"></label>
+          <label class="only-race" hidden>Distancia de la prueba
+            <select id="f-distance">
+              <option value="50">50 m</option>
+              <option value="100" selected>100 m</option>
+              <option value="200">200 m</option>
+              <option value="400">400 m</option>
+              <option value="800">800 m</option>
+              <option value="1500">1500 m</option>
+            </select>
+          </label>
+          <label class="only-race" hidden>Pileta
+            <select id="f-pool">
+              <option value="50">50 m (larga)</option>
+              <option value="25">25 m (corta)</option>
+            </select>
+          </label>
+          <label class="only-race span2" hidden>Marcas a medir en cada largo (m)
+            <input id="f-marks" type="text" inputmode="decimal" value="15, 25, 35, 45">
+          </label>
+          <label class="only-race" hidden>Tiempo oficial final (s, opcional)
+            <input id="f-official" type="text" inputmode="decimal" placeholder="Ej.: 52,07">
+          </label>
+          <label class="only-race" hidden>Reacción oficial (s, opcional)
+            <input id="f-reaction" type="text" inputmode="decimal" placeholder="Ej.: 0,66">
+          </label>
+          <label class="only-race span2" hidden>Distancia de la cámara a los bloques (m)
+            <input id="f-camdist" type="text" inputmode="decimal" value="25">
+            <small class="field-hint">Corrige el retraso del sonido de la bocina (unos 3 ms por metro). Si cargás el tiempo oficial, la sincronización usa la llegada y esto no influye.</small>
+          </label>
+          <label class="span2 only-tech">Precisión del modelo
+            <select id="f-model">
+              <option value="full">Estándar (recomendado)</option>
+              <option value="lite">Rápido (menos preciso, para celulares lentos)</option>
+            </select>
+          </label>
+        </div>
+        <p class="notice" id="range-note" hidden></p>
+        <button class="btn primary block" type="submit" id="btn-analyze" disabled>Analizar video</button>
+        <p class="error" id="upload-error" role="alert" hidden></p>
+      </form>
+
+      <aside class="scope">
+        <h2>Qué mide esta versión</h2>
+        <dl class="scope-list">
+          <dt><span class="tag est">Estimado</span></dt><dd>Posición de 17 articulaciones por cuadro, con su confianza.</dd>
+          <dt><span class="tag est">Estimado</span></dt><dd>Ángulos 2D de codo, hombro, cadera y rodilla, e inclinación del tronco.</dd>
+          <dt><span class="tag est">Estimado</span></dt><dd>Ciclos de brazada: tiempo por ciclo, frecuencia y variabilidad.</dd>
+          <dt><span class="tag est">Estimado</span></dt><dd>Frecuencia de patada, si los tobillos se ven.</dd>
+          <dt><span class="tag med">Medido</span></dt><dd>Duración, cuadros por segundo y tiempos exactos de cada cuadro.</dd>
+          <dt><span class="tag med">Competencia</span></dt><dd>Salida, parciales, velocidad, virajes, ciclos, frecuencia y distancia por ciclo, calculados al instante a partir de los eventos que marcás. La largada se detecta sola en el audio y la distancia del break out se mide en el cuadro.</dd>
+          <dt><span class="tag est">Estimado</span></dt><dd>Velocidad y distancia por ciclo en técnica, y en qué fase gana o pierde velocidad: marcando en la toma dos puntos a distancia conocida (pestaña Fases → Velocidad dentro del ciclo).</dd>
+          <dt><span class="tag est">Sugerido</span></dt><dd>Errores técnicos con los cuadros que los prueban (pestaña Errores): la app los propone y el entrenador confirma o descarta.</dd>
+          <dt><span class="tag na">Manual</span></dt><dd>El estilo se elige al cargar el video.</dd>
+          <dt><span class="tag est">Estimado</span></dt><dd>Fases de la brazada en crol, espalda y mariposa (entrada y agarre, tracción, empuje, recobro), con su duración y porcentaje, corregibles cuadro a cuadro.</dd>
+        </dl>
+        <p class="fine">Los ángulos son proyecciones en el plano de la imagen. La precisión todavía no fue validada contra digitalización manual experta.</p>
+        <h2>A cuántos cuadros por segundo filmar</h2>
+        <div id="fps-guide"></div>
+      </aside>
+    </div>
+      <div id="film-guide" class="fg-abajo"></div>
+  </section>
+
+  <!-- 2. PROCESO -->
+  <section id="view-progress" class="view" hidden>
+    <div class="panel progress-panel">
+      <h1>Procesando</h1>
+      <p class="lead" id="progress-file"></p>
+      <ol class="steps" id="steps">
+        <li data-step="meta">Validar el archivo y leer los tiempos de cada cuadro</li>
+        <li data-step="model">Cargar el modelo de estimación de pose</li>
+        <li data-step="pose">Detectar la pose en cada cuadro <span class="mono" id="pose-count"></span></li>
+        <li data-step="analysis">Calcular ángulos, ciclos y calidad de la toma</li>
+        <li data-step="done">Preparar visualización e informe</li>
+      </ol>
+      <div class="bar"><div id="bar-fill"></div></div>
+      <p class="fine" id="progress-note">Mantené esta pantalla abierta. En celulares el proceso puede tardar algunos minutos.</p>
+      <button class="btn ghost" id="btn-cancel">Cancelar</button>
+      <p class="error" id="progress-error" role="alert" hidden></p>
+    </div>
+  </section>
+
+  <!-- 3. RESULTADOS -->
+  <section id="view-results" class="view" hidden>
+    <div class="results-head">
+      <div>
+        <h1 id="r-title">Análisis</h1>
+        <p class="meta-line mono" id="r-meta"></p>
+        <div class="segmented pair-switch" role="tablist" aria-label="Análisis de este video" hidden><button type="button" role="tab" data-pair="results">Técnica</button><button type="button" role="tab" data-pair="race">Competencia</button></div>
+      </div>
+      <div class="head-actions">
+        <button class="btn ghost" id="btn-save-tech"><svg width="16" height="16"><use href="#i-save"/></svg>Guardar en el alumno</button>
+        <button class="btn primary" id="btn-pdf"><svg width="16" height="16"><use href="#i-download"/></svg>PDF</button>
+        <details class="menu more"><summary class="icon-btn" aria-label="Más acciones"><svg width="18" height="18"><use href="#i-more"/></svg></summary>
+          <div class="menu-pop right">
+            <button class="menu-item" id="btn-png">Exportar fotograma (PNG)</button>
+            <button class="menu-item" id="btn-xlsx">Planilla para Excel (todos los datos)</button>
+            <button class="menu-item" id="btn-csv">Datos por cuadro (CSV)</button>
+            <button class="menu-item" id="btn-json">Exportar datos (JSON)</button>
+            <button class="menu-item" id="btn-to-race">Marcar la competencia con este video</button>
+          </div></details>
+      </div>
+      <p class="notice" id="export-msg" role="status" hidden></p>
+    </div>
+
+    <div class="results-grid">
+      <div class="player-col">
+        <div class="stick" id="tc-stick">
+        <div class="dual" id="tc-dual" data-mode="single">
+        <div class="player" id="player">
+          <div class="stage" id="stage">
+            <video id="video" playsinline muted preload="auto"></video>
+            <video id="video-ghost" playsinline muted preload="auto" hidden></video>
+            <canvas id="overlay"></canvas>
+          </div>
+          <div class="hud mono" id="hud"></div>
+          <div class="ov-chips near-chips" id="t-near" hidden></div>
+        </div>
+        <div class="player p2" id="tc-player2" hidden>
+          <div class="stage" id="tc-stage2"><video id="tc-video2" playsinline muted preload="auto"></video></div>
+          <div class="hud mono" id="tc-hud2"></div>
+          <div class="controls transport p2-ctl" id="tc-ctl2" hidden>
+            <button class="icon-btn" id="c2-prev" type="button" aria-label="Cuadro anterior de la segunda toma"><svg width="16" height="16"><use href="#i-prev"/></svg></button>
+            <button class="icon-btn play" id="c2-play" type="button" aria-label="Reproducir o pausar la segunda toma"><svg viewBox="0 0 24 24" width="20" height="20"><path id="c2-play-ico" d="M7 5l12 7-12 7z" fill="currentColor"/></svg></button>
+            <button class="icon-btn" id="c2-next" type="button" aria-label="Cuadro siguiente de la segunda toma"><svg width="16" height="16"><use href="#i-next"/></svg></button>
+            <select id="c2-speed" aria-label="Velocidad de la segunda toma"><option value="0.1">0,1×</option><option value="0.25" selected>0,25×</option><option value="0.5">0,5×</option><option value="1">1×</option><option value="2">2×</option></select>
+            <input type="range" id="c2-seek" min="0" max="1000" value="0" step="1" aria-label="Posición de la segunda toma">
+            <span class="readout mono" id="c2-time">0,000 s</span>
+          </div>
+        </div>
+        </div>
+        <div class="controls transport">
+          <button class="icon-btn" id="c-prev" aria-label="Cuadro anterior"><svg width="16" height="16"><use href="#i-prev"/></svg></button>
+          <button class="icon-btn play" id="c-play" aria-label="Reproducir o pausar"><svg viewBox="0 0 24 24" width="20" height="20" id="play-ico"><path d="M7 5l12 7-12 7z" fill="currentColor"/></svg></button>
+          <button class="icon-btn" id="c-next" aria-label="Cuadro siguiente"><svg width="16" height="16"><use href="#i-next"/></svg></button>
+          <select id="c-speed" aria-label="Velocidad">
+            <option value="0.1">0,1×</option>
+            <option value="0.25" selected>0,25×</option>
+            <option value="0.5">0,5×</option>
+            <option value="1">1×</option>
+          </select>
+          <select id="c-zoom" aria-label="Zoom">
+            <option value="1">Zoom 1×</option>
+            <option value="1.5">1,5×</option>
+            <option value="2">2×</option>
+            <option value="3">3×</option>
+          </select>
+          <span class="readout mono" id="c-readout">0 / 0</span>
+        </div>
+        </div>
+        <div class="toggles" role="group" aria-label="Capas sobre el video">
+          <label><input type="checkbox" id="t-skel" checked> Esqueleto</label>
+          <label><input type="checkbox" id="t-ang" checked> Ángulos</label>
+          <label><input type="checkbox" id="t-traj" checked> Trayectoria de muñeca</label>
+          <label><input type="checkbox" id="t-head" checked> Recorrido de la cabeza</label>
+          <label id="t-cam-wrap" hidden title="La cámara se movió (filmación en mano): los recorridos y el vuelo se dibujan sobre el fondo, no sobre la imagen"><input type="checkbox" id="t-cam" checked> Compensar cámara en mano</label>
+          <label><input type="checkbox" id="t-phase" checked> Fase de la brazada</label>
+          <label><input type="checkbox" id="t-low"> Mostrar puntos de baja confianza</label>
+        </div>
+        <div class="pick-bar">
+          <button class="btn ghost small" id="t-pick" type="button" aria-pressed="false"><svg width="16" height="16"><use href="#i-users"/></svg>Elegir nadador</button>
+          <button class="btn ghost small" id="t-pick-undo" type="button" hidden>Deshacer corrección</button>
+          <button class="btn ghost small" id="t-fix" type="button" aria-pressed="false">Corregir puntos</button>
+          <button class="btn ghost small" id="t-find" type="button">Buscar al nadador en cuadros perdidos</button>
+          <p class="fine" id="t-pick-hint" hidden></p>
+          <div class="fix-bar" id="t-fix-bar" hidden>
+            <label>Punto <select id="t-fix-joint">
+              <option value="">El más cercano al toque</option>
+              <option value="23">Cadera izquierda</option><option value="24">Cadera derecha</option>
+              <option value="25">Rodilla izquierda</option><option value="26">Rodilla derecha</option>
+              <option value="27">Tobillo izquierdo</option><option value="28">Tobillo derecho</option>
+              <option value="11">Hombro izquierdo</option><option value="12">Hombro derecho</option>
+              <option value="13">Codo izquierdo</option><option value="14">Codo derecho</option>
+              <option value="15">Muñeca izquierda</option><option value="16">Muñeca derecha</option>
+              <option value="0">Nariz</option>
+            </select></label>
+            <button class="btn ghost small" id="t-fix-undo" type="button" disabled>Deshacer</button>
+            <button class="btn ghost small" id="t-fix-del" type="button" disabled>Quitar las de este punto</button>
+            <p class="fine" id="t-fix-hint"></p>
+          </div>
+        </div>
+        <details class="panel cam2-panel" id="tc-cam2-box"><summary class="eyebrow">Segunda cámara</summary><div id="tc-cam2"></div></details>
+        <details class="panel draw-panel" id="tc-draw-box"><summary class="eyebrow">Dibujo y texto</summary><div id="tc-draw"></div></details>
+        <div class="panel clip-panel" id="tc-clip"></div>
+        <div class="panel clip-panel" id="tc-voice"></div>
+
+        <div class="panel chart-panel">
+          <div class="eyebrow">Serie temporal</div>
+          <div class="chart-pick" id="chart-pick" role="group" aria-label="Variables del gráfico"></div>
+          <div class="chart-head">
+            <div class="chart-legend" id="chart-legend"></div>
+            <span class="legend"><i class="lg-ok"></i>dato confiable <i class="lg-int"></i>interpolado <i class="lg-cyc"></i>inicio de ciclo</span>
+          </div>
+          <canvas id="chart" height="180"></canvas>
+          <p class="fine" id="chart-note"></p>
+          <div class="mom-box">
+            <div class="eyebrow">Momentos clave</div>
+            <div class="mom-bar">
+              <select id="mom-kind" aria-label="Momento">
+                <option>Inicio del impulso</option>
+                <option>Despegue de las manos</option>
+                <option>Despegue de los pies</option>
+                <option>Máxima extensión en el vuelo</option>
+                <option>Entrada de las manos</option>
+                <option>Entrada de los pies</option>
+                <option>Otro</option>
+              </select>
+              <button class="btn small" id="mom-add" type="button">Marcar este cuadro</button>
+              <button class="btn ghost small" id="mom-auto" type="button">Sugerir despegue y entrada</button>
+            </div>
+            <div id="mom-sug" hidden></div>
+            <div id="mom-out"><p class="fine">Pausá en un cuadro (por ejemplo el despegue) y tocá Marcar: se guardan los grados de todas las articulaciones en ese instante.</p></div>
+            <div class="cmp-box" id="mom-cmp-box" hidden>
+              <div class="eyebrow">Comparar salidas</div>
+              <label class="cmp-pick">Otro intento guardado del mismo alumno<select id="mom-cmp"></select></label>
+              <div class="ghost-ctrl" id="ghost-ctrl" hidden>
+                <div class="ghost-row">
+                  <button class="btn ghost small" id="ghost-cloud" type="button" hidden>Traer su video de la nube</button>
+                  <label class="btn ghost small file-btn" id="ghost-file-btn">Elegir su video<input type="file" id="ghost-file" accept="video/mp4,video/quicktime,video/webm,video/*"></label>
+                  <button class="btn ghost small" id="ghost-off" type="button" hidden>Quitar video</button>
+                </div>
+                <div class="ghost-on" id="ghost-on" hidden>
+                  <label class="ghost-op">Transparencia del otro intento <input type="range" id="ghost-op" min="15" max="85" value="45"></label>
+                  <div class="ghost-row"><span class="fine-label">Ajuste fino</span><button class="btn ghost small" data-gstep="-1" type="button">−1 cuadro</button><button class="btn ghost small" data-gstep="1" type="button">+1 cuadro</button><b class="mono" id="ghost-off-txt"></b></div>
+                </div>
+                <p class="fine" id="ghost-hint">Sumá el video del otro intento: se ve encima, semitransparente, alineado en el mismo momento.</p>
+              </div>
+              <div id="mom-cmp-out"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <aside class="side">
+        <div class="tabs" role="tablist">
+          <button role="tab" aria-selected="true" data-tab="metrics">Métricas</button>
+          <button role="tab" aria-selected="false" data-tab="cycles">Ciclos</button>
+          <button role="tab" aria-selected="false" data-tab="phases">Fases</button>
+          <button role="tab" aria-selected="false" data-tab="faults">Errores <span class="mono tab-count" id="tc-faults"></span></button>
+          <button role="tab" aria-selected="false" data-tab="quality">Calidad</button>
+          <button role="tab" aria-selected="false" data-tab="limits">Limitaciones</button>
+        </div>
+        <div class="tab-body" id="tab-metrics"></div>
+        <div class="tab-body" id="tab-cycles" hidden></div>
+        <div class="tab-body" id="tab-phases" hidden></div>
+        <div class="tab-body" id="tab-faults" hidden></div>
+        <div class="tab-body" id="tab-quality" hidden></div>
+        <div class="tab-body" id="tab-limits" hidden></div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- 4. COMPETENCIA -->
+  <section id="view-race" class="view" hidden>
+    <div class="results-head">
+      <div>
+        <h1 id="rc-title">Análisis de competencia</h1>
+        <p class="meta-line mono" id="rc-meta"></p>
+        <div class="segmented pair-switch" role="tablist" aria-label="Análisis de este video" hidden><button type="button" role="tab" data-pair="results">Técnica</button><button type="button" role="tab" data-pair="race">Competencia</button></div>
+      </div>
+      <div class="head-actions">
+        <button class="btn ghost" id="rc-store"><svg width="16" height="16"><use href="#i-save"/></svg>Guardar en el alumno</button>
+        <button class="btn primary" id="rc-pdf"><svg width="16" height="16"><use href="#i-download"/></svg>PDF</button>
+        <details class="menu more"><summary class="icon-btn" aria-label="Más acciones"><svg width="18" height="18"><use href="#i-more"/></svg></summary>
+          <div class="menu-pop right">
+            <button class="menu-item" id="rc-xlsx">Planilla para Excel (todas las hojas)</button>
+            <button class="menu-item" id="rc-csv">Planilla en CSV</button>
+            <button class="menu-item" id="rc-to-tech">Analizar la técnica con este video</button>
+            <button class="menu-item" id="rc-save">Exportar marcas (JSON)</button>
+            <label class="menu-item file-btn">Cargar marcas guardadas<input type="file" id="rc-load" accept="application/json,.json"></label>
+          </div></details>
+      </div>
+      <p class="notice" id="rc-msg" role="status" hidden></p>
+    </div>
+
+    <div class="results-grid">
+      <div class="player-col">
+        <div class="stick" id="rc-stick">
+        <div class="dual" id="rc-dual" data-mode="single">
+        <div class="player" id="rc-player">
+          <div class="stage" id="rc-stage">
+            <video id="rc-video" playsinline preload="auto"></video>
+            <canvas id="rc-overlay"></canvas>
+          </div>
+          <div class="hud big mono" id="rc-hud"></div>
+          <div class="ov-chips" id="rc-chips" aria-label="Quitar del video"></div>
+        </div>
+        <div class="player p2" id="rc-player2" hidden>
+          <div class="stage" id="rc-stage2">
+            <video id="rc-video2" playsinline muted preload="auto"></video>
+            <canvas id="rc-overlay2"></canvas>
+          </div>
+          <div class="hud mono" id="rc-hud2"></div>
+        </div>
+        </div>
+        <canvas id="rc-timeline" height="44" aria-label="Línea de tiempo con eventos y ciclos"></canvas>
+        <div class="controls transport">
+          <button class="icon-btn" id="rc-back10" aria-label="Retroceder 10 cuadros"><span class="mono small-lbl">−10</span></button>
+          <button class="icon-btn" id="rc-prev" aria-label="Cuadro anterior"><svg width="16" height="16"><use href="#i-prev"/></svg></button>
+          <button class="icon-btn play" id="rc-play" aria-label="Reproducir o pausar"><svg viewBox="0 0 24 24" width="20" height="20" id="rc-play-ico"><path d="M7 5l12 7-12 7z" fill="currentColor"/></svg></button>
+          <button class="icon-btn" id="rc-next" aria-label="Cuadro siguiente"><svg width="16" height="16"><use href="#i-next"/></svg></button>
+          <button class="icon-btn" id="rc-fwd10" aria-label="Avanzar 10 cuadros"><span class="mono small-lbl">+10</span></button>
+          <select id="rc-speed" aria-label="Velocidad">
+            <option value="0.1">0,1×</option>
+            <option value="0.25">0,25×</option>
+            <option value="0.5" selected>0,5×</option>
+            <option value="1">1×</option>
+            <option value="2">2×</option>
+          </select>
+          <select id="rc-zoom" aria-label="Zoom">
+            <option value="1">Zoom 1×</option>
+            <option value="2">2×</option>
+            <option value="3">3×</option>
+            <option value="4">4×</option>
+          </select>
+          <span class="readout mono" id="rc-readout"></span>
+        </div>
+        <div class="segmented dock-tabs" role="tablist" id="rc-dock-tabs" aria-label="Herramientas">
+          <button type="button" role="tab" aria-selected="true" data-dock="mark">Marcar</button>
+          <button type="button" role="tab" aria-selected="false" data-dock="ang">Ángulos</button>
+          <button type="button" role="tab" aria-selected="false" data-dock="v2">Video 2<span class="dock-dot" id="rc-dock-v2dot" hidden></span></button>
+          <button type="button" role="tab" aria-selected="false" data-dock="path">Línea</button>
+          <button type="button" role="tab" aria-selected="false" data-dock="draw">Dibujo</button>
+          <button type="button" role="tab" aria-selected="false" data-dock="clip">Clip</button>
+        </div>
+        </div>
+        <div class="panel v2-panel" id="rc-v2-panel" data-dock="v2" hidden>
+          <div class="v2-empty" id="rc-v2-empty">
+            <div><div class="eyebrow">Segundo video</div>
+            <p class="fine">Sumá otra toma de la misma prueba, por ejemplo la GoPro bajo el agua, y miralas juntas y sincronizadas. Filmala con los mismos cuadros por segundo que la principal, o más: la sincronización se ajusta de a un cuadro.</p></div>
+            <label class="btn ghost file-btn"><svg width="16" height="16"><use href="#i-video"/></svg>Agregar segundo video<input type="file" id="rc-v2-file" accept="video/mp4,video/quicktime,video/webm,video/*"></label>
+          </div>
+          <div class="v2-ctrl" id="rc-v2-ctrl" hidden>
+            <div class="v2-row">
+              <div class="eyebrow">Segundo video <span class="v2-name mono" id="rc-v2-name"></span></div>
+              <button class="btn ghost small" id="rc-v2-remove">Quitar</button>
+            </div>
+            <div class="segmented v2-modes" role="tablist" aria-label="Cómo mostrar los dos videos">
+              <button role="tab" aria-selected="false" data-v2mode="stack">Arriba y abajo</button>
+              <button role="tab" aria-selected="true" data-v2mode="side">Lado a lado</button>
+              <button role="tab" aria-selected="false" data-v2mode="pip">Imagen en imagen</button>
+              <button role="tab" aria-selected="false" data-v2mode="blend">Transparencia</button>
+            </div>
+            <label class="v2-opacity" id="rc-v2-oplabel" hidden>Opacidad del segundo video <input type="range" id="rc-v2-op" min="10" max="90" value="50"></label>
+            <div class="v2-sync">
+              <div class="v2-row"><span class="fine-label">Desfase entre videos</span><b class="mono" id="rc-v2-off">0,000 s</b></div>
+              <div class="v2-steps">
+                <button class="btn ghost small" data-v2step="-10">−10</button>
+                <button class="btn ghost small" data-v2step="-1">−1 cuadro</button>
+                <button class="btn ghost small" data-v2step="1">+1 cuadro</button>
+                <button class="btn ghost small" data-v2step="10">+10</button>
+              </div>
+              <button class="btn ghost" id="rc-v2-auto">Sincronizar por la bocina</button>
+              <p class="fine" id="rc-v2-hint">Para ajustar a mano: pausá en un momento que se vea en los dos (la señal, la entrada de las manos, el toque en la pared) y mové el segundo video cuadro a cuadro hasta que coincidan.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel clip-panel" id="rc-clip" data-dock="clip" hidden></div>
+        <div class="panel clip-panel" id="rc-voice" data-dock="clip" hidden></div>
+
+        <div class="panel path-panel" data-dock="path" hidden>
+          <div class="eyebrow">Línea del nadador</div>
+          <div class="path-actions">
+            <button class="btn primary" id="rc-path-start" type="button" aria-pressed="false">Marcar punto y seguir</button>
+            <button class="btn ghost" id="rc-path-stop" type="button" hidden>Detener</button>
+            <button class="btn ghost small" id="rc-path-clear" type="button" hidden>Borrar línea</button>
+          </div>
+          <p class="fine" id="rc-path-hint"></p>
+          <div class="path-cmp">
+            <div class="fine-label">Superponer salidas de otros días</div>
+            <div class="path-list" id="rc-path-list"></div>
+            <label class="check"><input type="checkbox" id="rc-path-align" checked> Alinear por el punto de partida</label>
+            <p class="fine">Las líneas de distintos videos solo se comparan bien si la cámara estuvo en el mismo lugar, a la misma altura y con el mismo zoom. Se dibujan juntas desde el momento en que arranca cada línea.</p>
+          </div>
+          <div class="speed-box">
+            <div class="fine-label">Velocidad continua</div>
+            <p class="fine">Con la línea sobre la cabeza y la cámara fija, marcá dos o tres distancias conocidas del andarivel (marcas de 5 m, 15 m, cambio de color de la corchera) en cualquier cuadro. Con tres se corrige la perspectiva. La curva queda en la pestaña Velocidad.</p>
+            <div class="measure-rows" id="rc-cal-rows"></div>
+            <details class="plane-box">
+              <summary class="fine-label">Plano de la pileta (4 puntos, corrige toda la perspectiva)</summary>
+              <p class="fine">Elegí dos distancias que se vean (por ejemplo 15 m y 25 m) y tocá esas marcas en las dos corcheras del andarivel del nadador: 1 y 2 en la más cercana a la cámara, 3 y 4 en la más lejana. Así las distancias valen aunque la cámara no esté de frente y el nadador no vaya pegado a la corchera. Reemplaza a las referencias de arriba.</p>
+              <div id="rc-plane-rows"></div>
+              <p class="fine" id="rc-plane-out"></p>
+            </details>
+            <p class="fine" id="rc-cal-out"></p>
+            <details class="plane-box">
+              <summary class="fine-label">Verificar la precisión con una distancia conocida</summary>
+              <div id="rc-chk"></div>
+            </details>
+          </div>
+        </div>
+
+        <div class="panel draw-panel" id="rc-draw" data-dock="draw" hidden></div>
+
+        <div class="panel ang-panel" data-dock="ang" hidden>
+          <div class="angle-box">
+            <div class="angle-tools">
+              <button class="btn ghost" id="rc-ang3"><svg width="16" height="16"><use href="#i-angle"/></svg>Ángulo (3 puntos)</button>
+              <button class="btn ghost" id="rc-angh"><svg width="16" height="16"><use href="#i-horizon"/></svg>Contra la horizontal</button>
+              <button class="btn ghost" id="rc-angv"><svg width="16" height="16"><use href="#i-vertical"/></svg>Contra la vertical</button>
+              <button class="btn ghost" id="rc-square" aria-pressed="false"><svg width="16" height="16"><use href="#i-square"/></svg>Escuadra</button>
+              <button class="btn ghost small" id="rc-ang-cancel" hidden>Cancelar</button>
+            </div>
+            <div class="ang-colors"><span class="fine-label">Color del próximo ángulo</span><div class="draw-colors" id="rc-ang-colors" role="radiogroup" aria-label="Color del ángulo"></div></div>
+            <p class="fine" id="rc-ang-hint">Pausá en el cuadro que quieras y marcá los puntos sobre el video. Después podés arrastrarlos para ajustarlos. Usá el zoom para más precisión.</p>
+          </div>
+        </div>
+
+        <div class="panel mark-panel" data-dock="mark">
+          <div class="mark-now">
+            <div>
+              <div class="eyebrow">Próximo evento</div>
+              <div class="mark-label" id="rc-cur-label"></div>
+              <div class="fine" id="rc-cur-hint"></div>
+            </div>
+            <button class="btn primary" id="rc-mark">Marcar en este cuadro</button>
+          </div>
+          <div class="mark-tools">
+            <button class="btn ghost" id="rc-auto">Detectar señal en el audio</button>
+            <div class="chips" id="rc-cands"></div>
+          </div>
+          <div class="cycle-box">
+            <button class="btn ghost cycle-btn" id="rc-cycle">Ciclo +1 <span class="mono" id="rc-cycle-n">0</span></button>
+            <button class="btn ghost small" id="rc-cycle-undo">Deshacer ciclo</button>
+            <p class="fine" id="rc-cycle-hint"></p>
+          </div>
+          <div class="rate-box">
+            <button class="btn ghost" id="rc-rate-tap" type="button">Cronómetro de frecuencia <span class="mono" id="rc-rate-n"></span></button>
+            <button class="btn ghost small" id="rc-rate-reset" type="button" hidden>Reiniciar</button>
+            <div class="rate-out mono" id="rc-rate-out" hidden></div>
+            <p class="fine">Tocá en cada entrada de la misma mano, con el video andando o cuadro a cuadro. Con 4 toques (3 ciclos) te da la frecuencia en las tres unidades. Usa el tiempo del video, así que sirve a cualquier velocidad. Es una consulta rápida: no cambia la planilla.</p>
+          </div>
+          <div class="measure" id="rc-measure" hidden>
+            <div class="eyebrow">Medir distancia en este cuadro</div>
+            <p class="fine">Tocá en el video dos o tres referencias de distancia conocida sobre el andarivel (marcas de 5 m, 15 m, cambio de color de la corchera) y después la cabeza del nadador. Con tres referencias la medición corrige la perspectiva.</p>
+            <div class="measure-rows" id="rc-measure-rows"></div>
+            <div class="measure-out mono" id="rc-measure-out"></div>
+            <div class="measure-actions">
+              <button class="btn primary small" id="rc-measure-use" disabled>Usar esta distancia</button>
+              <button class="btn ghost small" id="rc-measure-cancel">Cancelar</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="eyebrow">Eventos de la prueba</div>
+          <ol class="event-list" id="rc-events"></ol>
+        </div>
+      </div>
+
+      <aside class="side">
+        <div class="tabs" role="tablist" id="rc-tabs">
+          <button role="tab" aria-selected="true" data-tab="sheet">Planilla</button>
+          <button role="tab" aria-selected="false" data-tab="laps">Por largo</button>
+          <button role="tab" aria-selected="false" data-tab="cmp">Comparar</button>
+          <button role="tab" aria-selected="false" data-tab="ang">Ángulos <span class="mono tab-count" id="rc-ang-count"></span></button>
+          <button role="tab" aria-selected="false" data-tab="vel">Velocidad</button>
+          <button role="tab" aria-selected="false" data-tab="defs">Definiciones</button>
+        </div>
+        <div class="tab-body" id="rc-tab-sheet"></div>
+        <div class="tab-body" id="rc-tab-laps" hidden></div>
+        <div class="tab-body" id="rc-tab-cmp" hidden></div>
+        <div class="tab-body" id="rc-tab-ang" hidden></div>
+        <div class="tab-body" id="rc-tab-vel" hidden></div>
+        <div class="tab-body" id="rc-tab-defs" hidden></div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- 5. ALUMNOS -->
+  <section id="view-athletes" class="view" hidden>
+    <div class="results-head">
+      <div>
+        <h1>Alumnos</h1>
+        <p class="meta-line" id="ath-storage"></p>
+      </div>
+      <div class="head-actions">
+        <button class="btn primary" id="ath-add"><svg width="16" height="16"><use href="#i-plus"/></svg>Nuevo alumno</button>
+        <details class="menu more"><summary class="icon-btn" aria-label="Más acciones"><svg width="18" height="18"><use href="#i-more"/></svg></summary>
+          <div class="menu-pop right">
+            <button class="menu-item" id="ath-migrate" hidden>Pasar datos de este dispositivo a mi cuenta</button>
+            <button class="menu-item" id="ath-backup">Descargar copia de seguridad</button>
+            <label class="menu-item file-btn">Restaurar una copia<input type="file" id="ath-restore" accept="application/json,.json"></label>
+            <label class="menu-item file-btn">Importar informe de prueba<input type="file" id="ath-import-rep" accept="application/json,.json"></label>
+          </div></details>
+      </div>
+      <p class="notice" id="ath-msg" role="status" hidden></p>
+    </div>
+    <form class="panel ath-form" id="ath-form" hidden autocomplete="off">
+      <h2 class="panel-title" id="ath-form-title">Nuevo alumno</h2>
+      <div class="fields">
+        <label class="span2">Nombre y apellido<input id="a-name" type="text" required maxlength="80"></label>
+        <label>Año de nacimiento<input id="a-year" type="text" inputmode="numeric" maxlength="4" placeholder="Ej.: 2008"></label>
+        <label>Sexo
+          <select id="a-sex"><option value="">Sin indicar</option><option value="F">Femenino</option><option value="M">Masculino</option><option value="X">Otro</option></select>
+        </label>
+        <label>Club o equipo<input id="a-club" type="text" maxlength="80"></label>
+        <label>Categoría<input id="a-cat" type="text" maxlength="40" placeholder="Ej.: Juvenil, Mayores"></label>
+        <label class="span2">Pruebas principales<input id="a-events" type="text" maxlength="120" placeholder="Ej.: 100 y 200 mariposa"></label>
+        <label class="span2">Notas<textarea id="a-notes" rows="3" maxlength="1000"></textarea></label>
+        <label class="span2" id="a-email-wrap" hidden>Email del nadador (opcional)<input id="a-email" type="email" maxlength="120" autocomplete="off" placeholder="nadador@ejemplo.com">
+          <small class="field-hint">Si el nadador crea su cuenta en SwimBull con este email, ve su ficha, las evaluaciones que dejes visibles y sus videos. No ve a los otros alumnos. Puede comentar cada evaluación.</small></label>
+      </div>
+      <div class="form-actions">
+        <button class="btn primary" type="submit">Guardar alumno</button>
+        <button class="btn ghost" type="button" id="ath-cancel">Cancelar</button>
+      </div>
+    </form>
+    <label class="search" id="ath-search-wrap" hidden><svg width="16" height="16" aria-hidden="true"><use href="#i-search"/></svg><input type="search" id="ath-search" placeholder="Buscar por nombre, club o categoría" aria-label="Buscar alumno"></label>
+    <div class="ath-list" id="ath-list"></div>
+  </section>
+
+  <!-- 5b. RÉCORDS MUNDIALES -->
+  <section id="view-records" class="view" hidden>
+    <div class="results-head">
+      <div>
+        <h1>Récords mundiales</h1>
+        <p class="meta-line" id="wr-asof"></p>
+      </div>
+    </div>
+    <div class="panel wr-filters">
+      <div class="fields">
+        <label>Pileta<select id="wr-course"><option value="LC">50 m</option><option value="SC">25 m</option></select></label>
+        <label>Categoría<select id="wr-sex"><option value="F">Mujeres</option><option value="M">Hombres</option></select></label>
+        <label>Estilo<select id="wr-style"><option value="">Todos</option><option value="crol">Libre</option><option value="espalda">Espalda</option><option value="pecho">Pecho</option><option value="mariposa">Mariposa</option><option value="medley">Medley</option><option value="postas">Postas</option></select></label>
+      </div>
+    </div>
+    <div id="wr-list"></div>
+    <p class="fine" id="wr-sources"></p>
+  </section>
+
+  <!-- 5c. EN LA PILETA -->
+  <section id="view-live" class="view" hidden>
+    <div class="results-head">
+      <div>
+        <h1>En la pileta</h1>
+        <p class="meta-line">Cámara de este dispositivo, con retraso para que el nadador se vea al salir del agua. Nada se envía a ningún servidor.</p>
+      </div>
+    </div>
+    <div class="panel live-ctrl">
+      <div class="fields">
+        <label>Retraso
+          <select id="live-delay"><option value="0">En vivo</option><option value="5">5 s</option><option value="10" >10 s</option><option value="15">15 s</option><option value="20">20 s</option><option value="30">30 s</option></select>
+        </label>
+        <label>Cámara
+          <select id="live-facing"><option value="environment">Trasera</option><option value="user">Frontal</option></select>
+        </label>
+        <label>Calidad
+          <select id="live-quality"><option value="1280x720x60">720p, 60 cuadros/s</option><option value="1920x1080x30">1080p, 30 cuadros/s</option><option value="1280x720x30">720p, 30 cuadros/s</option><option value="1920x1080x60">1080p, 60 cuadros/s (celulares potentes)</option></select>
+        </label>
+      </div>
+      <div class="live-actions">
+        <label class="check"><input type="checkbox" id="live-mirror"> Espejo</label>
+        <button class="btn primary" id="live-on" type="button">Encender cámara</button>
+        <button class="btn ghost" id="live-freeze" type="button" disabled>Pausar imagen</button>
+        <button class="btn" id="live-rec" type="button" disabled>● Grabar intento</button>
+        <button class="btn ghost" id="live-full" type="button" disabled>Pantalla completa</button>
+      </div>
+      <p class="fine" id="live-fps"></p>
+      <p class="error" id="live-err" role="alert" hidden></p>
+    </div>
+    <div class="live-stage" id="live-stage" hidden>
+      <canvas id="live-view"></canvas>
+      <div class="hud mono" id="live-hud" aria-live="polite"></div>
+    </div>
+    <video id="live-cam" playsinline muted hidden></video>
+    <p class="panel fine" id="live-empty">Poné el celular o la tablet en un trípode apuntando a la zona que querés ver, elegí el retraso y encendé la cámara. Con 10 a 20 s el nadador termina el intento, sale y se ve en la pantalla.</p>
+    <section class="panel">
+      <div class="eyebrow">Intentos de esta sesión</div>
+      <div id="live-takes"></div>
+    </section>
+    <ul class="limits fine panel">
+      <li><b>Cuadros por segundo:</b> los da la cámara del dispositivo; el número real se muestra arriba de la imagen. Para la técnica conviene 60.</li>
+      <li><b>Retraso:</b> la imagen retrasada se guarda reducida (960 píxeles de ancho); la grabación de los intentos es a la calidad completa de la cámara.</li>
+      <li><b>Tiempos:</b> cada cuadro grabado lleva su hora real de captura, así los tiempos del análisis son los de la cámara.</li>
+    </ul>
+  </section>
+
+  <!-- 6. FICHA DEL ALUMNO -->
+  <section id="view-gym" class="view" hidden>
+    <div class="results-head">
+      <div>
+        <h1>Gym</h1>
+        <p class="meta-line">Velocidad de la barra y saltos, en un video filmado con el celular. Los videos no se envían a ningún servidor.</p>
+      </div>
+    </div>
+    <div class="panel gym-setup">
+      <div class="segmented" role="tablist" aria-label="Qué medir"><button type="button" role="tab" data-gymode="bar" aria-selected="true">Barra</button><button type="button" role="tab" data-gymode="jump" aria-selected="false">Salto</button></div>
+      <div class="fields gym-fields">
+        <label>Deportista<select id="gy-athlete"></select></label>
+        <label class="gy-bar">Ejercicio<select id="gy-ex"></select></label>
+        <label class="gy-bar">Carga en la barra (kg)<input type="text" id="gy-load" inputmode="decimal" placeholder="100"></label>
+        <label class="gy-jump" hidden>Tipo de salto<select id="gy-jtype"></select></label>
+      </div>
+      <div class="gy-row"><label class="btn primary file-btn"><svg width="16" height="16"><use href="#i-video"/></svg>Grabar<input type="file" id="gy-rec" accept="video/*" capture="environment"></label><label class="btn file-btn"><svg width="16" height="16"><use href="#i-video"/></svg>Elegir video<input type="file" id="gy-file" accept="video/mp4,video/quicktime,video/webm,video/*"></label><button class="btn gy-bar" id="gy-live" type="button"><svg width="16" height="16"><use href="#i-video"/></svg>Filmar en vivo</button><button class="btn ghost gy-bar" id="gy-screen" type="button">Pantalla para el deportista</button><p class="fine" id="gy-tip"></p></div>
+      <p class="notice" id="gy-msg" role="status" hidden></p>
+    </div>
+    <div class="results-grid gym-grid" id="gy-work" hidden>
+      <div class="player-col">
+        <div class="gy-col">
+        <div id="gy-calidad" class="gy-calidad" hidden></div>
+        <div class="player gy-player" id="gy-player">
+          <div class="stage" id="gy-stage"><video id="gy-video" playsinline muted preload="auto"></video><canvas id="gy-overlay"></canvas></div>
+          <div class="gy-ov gy-ov-top" id="gy-tools" role="toolbar" aria-label="Herramientas"></div>
+          <div class="gy-ov gy-ov-bottom">
+            <button class="icon-btn" id="gy-prev" type="button" aria-label="Cuadro anterior"><svg width="16" height="16"><use href="#i-prev"/></svg></button>
+            <button class="icon-btn play" id="gy-play" type="button" aria-label="Reproducir"><svg viewBox="0 0 24 24" width="20" height="20"><path id="gy-play-ico" d="M7 5l12 7-12 7z" fill="currentColor"/></svg></button>
+            <button class="icon-btn" id="gy-next" type="button" aria-label="Cuadro siguiente"><svg width="16" height="16"><use href="#i-next"/></svg></button>
+            <select id="gy-speed" aria-label="Velocidad"><option value="0.1">0,1×</option><option value="0.25" selected>0,25×</option><option value="0.5">0,5×</option><option value="1">1×</option></select>
+            <span class="mono gy-hud" id="gy-hud"></span>
+            <button class="icon-btn" id="gy-fullscreen" type="button" aria-label="Pantalla completa"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+          </div>
+        </div>
+        </div>
+      </div>
+      <div class="panel gym-panel" id="gy-panel"></div>
+    </div>
+    <div class="panel gy-show" id="gy-show" hidden>
+      <div class="gy-row gy-show-bar">
+        <label>Código del celular<input type="text" id="gy-code" inputmode="numeric" maxlength="4" placeholder="1234"></label>
+        <label>Imagen<select id="gy-view"><option value="none">Solo el número</option><option value="mirror">Espejo (cámara de esta pantalla)</option><option value="remote">Video del celular</option></select></label>
+        <label class="check gy-sound"><input type="checkbox" id="gy-sound" checked> Pitido en cada repetición</label>
+        <button class="btn primary" id="gy-join" type="button">Conectar</button>
+        <button class="btn ghost" id="gy-full" type="button">Pantalla completa</button>
+        <span class="fine" id="gy-show-status" role="status"></span>
+      </div>
+      <div class="gy-show-stage" id="gy-show-stage">
+        <video id="gy-show-video" playsinline muted autoplay></video>
+        <div class="gy-show-info">
+          <div class="gy-show-rep" id="gy-show-rep"></div>
+          <div class="gy-show-big mono" id="gy-show-big">–</div>
+          <div class="gy-show-zone" id="gy-show-zone"></div>
+          <div class="gy-show-list mono" id="gy-show-list"></div>
+        </div>
+      </div>
+    </div>
+      <div id="gy-guide" class="fg-abajo"></div>
+  </section>
+  <section id="view-athlete" class="view" hidden>
+    <nav class="crumbs coach-ctl" aria-label="Ubicación"><button class="crumb" id="ap-back"><svg width="14" height="14"><use href="#i-back"/></svg>Alumnos</button></nav>
+    <div class="results-head">
+      <div class="who">
+        <span class="avatar lg" id="ap-avatar" aria-hidden="true"></span>
+        <div><h1 id="ap-name"></h1>
+        <p class="meta-line" id="ap-meta"></p></div>
+      </div>
+      <div class="head-actions">
+        <button class="btn ghost coach-ctl" id="ap-edit">Editar datos</button>
+        <button class="btn primary coach-ctl" id="ap-new"><svg width="16" height="16"><use href="#i-plus"/></svg>Nuevo análisis</button>
+        <details class="menu more coach-ctl"><summary class="icon-btn" aria-label="Más acciones"><svg width="18" height="18"><use href="#i-more"/></svg></summary>
+          <div class="menu-pop right"><button class="menu-item" id="ap-xlsx">Descargar la ficha en Excel</button><label class="menu-item file-btn">Importar informe de prueba<input type="file" id="ap-import-rep" accept="application/json,.json"></label><button class="menu-item danger" id="ap-del">Borrar alumno</button></div></details>
+      </div>
+      <p class="notice" id="ap-msg" role="status" hidden></p>
+    </div>
+    <div class="confirm panel" id="ap-confirm" hidden></div>
+    <section class="panel evo-panel" id="ap-ask" hidden>
+      <div class="panel-head"><div class="eyebrow">Preguntar sobre sus datos</div></div>
+      <form class="ask-form" id="ask-form"><input type="text" id="ask-q" autocomplete="off" enterkeyhint="search" placeholder="Por ejemplo: ¿mejoró el codo izquierdo esta temporada?" aria-label="Pregunta sobre los datos guardados"><button class="btn primary" type="submit" id="ask-go">Preguntar</button></form>
+      <div class="ask-ex" id="ask-ex"></div>
+      <div id="ask-out" aria-live="polite"></div>
+    </section>
+    <section class="panel evo-panel" id="ap-evo" hidden>
+      <div class="panel-head"><div class="eyebrow">Evolución</div></div>
+      <div class="fields evo-ctrl">
+        <label>Prueba<select id="evo-event"></select></label>
+        <label>Medida<select id="evo-metric"><option value="time">Tiempo final</option><option value="rate">Frecuencia media</option><option value="dps">Distancia por ciclo media</option></select></label>
+      </div>
+      <div id="evo-out"></div>
+    </section>
+    <section class="panel evo-panel" id="ap-tech" hidden>
+      <div class="panel-head"><div class="eyebrow">Evolución de la técnica</div></div>
+      <div class="fields evo-ctrl"><label>Estilo y toma<select id="tech-group"></select></label></div>
+      <div id="ap-tech-out"></div>
+    </section>
+    <section class="panel evo-panel" id="ap-drills" hidden>
+      <div class="panel-head"><div class="eyebrow">Ejercicios con retest</div></div>
+      <div id="ap-drills-out"></div>
+    </section>
+    <section class="panel evo-panel" id="ap-gym" hidden>
+      <div class="panel-head"><div class="eyebrow">Gym</div></div>
+      <div id="ap-gym-out"></div>
+    </section>
+    <section class="panel evo-panel" id="ap-starts" hidden>
+      <div class="panel-head"><div class="eyebrow">Salidas</div></div>
+      <div id="ap-starts-out"></div>
+    </section>
+    <div class="athlete-grid">
+      <section class="panel evals-panel">
+        <div class="panel-head"><div class="eyebrow">Evaluaciones</div><span class="count mono" id="ap-count"></span></div>
+        <div id="ap-evals"></div>
+      </section>
+      <section class="panel detail-panel" id="ap-detail" hidden></section>
+    </div>
+  </section>
+  <datalist id="ang-labels"><option value="Codo"><option value="Rodilla"><option value="Cadera"><option value="Hombro"><option value="Tobillo"><option value="Inclinación del tronco"><option value="Entrada de la mano"><option value="Ángulo de salida"><option value="Ángulo de despegue del bloque"><option value="Ángulo de entrada al agua"><option value="Empuje en la pared"></datalist>
+</main>
+
+<script defer src="vendor/mp4box.all.min.js"></script>
+<script defer src="vendor/jspdf.umd.min.js"></script>
+<script defer src="vendor/supabase.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
