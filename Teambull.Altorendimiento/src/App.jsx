@@ -859,7 +859,7 @@ function coincideBusqueda(nombre, busqueda) {
 // mayúsculas, letras repetidas, "th"), después se pasa por una lista de sinónimos comunes del
 // gimnasio y, si todavía no coincide, se tolera algún error de tipeo.
 const SINONIMOS_EJERCICIO = [
-  ["press banca plano", ["press de pecho", "press pecho", "banco plano", "press banca", "press de banca", "press banco plano", "press plano", "press en banco plano", "bench press", "bench", "pecho plano", "press de pecho plano"]],
+  ["press banca plano", ["press de pecho", "press pecho", "banco plano", "press banca", "press de banca", "press banco plano", "press plano", "press en banco plano", "bench press", "bench", "pecho plano", "press de pecho plano", "press de pecho con barra", "press pecho barra", "press banca con barra", "press de banca con barra", "press plano con barra", "press banca plano con barra", "bench press con barra"]],
   ["press banca inclinado", ["banco inclinado", "press inclinado", "press de pecho inclinado", "incline bench"]],
   ["press banca declinado", ["banco declinado", "press declinado"]],
   ["hip thrust", ["hip trust", "hipthrust", "hip thrus", "empuje de cadera", "puente de gluteo con barra", "elevacion de cadera con barra"]],
@@ -1835,7 +1835,19 @@ function buscarRMBase(rmList, nombreEjercicio) {
   const norm = (s) => normalizarTexto(s || "").trim().replace(/\s+/g, " ");
   // Primero el nombre idéntico; si no, el mismo ejercicio escrito distinto (ej. "Press de pecho"
   // para "Press banca plano — Con pausa").
-  const encontrado = rmList.find((r) => norm(r.ejercicio) === norm(nombreEjercicio) && r.valor) || rmList.find((r) => r.valor && mismoEjercicio(r.ejercicio, nombreEjercicio));
+  let encontrado = rmList.find((r) => norm(r.ejercicio) === norm(nombreEjercicio) && r.valor) || rmList.find((r) => r.valor && mismoEjercicio(r.ejercicio, nombreEjercicio));
+  // Si no, el nombre acortado desde el final (ej. "Peso muerto con barra hexagonal levanto talones"
+  // usa el RM de "Peso muerto con barra hexagonal" o, si no está, el de "Peso muerto").
+  if (!encontrado) {
+    const palabras = String(nombreEjercicio).split(/\s[—–-]\s/)[0].trim().split(/\s+/);
+    for (let n = palabras.length - 1; n >= 2 && !encontrado; n--) {
+      const corto = palabras.slice(0, n).join(" ");
+      // con mancuernas, a una pierna, en máquina, etc. es otro RM: ahí no se acorta
+      if (/\b(mancuernas?|kb|kettlebell|pesa rusa|unipodal|unilateral|una (mano|pierna)|polea|maquina|smith|landmine|bulgara)\b/.test(limpiarNombreEjercicio(palabras.slice(n).join(" ")))) break;
+      if (/^(de|del|con|en|la|el|a|al|y)$/i.test(palabras[n - 1])) continue;
+      encontrado = rmList.find((r) => r.valor && (norm(r.ejercicio) === norm(corto) || mismoEjercicio(r.ejercicio, corto)));
+    }
+  }
   if (!encontrado) return null;
   const val = parseFloat(String(encontrado.valor).replace(",", "."));
   return Number.isFinite(val) && val > 0 ? val : null;
@@ -5347,6 +5359,8 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
   // Si hay rutinas extra (además de la principal), la alumna puede elegir cuál está viendo/usando.
   const [rutinaActivaId, setRutinaActivaId] = useState(null); // null = la principal
   const planActivo = rutinaActivaId ? (alumno.planesSecundarios || []).find((p) => p.id === rutinaActivaId)?.plan || alumno.plan : alumno.plan;
+  // RM para calcular los kilos: los de la rutina que está usando y, si ahí falta alguno, los del plan principal.
+  const rmPesos = [...(planActivo.rm || []), ...(planActivo !== alumno.plan ? alumno.plan?.rm || [] : [])];
   const dias = planActivo.dias;
   const [diaIdx, setDiaIdx] = useState(0);
   const ejercicios = flatEjercicios(dias[diaIdx]);
@@ -5402,8 +5416,8 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
   const iconoBg = activePE.color || "#FF6B35";
   const activeVideo = videoDe(activePE);
   const activeEsBusqueda = activeVideo.includes("youtube.com/results");
-  const pesosSug = pesosSugeridos(planActivo.rm, activePE.nombre, rmDeSemana(activePE, semana));
-  const pesosAprox = pesosSug ? null : pesosAproxPorRIR(planActivo.rm, activePE.nombre, rmDeSemana(activePE, semana), objetivo);
+  const pesosSug = pesosSugeridos(rmPesos, activePE.nombre, rmDeSemana(activePE, semana));
+  const pesosAprox = pesosSug ? null : pesosAproxPorRIR(rmPesos, activePE.nombre, rmDeSemana(activePE, semana), objetivo);
 
   return (
     <div>
@@ -5483,7 +5497,7 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
                         </button>
                         <div className="font-body" style={{ color: "#8B8698", fontSize: 11, marginTop: 2 }}>
                           {formatObjetivo(obj)}{rmDeSemana(pe, semana) && ` · ${rmDeSemana(pe, semana)}`}
-                          {(() => { const sug = pesosSugeridos(planActivo.rm, pe.nombre, rmDeSemana(pe, semana)); if (sug && sug.length) return <span style={{ color: "#7DD6C0", fontWeight: 700 }}> · {sug.map((p) => `${p}kg`).join("/")}</span>; const apx = pe.tipo === "tabata" ? null : pesosAproxPorRIR(planActivo.rm, pe.nombre, rmDeSemana(pe, semana), obj); return apx ? <span style={{ color: "#FFC94A", fontWeight: 700 }}> · ≈{apx.map((p) => `${p}kg`).join("/")} aprox.</span> : null; })()}
+                          {(() => { const sug = pesosSugeridos(rmPesos, pe.nombre, rmDeSemana(pe, semana)); if (sug && sug.length) return <span style={{ color: "#7DD6C0", fontWeight: 700 }}> · {sug.map((p) => `${p}kg`).join("/")}</span>; const apx = pe.tipo === "tabata" ? null : pesosAproxPorRIR(rmPesos, pe.nombre, rmDeSemana(pe, semana), obj); return apx ? <span style={{ color: "#FFC94A", fontWeight: 700 }}> · ≈{apx.map((p) => `${p}kg`).join("/")} aprox.</span> : null; })()}
                         </div>
                         {pe.nota && pe.nota.trim() && (
                           <div className="font-body" style={{ color: "#FFC94A", fontSize: 10.5, fontWeight: 600, marginTop: 3, lineHeight: 1.35 }}>📝 {pe.nota}</div>
