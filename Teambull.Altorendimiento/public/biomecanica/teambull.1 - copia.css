@@ -1,0 +1,239 @@
+/* Team Bull · Biomecánica
+   Viste a SwimBull con la identidad de Team Bull: mismos colores, tipografías (Oswald + Inter)
+   y botones. Va después de styles.css y solo pisa variables y algunos detalles de forma.
+   El selector :root:not(#_tb) gana siempre, así el tema claro no se activa nunca. */
+
+:root:not(#_tb) {
+  --bg: #121017;
+  --surface: #1C1A24;
+  --surface-2: #26232F;
+  --surface-3: #2E2A38;
+  --line: #322E3D;
+  --line-strong: #4A4658;
+  --text: #F4F1EA;
+  --text-2: #B8B3C4;
+  --text-3: #8B8698;
+  --accent: #FF6B35;
+  --accent-ink: #121017;
+  --accent-soft: rgba(255, 107, 53, 0.12);
+  --accent-line: rgba(255, 107, 53, 0.45);
+  --ok: #33D6A6;
+  --warn: #FFC94A;
+  --danger: #E85D5D;
+  --disabled: #4A4658;
+  --overlay: #FF6B35;
+  --shadow-pop: 0 12px 32px -8px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--line);
+  --sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --display: 'Oswald', 'Inter', sans-serif;
+  --mono: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color-scheme: dark;
+}
+
+/* títulos con la tipografía de Team Bull */
+h1, h2, .display, .panel-title, .brand-name {
+  font-family: var(--display);
+  letter-spacing: 0.02em;
+  font-weight: 700;
+}
+::-webkit-scrollbar { height: 4px; width: 0px; }
+::-webkit-scrollbar-thumb { background: #322E3D; border-radius: 4px; }
+input::placeholder, textarea::placeholder { color: #6B6678; }
+
+/* botones redondeados como en Team Bull */
+.btn { border-radius: 10px; font-weight: 700; }
+.btn.primary { color: #121017; }
+
+/* marca de Team Bull en la barra superior (cuando se abre suelta) */
+.brand-logo { width: 30px; height: 30px; object-fit: contain; }
+#btn-theme, #btn-install, .install-tip { display: none !important; }
+
+/* ---------- Dentro de Team Bull (abierta en el apartado Biomecánica) ----------
+   Team Bull ya pone su encabezado y su barra de abajo, así que acá se oculta la barra
+   superior propia y el menú pasa a ser una fila de botones arriba, igual que las pestañas
+   Plan / Perfil / Chat de Team Bull. */
+html.in-teambull .topbar { display: none; }
+html.in-teambull .tabbar {
+  display: flex !important;
+  position: sticky; top: 0; left: auto; right: auto; bottom: auto; z-index: 30;
+  gap: 6px; overflow-x: auto;
+  padding: 0 16px 10px;
+  background: var(--bg);
+  border: 0;
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+html.in-teambull .tabbar button {
+  flex: 1 0 auto;
+  display: flex; flex-direction: row; justify-content: center; align-items: center;
+  min-height: 0; padding: 8px 10px;
+  border: 1px solid #322E3D; border-radius: 10px;
+  background: transparent; color: #8B8698;
+  font: 700 11px var(--sans);
+  cursor: pointer;
+}
+html.in-teambull .tabbar button svg { display: none; }
+html.in-teambull .tabbar button[aria-current="page"] { background: #FF6B35; border-color: #FF6B35; color: #121017; }
+html.in-teambull main { padding-top: 4px; padding-bottom: 32px; }
+
+/* los alumnos se crean y se borran en Team Bull, no acá */
+html.in-teambull #ath-add, html.in-teambull #ath-add-empty, html.in-teambull #ap-del,
+html.in-teambull #ath-migrate, html.in-teambull .menu-item:has(#ath-restore) { display: none !important; }
+
+/* ---------- Letras y tamaños como en el resto de Team Bull ----------
+   Team Bull usa Inter chico (12–13 px) para el texto, Oswald para títulos y números grandes,
+   y etiquetas grises cortas en negrita. SwimBull venía más grande y con números en monoespaciada. */
+body { font: 400 13px/1.5 var(--sans); }
+h1 { font: 600 24px/1.15 var(--display); letter-spacing: 0.02em; }
+h2, .panel-title { font: 600 16px/1.25 var(--display); letter-spacing: 0.02em; }
+.detail-title { font: 600 20px/1.2 var(--display); letter-spacing: 0.02em; }
+.lead { font-size: 12.5px; color: var(--text-3); line-height: 1.5; }
+.fine, .field-hint, .fine-label { font-size: 11px; line-height: 1.45; }
+.scope h2 { font: 700 10.5px var(--sans); letter-spacing: 0.04em; color: var(--text-3); }
+.panel { padding: 16px; border-radius: 12px; }
+.mono, table.data td, .ev-time { font-family: var(--sans); font-variant-numeric: tabular-nums; letter-spacing: 0; }
+
+/* etiquetas y campos */
+.fields label, .auth-form label, .cmp-pick label, .step-label { font: 600 11px var(--sans); color: var(--text-3); gap: 5px; }
+.step-label { color: var(--text); font-size: 12px; margin: 18px 0 10px; }
+.step-label span { font: 700 10.5px var(--sans); }
+input[type=text], input[type=date], input[type=email], input[type=password], input[type=search], input[type=number], select, textarea {
+  font: 400 13px var(--sans); background: #26232F; border-color: #322E3D; border-radius: 8px; min-height: 38px; padding-top: 7px; padding-bottom: 7px;
+}
+
+/* botones */
+.btn { font: 700 13px var(--sans); min-height: 40px; }
+.btn.small { font-size: 11.5px; min-height: 30px; }
+.btn.block { font-size: 13px; min-height: 44px; margin-top: 16px; }
+
+/* tarjetas de opción (Técnica / Competencia, Barra / Salto) */
+.seg b { font: 600 15px var(--display); letter-spacing: 0.02em; }
+.seg small { font-size: 11.5px; }
+
+/* números destacados con la tipografía de títulos */
+.mark-label, .ath-stat b, .fl-kpi b, .gy-kpis .kpi b, .gy-zone-head b, .fault-val .mono, .v2-sync b, .plan-ab b, .fps-n b, .gy-code, .wr-t {
+  font-family: var(--display); font-weight: 600; letter-spacing: 0.02em;
+}
+.drop-title { font-size: 13px; }
+.drop-hint { font-size: 11.5px; line-height: 1.45; }
+.gy-mk { display: inline-flex; align-items: center; gap: 6px; }
+.gy-mk .linkish { font-size: 11.5px; }
+
+/* En el celular nada se sale del ancho: lo ancho (tablas) se desliza dentro de su caja */
+html.in-teambull, html.in-teambull body { max-width: 100%; overflow-x: hidden; }
+html.in-teambull main { min-width: 0; }
+html.in-teambull video, html.in-teambull canvas, html.in-teambull img { max-width: 100%; }
+
+/* Cómo filmar: dibujo de dónde va el celular y qué mide cada toma */
+.film-guide { margin-top: 12px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.film-guide summary { cursor: pointer; font: 600 14px var(--display); letter-spacing: 0.03em; color: var(--accent); }
+.fg-dib svg { display: block; width: 100%; max-width: 420px; height: auto; margin: 8px 0; font-family: var(--sans); }
+.fg-tomas, .fg-siempre { margin: 0 0 6px; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; }
+.fg-toma { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--text-2); }
+.fg-toma b { color: var(--text); font-size: 13px; }
+.fg-toma i { font-style: normal; color: var(--text-3); font-weight: 600; }
+.fg-toma.sel b { color: var(--accent); }
+.fg-siempre { gap: 3px; font-size: 12px; color: var(--text-2); }
+.fg-toma .pill { align-self: flex-start; }
+
+/* dos videos uno arriba del otro (por ejemplo, la entrada al agua desde dos lugares) */
+.dual[data-mode="stack"] { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+#rc-dual[data-mode="stack"] { max-width: calc(36vh * var(--ar, 1.78)); }
+@media (max-width: 760px) { #rc-dual[data-mode="stack"] { max-width: none; } }
+.ang-colors { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+.ang-item[style*="--ac"] { box-shadow: inset 3px 0 0 var(--ac); padding-left: 10px; }
+
+/* Pantalla del deportista: el número lo más grande posible, para leerlo de lejos. */
+.gy-show-stage { container-type: inline-size; }
+.gy-show-big { font-size: clamp(72px, 19cqi, 300px); }
+.gy-show-stage[data-image="none"] { aspect-ratio: auto; min-height: min(72vh, 900px); display: flex; align-items: center; justify-content: center; }
+.gy-show-stage[data-image="none"] .gy-show-info { position: static; background: none; text-align: center; padding: 24px 12px; }
+.gy-show-stage[data-image="none"] .gy-show-big { font-size: clamp(96px, 27cqi, 460px); margin-bottom: .12em; }
+.gy-show-stage[data-image="none"] .gy-show-rep { font-size: clamp(18px, 3.4cqi, 40px); }
+.gy-show-stage[data-image="none"] .gy-show-zone { font-size: clamp(22px, 5cqi, 64px); }
+.gy-show-stage[data-image="none"] .gy-show-list { font-size: clamp(16px, 3cqi, 36px); }
+.gy-show-stage:fullscreen[data-image="none"] { min-height: 100vh; }
+
+/* Sin modos en vivo (cámara con retraso en la pileta, filmar en vivo y pantalla del deportista en Gym):
+   se filma, se guarda y se muestra después. El código sigue, solo se ocultan los accesos. */
+#gy-live, #gy-screen, [data-nav="live"], [data-go="btn-live"] { display: none !important; }
+
+/* Herramientas dentro del video (Competencia): botón que despliega una tira sobre el video. */
+.qt-fab { position: absolute; right: 8px; bottom: 8px; z-index: 5; display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 999px; border: 0; background: rgba(18,16,23,.82); color: #fff; font: 600 13px var(--font-body, system-ui), sans-serif; cursor: pointer; box-shadow: 0 0 0 1px rgba(255,255,255,.18); }
+.qt-fab svg { color: var(--accent, #FF6B35); }
+.qt-wrap { position: absolute; left: 0; right: 0; bottom: 0; z-index: 5; display: flex; flex-direction: column; gap: 4px; padding: 6px; background: linear-gradient(transparent, rgba(8,7,12,.85) 40%); }
+.qt-wrap[hidden] { display: none; }
+.qt-hint { margin: 0; padding: 4px 8px; font-size: 12px; line-height: 1.3; color: #fff; background: rgba(18,16,23,.8); border-radius: 8px; align-self: flex-start; max-width: 100%; }
+.qt-bar { display: flex; gap: 5px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.qt-bar::-webkit-scrollbar { display: none; }
+.qt-btn { flex: 0 0 auto; min-height: 36px; padding: 0 11px; border-radius: 10px; border: 1px solid rgba(255,255,255,.22); background: rgba(18,16,23,.78); color: #fff; font: 600 13px var(--font-body, system-ui), sans-serif; cursor: pointer; }
+.qt-btn[aria-pressed="true"] { background: var(--accent, #FF6B35); border-color: var(--accent, #FF6B35); color: #121017; }
+.qt-close { padding: 0 12px; }
+.qt-color { flex: 0 0 auto; width: 36px; height: 36px; border-radius: 10px; border: 1px solid rgba(255,255,255,.22); background: rgba(18,16,23,.78); display: grid; place-items: center; cursor: pointer; }
+.qt-color i { width: 18px; height: 18px; border-radius: 50%; background: var(--c, #FFD60A); box-shadow: 0 0 0 2px rgba(0,0,0,.5); }
+.qt-mic { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 4; display: inline-flex; align-items: center; gap: 6px; min-width: 52px; height: 52px; padding: 0 13px; justify-content: center; border-radius: 999px; border: 1px solid rgba(255,255,255,.35); background: rgba(18,16,23,.28); color: rgba(255,255,255,.55); cursor: pointer; transition: background .2s, color .2s; }
+.qt-mic[aria-pressed="true"] { background: #e5383b; border-color: #ff8a8c; color: #fff; box-shadow: 0 0 0 6px rgba(229,56,59,.25); animation: qtmic 1.4s ease-in-out infinite; }
+.qt-mic span:empty { display: none; }
+.qt-mic span { font-size: 14px; font-weight: 700; }
+@keyframes qtmic { 50% { box-shadow: 0 0 0 12px rgba(229,56,59,.08); } }
+.qt-done { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); z-index: 6; display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; border-radius: 999px; background: rgba(18,16,23,.9); color: #fff; font: 600 13px var(--font-body, system-ui), sans-serif; box-shadow: 0 0 0 1px rgba(255,255,255,.2); white-space: nowrap; }
+.qt-done[hidden] { display: none; }
+.qt-done b { background: var(--accent, #FF6B35); color: #121017; border-radius: 999px; padding: 6px 12px; cursor: pointer; }
+.qt-done button { background: none; border: 0; color: #fff; font-size: 14px; padding: 4px 6px; cursor: pointer; }
+
+/* "Cómo filmar" va al final de la pantalla, cerrado: se abre al tocarlo */
+.fg-abajo { margin: 16px 0 8px; }
+.fg-abajo .film-guide { margin-top: 0; padding: 0; }
+.film-guide summary { list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px; }
+.film-guide summary::-webkit-details-marker { display: none; }
+.film-guide summary::after { content: "▼"; font-size: 10px; color: var(--text-3); }
+.film-guide[open] summary::after { content: "▲"; }
+.film-guide[open] > :not(summary) { margin-left: 12px; margin-right: 12px; }
+.film-guide[open] { padding-bottom: 10px; }
+
+/* Gym: cuadros por segundo y definición del video, apenas se carga */
+.gy-calidad { display: flex; flex-direction: column; gap: 2px; margin: 0 0 8px; padding: 9px 12px; border-radius: 10px; font-size: 12px; line-height: 1.4; color: var(--text-2); border: 1px solid var(--line); background: var(--surface); }
+.gy-calidad[hidden] { display: none; }
+.gy-calidad b { font: 600 15px var(--display); letter-spacing: .02em; }
+.gy-calidad[data-nivel="bien"] { border-color: rgba(51,214,166,.5); } .gy-calidad[data-nivel="bien"] b { color: var(--ok); }
+.gy-calidad[data-nivel="medio"] { border-color: rgba(255,201,74,.55); background: rgba(255,201,74,.07); } .gy-calidad[data-nivel="medio"] b { color: var(--warn); }
+.gy-calidad[data-nivel="mal"] { border-color: rgba(232,93,93,.6); background: rgba(232,93,93,.08); } .gy-calidad[data-nivel="mal"] b { color: var(--danger); }
+.gy-col { min-width: 0; }
+#gy-calidad { scroll-margin-top: 72px; }
+
+/* "Qué mide esta versión": cerrado, se abre al tocar el título */
+.scope-det > summary { list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; }
+.scope-det > summary::-webkit-details-marker { display: none; }
+.scope-det > summary h2 { margin: 0; }
+.scope-det > summary::after { content: "▼"; font-size: 10px; color: var(--text-3); }
+.scope-det[open] > summary::after { content: "▲"; }
+.scope-det[open] > summary { margin-bottom: 10px; }
+.scope-det + h2 { margin-top: 18px; }
+
+/* Fechas en iPhone: Safari ignora el ancho del casillero de fecha y se sale del recuadro */
+input[type=date] { -webkit-appearance: none; appearance: none; display: block; width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+input[type=date]::-webkit-date-and-time-value { text-align: left; margin: 0; }
+label:has(> input[type=date]) { min-width: 0; max-width: 100%; }
+
+/* Gym: los resultados no se estiran más que la pantalla; las tablas anchas se deslizan dentro de su caja */
+.gym-panel { grid-template-columns: minmax(0, 1fr); min-width: 0; }
+.gym-panel > *, .gym-panel details, .gy-zone { min-width: 0; max-width: 100%; }
+.gym-panel .table-wrap { max-width: 100%; }
+.gy-zone-head b { overflow-wrap: anywhere; }
+
+/* Gym: velocidad de cada repetición, una debajo de la otra, arriba de todo */
+.gy-rt { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); padding: 12px; margin-bottom: 14px; }
+.gy-rt-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 10px; margin-bottom: 8px; }
+.gy-rt-head > b { font: 600 16px var(--display); letter-spacing: .02em; color: var(--text); }
+.gy-rt-head span { font-size: 12px; color: var(--text-3); }
+.gy-rt-head span b { color: var(--accent); font-size: 14px; }
+.gy-rt-fila { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto 84px; align-items: center; gap: 10px; width: 100%; padding: 8px 2px; background: none; border: 0; border-top: 1px solid var(--line); color: var(--text); text-align: left; cursor: pointer; font: inherit; }
+.gy-rt-fila:first-of-type { border-top: 0; }
+.gy-rt-n { font: 600 18px var(--display); color: var(--text-3); text-align: center; }
+.gy-rt-bar { height: 10px; border-radius: 5px; background: var(--surface-3); overflow: hidden; }
+.gy-rt-bar i { display: block; height: 100%; border-radius: 5px; background: var(--ok); }
+.gy-rt-v { font: 600 22px var(--display); letter-spacing: .02em; white-space: nowrap; }
+.gy-rt-v small { font: 400 11px var(--sans); color: var(--text-3); }
+.gy-rt-c { font-size: 12px; font-weight: 700; text-align: right; white-space: nowrap; }
+.gy-rt-fila[data-nivel="bien"] .gy-rt-c { color: var(--ok); }
+.gy-rt-fila[data-nivel="medio"] .gy-rt-bar i { background: var(--warn); } .gy-rt-fila[data-nivel="medio"] .gy-rt-c { color: var(--warn); }
+.gy-rt-fila[data-nivel="mal"] .gy-rt-bar i { background: var(--danger); } .gy-rt-fila[data-nivel="mal"] .gy-rt-c { color: var(--danger); }
+.gy-rt .fine { margin: 6px 0 0; }
