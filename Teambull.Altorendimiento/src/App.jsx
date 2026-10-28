@@ -1057,14 +1057,14 @@ function generarHTMLPlan(alumno) {
   const p = alumno.plan;
   const filaHTML = (f) => `<tr><td>${nombreConVideoHTML(f.nombre, f.video)}${f.nota ? `<div class="nota">${f.nota}</div>` : ""}</td>${f.tipo === "tabata" ? `<td colspan="99">Tabata: ${f.tabata.trabajo}s trabajo / ${f.tabata.descanso}s descanso × ${f.tabata.rounds} rounds</td>` : f.semanas.map((s, i) => { const r = rmDeSemana(f, i); return `<td>${s || "—"}${r ? `<small>${r}</small>` : ""}</td>`; }).join("")}</tr>`;
   const diaHTML = (d) => `<h3>${d.nombre}${d.diaSemana ? ` — ${d.diaSemana}` : ""}</h3>` + d.bloques.map((b) => `<h4>${b.nombre}</h4><table><tr><th>Ejercicio</th>${b.ejercicios[0] && b.ejercicios[0].tipo !== "tabata" ? b.ejercicios[0].semanas.map((_, i) => `<th>Sem.${i + 1}</th>`).join("") : "<th>Detalle</th>"}</tr>${b.ejercicios.map(filaHTML).join("")}</table>`).join("");
-  return `<html><head><meta charset="utf-8"><title>Plan — ${alumno.nombre}</title><style>${ESTILO_PDF}</style></head><body>
+  return sinEmojis(`<html><head><meta charset="utf-8"><title>Plan — ${alumno.nombre}</title><style>${ESTILO_PDF}</style></head><body>
     <button class="btn-imprimir" onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button>
     <h1>🐂 Team Bull</h1>
     <h2>${alumno.nombre}</h2>
     <div class="meta"><span><b>Objetivo:</b> ${p.meta.objetivo || "—"}</span><span><b>Actividad:</b> ${p.meta.actividad || "—"}</span><span><b>Mesociclo:</b> ${p.meta.mesociclo || "—"}</span><span><b>Fecha:</b> ${p.meta.fecha || "—"}</span></div>
     ${p.calentamiento.length ? `<h4>Entrada en calor</h4><table><tr><th>Ejercicio</th><th>Series</th><th>Reps</th></tr>${p.calentamiento.map((w) => `<tr><td>${nombreConVideoHTML(w.nombre, w.video)}${w.nota ? `<div class="nota">${w.nota}</div>` : ""}</td><td>${w.series || "—"}</td><td>${w.reps || "—"}</td></tr>`).join("")}</table>` : ""}
     ${p.dias.map(diaHTML).join("")}
-  </body></html>`;
+  </body></html>`);
 }
 
 // Enviar por WhatsApp directo (más confiable que el share nativo: no depende de permisos del navegador)
@@ -1097,11 +1097,11 @@ function generarHTMLPlantel(alumnos) {
     const match = html.match(/<body[^>]*>([\s\S]*)<\/body>/);
     return `<div style="page-break-before: always; padding-top: 20px;">${match ? match[1] : html}</div>`;
   }).join("");
-  return `<html><head><meta charset="utf-8"><title>Team Bull — Plantel completo</title><style>${ESTILO_PDF}</style></head><body>
+  return sinEmojis(`<html><head><meta charset="utf-8"><title>Team Bull — Plantel completo</title><style>${ESTILO_PDF}</style></head><body>
     <button class="btn-imprimir" onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button>
     <h1>🐂 Team Bull — Plantel completo (${alumnos.length} alumnos/as)</h1>
     ${secciones}
-  </body></html>`;
+  </body></html>`);
 }
 function descargarPlantelPDF(alumnos) {
   const html = generarHTMLPlantel(alumnos);
@@ -1368,7 +1368,7 @@ function generarHTMLInformeBiomecanica(alumno) {
   const sinTildes = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   const ejerciciosMedidos = bio.series.filter((s) => s.corto.includes("velocidad de barra")).map((s) => sinTildes(s.corto.replace(" (velocidad de barra)", "")));
   const rmRelacionados = Object.keys(rm).filter((k) => (rm[k] || []).length > 1 && ejerciciosMedidos.some((ej) => sinTildes(k).includes(ej) || ej.includes(sinTildes(k))));
-  return `<html><head><meta charset="utf-8"><title>Biomecánica — ${alumno.nombre}</title><style>${ESTILO_INFORME}</style></head><body>
+  return sinEmojis(`<html><head><meta charset="utf-8"><title>Biomecánica — ${alumno.nombre}</title><style>${ESTILO_INFORME}</style></head><body>
     <button class="btn-imprimir" onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button>
     <div class="hoja">
       <div class="header">
@@ -1398,7 +1398,7 @@ function generarHTMLInformeBiomecanica(alumno) {
       </div>
       <div class="footer">Generado por Team Bull · Mediciones estimadas por análisis de video</div>
     </div>
-  </body></html>`;
+  </body></html>`);
 }
 function descargarInformeBiomecanicaPDF(alumno) {
   const blob = new Blob([generarHTMLInformeBiomecanica(alumno)], { type: "text/html" });
@@ -1449,8 +1449,29 @@ const ESTILO_INFORME = `
     .card .fecha { font-size: 10px; font-weight: 700; color: #8B8698; text-transform: uppercase; margin-bottom: 4px; }
     .card .ej { font-size: 11px; font-weight: 700; color: #7DD6C0; margin-top: 6px; }
     .card .txt { font-size: 13px; }
+    .resumen-notas { background: #F8F6F1; border-left: 3px solid #FF6B35; border-radius: 0 10px 10px 0; padding: 12px 16px; margin-top: 14px; }
+    .resumen-notas p { font-size: 12.5px; line-height: 1.55; margin: 0 0 4px; color: #333; }
     .footer { text-align: center; padding: 20px; color: #8B8698; font-size: 11px; }
     .btn-imprimir { display: inline-block; background: #FF6B35; color: #fff; border: none; border-radius: 8px; padding: 10px 18px; font-size: 14px; font-weight: 700; cursor: pointer; margin: 16px 0 0 36px; }
+    /* Diseño sobrio: encabezado blanco, títulos con línea y tarjetas con borde fino. */
+    body { background: #EEECE7; }
+    .hoja { border-top: 6px solid #FF6B35; }
+    .header { background: #fff; color: #121017; padding: 30px 36px 18px; border-bottom: 1px solid #E8E3D8; display: grid; grid-template-columns: 1fr auto; align-items: end; }
+    .header .marca { color: #FF6B35; font-size: 11px; letter-spacing: 3px; grid-column: 1 / -1; }
+    .header h1 { font-size: 30px; letter-spacing: -0.5px; }
+    .header .sub { color: #6E6A78; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; text-align: right; }
+    h2.seccion { background: none; color: #121017; padding: 0 0 7px; border-radius: 0; border-bottom: 2px solid #121017; font-size: 12.5px; letter-spacing: 1.5px; margin: 30px 0 14px; }
+    h2.seccion span { color: #8B8698; }
+    .stat { background: #fff; border: 1px solid #E8E3D8; border-top: 3px solid #121017; border-radius: 4px; }
+    .chart-box, .card { background: #FAF9F6; border: 1px solid #EEEAE1; border-radius: 6px; }
+    .perfil-item { border-bottom: 1px solid #F0EDE6; }
+    .destacado { background: #fff; border: 1px solid #E8E3D8; border-left: 4px solid #FF6B35; border-radius: 4px; }
+    .analisis { background: #fff; color: #1C1A24; border: 1px solid #E8E3D8; border-left: 4px solid #FF6B35; border-radius: 4px; }
+    .analisis h3 { color: #121017; }
+    .analisis p { color: #333; }
+    .dia-chip { background: #fff; border-radius: 4px; }
+    .resumen-notas { background: #fff; border: 1px solid #E8E3D8; border-left: 3px solid #FF6B35; border-radius: 4px; }
+    .footer { border-top: 1px solid #E8E3D8; }
     @media print { .btn-imprimir { display: none; } body { background: #fff; } .hoja { max-width: none; } }
   `;
 // Sección de biomecánica (gráficos + últimas evaluaciones). completo = versión del informe aparte.
@@ -1504,6 +1525,88 @@ function seccionBiomecanicaHTML(bio, completo = false) {
           }).join("")}
         </div>
         <div style="font-size:10px;color:#8B8698;margin-top:6px;">Mediciones estimadas por análisis de video en el apartado Biomecánica de Team Bull.</div>`;
+}
+
+// Saca los emojis del informe (títulos, frases rápidas, notas) para que quede prolijo al compartir.
+// Las flechas ▲▼ no son emojis y se mantienen.
+const sinEmojis = (html) => html.replace(/[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}\u{1F3FB}-\u{1F3FF}\uFE0F\u200D\u20E3]+ ?/gu, "");
+
+// Clasifica cada nota del alumno según cómo se sintió (frases rápidas o palabras clave del texto).
+const SENSACIONES_NOTAS = [
+  { id: "bien", label: "Se sintió bien", color: "#1a9c6e", re: /me sent[ií] bien|f[aá]cil|energ[ií]a|c[oó]mod|liviano|r[aá]pid|muy bien|excelente|genial/i },
+  { id: "esfuerzo", label: "Le costó / cansancio", color: "#E39B2D", re: /cost[oó]|cansad|pesad|dif[ií]cil|duro|fatig|agotad|sin fuerza/i },
+  { id: "molestia", label: "Dolor o molestia", color: "#c94a3a", re: /dolor|molest|duel|lesi[oó]n|tir[oó]n|pincha|contractur/i },
+];
+const textoLibreNota = (t) => NOTAS_RAPIDAS.reduce((x, f) => x.split(f).join(""), String(t || "")).replace(/^[\s.,;]+|[\s.,;]+$/g, "").replace(/(\.\s*){2,}/g, ". ");
+
+// Sección de notas del informe: en vez de listar cada nota, la resume en números, un gráfico de
+// sensaciones, una tabla por ejercicio y un análisis en texto, con solo un par de comentarios.
+function seccionNotasHTML(diasConNotas) {
+  if (!diasConNotas.length) return "";
+  const notas = diasConNotas.flatMap(([fecha, ns]) => ns.map((n) => ({ ...n, fecha })));
+  const total = notas.length;
+  const tipos = (n) => SENSACIONES_NOTAS.filter((c) => c.re.test(n.texto)).map((c) => c.id);
+  const cuenta = { bien: 0, esfuerzo: 0, molestia: 0, otra: 0 };
+  const porEj = {};
+  notas.forEach((n) => {
+    const t = tipos(n);
+    if (!t.length) cuenta.otra++;
+    t.forEach((id) => cuenta[id]++);
+    const e = (porEj[n.exNombre] = porEj[n.exNombre] || { n: 0, bien: 0, esfuerzo: 0, molestia: 0 });
+    e.n++; t.forEach((id) => e[id]++);
+  });
+  const pct = (v) => Math.round((v / total) * 100);
+  const etiqueta = "font-size:9.5px;color:#8B8698;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin:16px 0 8px;";
+  const barras = [...SENSACIONES_NOTAS, { id: "otra", label: "Sin indicar sensación", color: "#B8B4A8" }].filter((c) => cuenta[c.id]);
+  const maxC = Math.max(...barras.map((c) => cuenta[c.id]), 1);
+  const grafico = barras.map((c) => `<div style="display:flex;align-items:center;gap:10px;margin-bottom:7px;font-size:12px;">
+      <span style="width:150px;flex:none;color:#444;">${c.label}</span>
+      <span style="flex:1;background:#EFEBE2;border-radius:4px;height:14px;overflow:hidden;"><span style="display:block;height:100%;width:${(cuenta[c.id] / maxC) * 100}%;background:${c.color};border-radius:4px;"></span></span>
+      <b style="width:62px;flex:none;text-align:right;">${cuenta[c.id]} · ${pct(cuenta[c.id])}%</b>
+    </div>`).join("");
+  const ejercicios = Object.entries(porEj).sort((a, b) => b[1].n - a[1].n).slice(0, 6);
+  const predominante = (e) => e.molestia > Math.max(e.bien, e.esfuerzo) ? ["Molestia", "#c94a3a"] : e.esfuerzo > e.bien ? ["Le costó", "#B9761A"] : e.bien ? ["Bien", "#1a9c6e"] : ["Sin dato", "#8B8698"];
+  const tabla = `<div style="border:1px solid #EEE;border-radius:10px;overflow:hidden;">
+      <div style="display:flex;padding:7px 12px;background:#F8F6F1;font-size:9.5px;color:#8B8698;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;"><span style="flex:1;">Ejercicio</span><span style="width:60px;text-align:center;">Notas</span><span style="width:120px;">Sensaciones</span><span style="width:76px;text-align:right;">Predomina</span></div>
+      ${ejercicios.map(([nombre, e]) => {
+        const [txt, col] = predominante(e);
+        const seg = SENSACIONES_NOTAS.map((c) => e[c.id] ? `<span style="display:block;height:100%;width:${(e[c.id] / e.n) * 100}%;background:${c.color};"></span>` : "").join("");
+        return `<div style="display:flex;align-items:center;padding:8px 12px;border-top:1px solid #EEE;font-size:12px;"><span style="flex:1;font-weight:600;">${nombre}${e.molestia ? ` <span style="color:#c94a3a;font-weight:600;font-size:10px;">· ${e.molestia} molestia${e.molestia === 1 ? "" : "s"}</span>` : ""}</span><span style="width:60px;text-align:center;">${e.n}</span><span style="width:120px;"><span style="display:flex;height:8px;border-radius:4px;overflow:hidden;background:#EFEBE2;width:100px;">${seg}</span></span><b style="width:76px;text-align:right;color:${col};font-size:11px;">${txt}</b></div>`;
+      }).join("")}
+    </div>`;
+  const lineas = [];
+  if (cuenta.bien) lineas.push(`En ${pct(cuenta.bien)}% de las notas indicó que se sintió bien o con energía.`);
+  if (cuenta.esfuerzo) {
+    const top = Object.entries(porEj).filter(([, e]) => e.esfuerzo).sort((a, b) => b[1].esfuerzo - a[1].esfuerzo).slice(0, 2).map(([n]) => n);
+    lineas.push(`Marcó esfuerzo alto o cansancio en ${cuenta.esfuerzo} nota${cuenta.esfuerzo === 1 ? "" : "s"}, sobre todo en ${top.join(" y ")}.`);
+  }
+  if (cuenta.molestia) {
+    const con = Object.entries(porEj).filter(([, e]) => e.molestia).map(([n, e]) => `${n} (${e.molestia})`);
+    lineas.push(`Reportó dolor o molestia en ${con.join(", ")}: conviene revisar técnica y carga en ${con.length === 1 ? "ese ejercicio" : "esos ejercicios"}.`);
+  } else lineas.push("No reportó dolores ni molestias en el período.");
+  // Comentarios escritos a mano (sin las frases rápidas), agrupando los repetidos; primero los de molestias.
+  const agrupados = {};
+  [...notas].sort((a, b) => (a.fecha < b.fecha ? 1 : -1)).forEach((n) => {
+    const libre = textoLibreNota(n.texto);
+    if (libre.length <= 3) return;
+    const c = (agrupados[libre.toLowerCase()] = agrupados[libre.toLowerCase()] || { libre, fecha: n.fecha, ejs: [], molestia: tipos(n).includes("molestia") });
+    if (!c.ejs.includes(n.exNombre)) c.ejs.push(n.exNombre);
+  });
+  const comentarios = Object.values(agrupados).sort((a, b) => (b.molestia - a.molestia) || (a.fecha < b.fecha ? 1 : -1)).slice(0, 3);
+  return `<h2 class="seccion">Notas del deportista <span style="font-weight:400;text-transform:none;letter-spacing:0;opacity:0.7;">(${total} nota${total === 1 ? "" : "s"} en ${diasConNotas.length} día${diasConNotas.length === 1 ? "" : "s"})</span></h2>
+        <div class="stats">
+          <div class="stat"><div class="num">${total}</div><div class="label">Notas</div></div>
+          <div class="stat"><div class="num" style="color:#1a9c6e;">${pct(cuenta.bien)}%</div><div class="label">Se sintió bien</div></div>
+          <div class="stat"><div class="num" style="color:#B9761A;">${pct(cuenta.esfuerzo)}%</div><div class="label">Le costó</div></div>
+          <div class="stat"><div class="num" style="color:${cuenta.molestia ? "#c94a3a" : "#121017"};">${cuenta.molestia}</div><div class="label">Molestias</div></div>
+        </div>
+        <div style="${etiqueta}">Cómo se sintió</div>
+        <div class="chart-box">${grafico}</div>
+        <div style="${etiqueta}">Por ejercicio</div>
+        ${tabla}
+        <div class="resumen-notas">${lineas.map((l) => `<p>${l}</p>`).join("")}</div>
+        ${comentarios.length ? `<div style="${etiqueta}">Comentarios destacados</div>
+        ${comentarios.map((n) => `<div style="border-left:3px solid #B8763F;padding:4px 12px;margin-bottom:8px;font-size:12px;color:#444;"><i>"${n.libre.length > 140 ? n.libre.slice(0, 137) + "…" : n.libre}"</i> <span style="color:#8B8698;font-size:10px;">${n.ejs.join(", ")} · ${mostrarFecha(n.fecha)}</span></div>`).join("")}` : ""}`;
 }
 
 function generarHTMLInforme(alumno, mesFiltro) {
@@ -1569,7 +1672,7 @@ function generarHTMLInforme(alumno, mesFiltro) {
   analisis.push(...analisisBiomecanica(bio.series), ...cruceBiomecanicaGimnasio(alumno, bio.series));
   if (sesionesDelMes.length) analisis.push(`Entrenó ${sesionesDelMes.length} día${sesionesDelMes.length === 1 ? "" : "s"} ${tituloMes ? `durante ${tituloMes}` : "en el período mostrado"}.`);
 
-  return `<html><head><meta charset="utf-8"><title>Informe — ${alumno.nombre}</title><style>${ESTILO_INFORME}</style></head><body>
+  return sinEmojis(`<html><head><meta charset="utf-8"><title>Informe — ${alumno.nombre}</title><style>${ESTILO_INFORME}</style></head><body>
     <button class="btn-imprimir" onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button>
     <div class="hoja">
       <div class="header">
@@ -1650,34 +1753,9 @@ function generarHTMLInforme(alumno, mesFiltro) {
           ${svgDonutChart(promDolor, 10, "#F2A93B", promDolor, "Dolor muscular", 68)}
           ${svgDonutChart(promMotivacion, 10, "#33D6A6", promMotivacion, "Motivación", 68)}
         </div>
-        ${comentariosEncuestas.length ? `<div style="margin-top:10px;">` + comentariosEncuestas.slice(0, 6).map((e) => `<div class="card" style="padding:8px 12px;"><span style="color:#8B8698;font-size:10px;">${mostrarFecha(e.fecha)}:</span> <i style="font-size:12px;">"${e.comentario}"</i></div>`).join("") + `</div>` : ""}` : ""}
+        ${comentariosEncuestas.length ? `<div style="margin-top:10px;">` + comentariosEncuestas.slice(0, 3).map((e) => `<div class="card" style="padding:8px 12px;"><span style="color:#8B8698;font-size:10px;">${mostrarFecha(e.fecha)}:</span> <i style="font-size:12px;">"${e.comentario}"</i></div>`).join("") + `</div>` : ""}` : ""}
 
-        ${diasConNotas.length ? (() => {
-          const todasLasNotas = diasConNotas.flatMap(([fecha, notas]) => notas.map((n) => ({ ...n, fecha })));
-          const totalNotas = todasLasNotas.length;
-          // Contamos cuántas veces aparece cada ejercicio, para mostrar solo un resumen de "en qué
-          // se enfocó" en vez de listar cada nota — así el informe no crece con la cantidad de días.
-          const conteoPorEjercicio = {};
-          todasLasNotas.forEach((n) => { conteoPorEjercicio[n.exNombre] = (conteoPorEjercicio[n.exNombre] || 0) + 1; });
-          const masComunes = Object.entries(conteoPorEjercicio).sort((a, b) => b[1] - a[1]).slice(0, 5);
-          const ultimasNotas = [...todasLasNotas].sort((a, b) => (a.fecha < b.fecha ? 1 : -1)).slice(0, 5);
-          return `<h2 class="seccion">📝 Notas de ejercicios <span style="font-weight:400;text-transform:none;letter-spacing:0;opacity:0.7;">(${totalNotas} en total)</span></h2>
-          ${masComunes.length ? `<div style="margin-bottom:14px;">
-            <div style="font-size:9.5px;color:#8B8698;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px;">Ejercicios con más notas</div>
-            <div style="display:flex;flex-wrap:wrap;gap:6px;">
-              ${masComunes.map(([nombre, n]) => `<span style="background:#F8F6F1;border:1px solid #E8E3D8;border-radius:999px;padding:4px 11px;font-size:11px;font-weight:600;color:#333;">${nombre} <span style="color:#B8763F;font-weight:800;">×${n}</span></span>`).join("")}
-            </div>
-          </div>` : ""}
-          <div style="font-size:9.5px;color:#8B8698;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">Últimas notas</div>
-          ${ultimasNotas.map((n) => `<div style="border-left:3px solid #B8763F;background:#F8F6F1;border-radius:0 8px 8px 0;padding:9px 14px;margin-bottom:7px;">
-            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px;">
-              <span style="font-weight:700;font-size:12px;">${n.exNombre}</span>
-              <span style="font-size:9.5px;color:#8B8698;text-transform:uppercase;">${mostrarFecha(n.fecha)}</span>
-            </div>
-            <div style="font-size:12px;color:#444;font-style:italic;">"${n.texto}"</div>
-          </div>`).join("")}
-          ${totalNotas > 5 ? `<div style="font-size:10px;color:#8B8698;margin-top:2px;">+ ${totalNotas - 5} notas más este mes.</div>` : ""}`;
-        })() : ""}
+        ${seccionNotasHTML(diasConNotas)}
 
         ${seccionMarcasHTML(alumno.marcasNatacion)}
         ${seccionCruceGymPiletaHTML(alumno)}
@@ -1708,7 +1786,7 @@ function generarHTMLInforme(alumno, mesFiltro) {
       </div>
       <div class="footer">Generado por Team Bull${tituloMes ? ` — archivo automático de ${tituloMes}` : ""}</div>
     </div>
-  </body></html>`;
+  </body></html>`);
 }
 function descargarInformePDF(alumno, mesFiltro) {
   const html = generarHTMLInforme(alumno, mesFiltro);
@@ -2176,7 +2254,7 @@ const NUTRICION = [
 /* ---------- UI primitives ---------- */
 function TopBar({ title, subtitle, right }) {
   return (
-    <div style={{ padding: "20px 20px 14px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+    <div style={{ padding: "30px 20px 14px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <img src={BULL_LOGO_B64} alt="" style={{ width: 30, height: 30, objectFit: "contain", flexShrink: 0 }} />
         <div>
@@ -6829,7 +6907,7 @@ function SentadillaIcon({ size = 18 }) {
 // (el video no sale del dispositivo).
 // Usa los mismos alumnos de Team Bull: cada medición que se guarda allá llega acá y queda en la
 // ficha del alumno (alumno.biomecanica), así se sube a la nube y entra en su informe.
-function BiomecanicaScreen({ alumnos, onGuardar, onBorrar }) {
+function BiomecanicaScreen({ alumnos, onGuardar, onBorrar, completa, onPantallaCompleta }) {
   const frameRef = useRef(null);
   const enviarAlumnos = () => {
     const w = frameRef.current?.contentWindow;
@@ -6845,13 +6923,15 @@ function BiomecanicaScreen({ alumnos, onGuardar, onBorrar }) {
       if (d.type === "hola") enviarAlumnos();
       else if (d.type === "guardar" && d.evaluacion && alumnos.some((a) => a.id === d.alumnoId)) onGuardar(d.alumnoId, d.evaluacion);
       else if (d.type === "borrar" && alumnos.some((a) => a.id === d.alumnoId)) onBorrar(d.alumnoId, d.evaluacionId);
+      else if (d.type === "pantallaCompleta") onPantallaCompleta?.(!!d.on);
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
   });
   return (
-    <div style={{ height: "100%", display: "flex", flexDirection: "column", width: "100%", minWidth: 0, overflow: "hidden" }}>
-      <TopBar title="Biomecánica" subtitle="Grabá y medí la técnica de cada alumno/a" />
+    // Pantalla completa del video: el apartado ocupa todo el celular (sin encabezado ni barra de abajo)
+    <div style={completa ? { position: "fixed", inset: 0, zIndex: 10000, background: "#000", display: "flex", flexDirection: "column" } : { height: "100%", display: "flex", flexDirection: "column", width: "100%", minWidth: 0, overflow: "hidden" }}>
+      {!completa && <TopBar title="Biomecánica" subtitle="Grabá y medí la técnica de cada alumno/a" />}
       {/* width 1px + minWidth 100%: en iPhone un iframe se estira al ancho de su contenido si no */}
       <iframe ref={frameRef} src="/biomecanica/index.html" title="Biomecánica" allow="camera; microphone; fullscreen; autoplay; clipboard-write; web-share" allowFullScreen style={{ flex: 1, width: 1, minWidth: "100%", maxWidth: "100%", border: "none", background: "#121017", display: "block" }} />
     </div>
@@ -7536,7 +7616,13 @@ export default function GymPlannerCoachApp() {
   // El apartado Biomecánica queda abierto (oculto) al cambiar de pestaña, para no perder
   // un video o un análisis a medio hacer.
   const [bioMontada, setBioMontada] = useState(false);
-  useEffect(() => { if (tab === "biomecanica") setBioMontada(true); }, [tab]);
+  const [bioCompleta, setBioCompleta] = useState(false);
+  useEffect(() => {
+    if (tab === "biomecanica") { setBioMontada(true); return; }
+    setBioCompleta(false);
+    // al salir de Biomecánica, que sus videos queden en pausa
+    try { document.querySelector('iframe[title="Biomecánica"]')?.contentWindow?.postMessage({ tb: "bio", type: "pausar" }, window.location.origin); } catch {}
+  }, [tab]);
   // Se carga sola en segundo plano unos segundos después de entrar, así al tocar la pestaña ya está lista.
   useEffect(() => { if (session?.role !== "coach" || bioMontada) return; const t = setTimeout(() => setBioMontada(true), 2500); return () => clearTimeout(t); }, [session, bioMontada]);
   const [libVersion, setLibVersion] = useState(0);
@@ -7857,7 +7943,7 @@ export default function GymPlannerCoachApp() {
     return false;
   };
   const logout = () => {
-    setSession(null); setSelectedCoachAlumno(null); setBioMontada(false);
+    setSession(null); setSelectedCoachAlumno(null); setBioMontada(false); setBioCompleta(false);
     // en modo seguro, sin sesión no se lee ni se guarda nada en la nube hasta volver a ingresar
     if (MODO_SEGURO) { PASE = null; remotoSincronizadoRef.current = false; setRemotoSincronizado(false); baseRemotaRef.current = null; }
   };
@@ -8256,7 +8342,7 @@ export default function GymPlannerCoachApp() {
           {verificando ? "Comprobando..." : !remotoSincronizado ? `⚠ Sin conexión con la nube${detalleErrorSync ? ` · ${detalleErrorSync}` : ""}` : errorGuardadoRemoto ? `⚠ No se guardó en la nube · ${errorGuardadoRemoto}` : guardadoOk ? "✓ Guardado" : "☁ Se guarda solo · tocá para comprobar"}
         </button>
       )}
-      <div style={{ flex: 1, overflowY: "auto", paddingBottom: 8, paddingTop: "env(safe-area-inset-top, 0px)", position: "relative", zIndex: 1 }}>
+      <div style={{ flex: 1, overflowY: "auto", paddingBottom: 8, paddingTop: "env(safe-area-inset-top, 0px)", position: "relative", zIndex: bioCompleta ? 50 : 1 }}>
         <AccionesCtx.Provider value={accionesCtx}><SwimRecordsCtx.Provider value={swimRecordsCtx}>{body}</SwimRecordsCtx.Provider></AccionesCtx.Provider>
         {session?.role === "coach" && bioMontada && (
           <div style={{ display: tab === "biomecanica" && body === null ? "block" : "none", height: "100%" }}>
@@ -8264,6 +8350,8 @@ export default function GymPlannerCoachApp() {
               alumnos={alumnos.filter((a) => a.activo !== false && (a.coachIds === null || a.coachIds.includes(session.coachId)))}
               onGuardar={(alumnoId, ev) => setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...a, biomecanica: [...(a.biomecanica || []).filter((x) => x.id !== ev.id), ev] } : a)))}
               onBorrar={(alumnoId, evId) => setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...a, biomecanica: (a.biomecanica || []).filter((x) => x.id !== evId) } : a)))}
+              completa={bioCompleta && tab === "biomecanica"}
+              onPantallaCompleta={setBioCompleta}
             />
           </div>
         )}
@@ -8276,7 +8364,7 @@ export default function GymPlannerCoachApp() {
         </div>
       )}
       {session && (
-        <div style={{ display: "flex", borderTop: "1px solid #26232F", background: "#151319", padding: "8px 4px calc(8px + env(safe-area-inset-bottom, 0px))", position: "relative", zIndex: 1 }}>
+        <div style={{ display: bioCompleta && tab === "biomecanica" ? "none" : "flex", borderTop: "1px solid #26232F", background: "#151319", padding: "8px 4px calc(8px + env(safe-area-inset-bottom, 0px))", position: "relative", zIndex: 1 }}>
           {tabs.map((t) => {
             const activo = tab === t.id;
             const colorActivo = session.role === "coach" ? "#FF6B35" : "#7DD6C0";
