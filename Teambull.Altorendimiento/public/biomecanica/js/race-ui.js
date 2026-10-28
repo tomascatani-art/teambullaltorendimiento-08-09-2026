@@ -130,6 +130,31 @@ player.addEventListener('pointerdown', e => {
 player.addEventListener('pointermove', e => { if (drag) { drag.moved = true; pan.x = drag.px + e.clientX - drag.x; pan.y = drag.py + e.clientY - drag.y; applyZoom(); } });
 player.addEventListener('pointerup', () => { drag = null; });
 
+// Zoom con dos dedos: el punto que está entre los dedos queda debajo de los dedos mientras se agranda.
+// Con zoom, un dedo mueve el video (arrastre de arriba) y «Quitar zoom» lo devuelve a su lugar.
+{
+  let pz = null;
+  const dd = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  const mm = (t) => { const r = player.getBoundingClientRect(); return [(t[0].clientX + t[1].clientX) / 2 - r.left - stage.offsetLeft, (t[0].clientY + t[1].clientY) / 2 - r.top - stage.offsetTop]; };
+  player.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 2) return;
+    e.preventDefault(); drag = null;
+    const m = mm(e.touches);
+    pz = { d: dd(e.touches), z: zoom, ux: (m[0] - pan.x) / zoom, uy: (m[1] - pan.y) / zoom };
+  }, { passive: false });
+  player.addEventListener('touchmove', (e) => {
+    if (!pz || e.touches.length !== 2) return;
+    e.preventDefault();
+    const m = mm(e.touches);
+    zoom = Math.max(1, Math.min(6, pz.z * dd(e.touches) / Math.max(1, pz.d)));
+    if (zoom < 1.05) zoom = 1;
+    pan = { x: m[0] - zoom * pz.ux, y: m[1] - zoom * pz.uy };
+    applyZoom();
+  }, { passive: false });
+  player.addEventListener('touchend', (e) => { if (e.touches.length < 2) pz = null; });
+  ['gesturestart', 'gesturechange'].forEach(ev => player.addEventListener(ev, (e) => e.preventDefault()));
+}
+
 // toque para medir: convierte a píxeles del video teniendo en cuenta zoom
 overlay.addEventListener('click', e => {
   if (S.calWait != null) {

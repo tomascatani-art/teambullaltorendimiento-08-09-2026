@@ -26,7 +26,7 @@ export const JUMPS = {
 };
 
 let H = null, ready = false;
-const S = { mode: 'bar', sound: true, live: null, file: null, url: null, times: null, frameDur: 1 / 30, W: 0, Hh: 0, tool: null, scale: null, scalePts: [], pts: [], res: null, abort: null, jumps: [], marks: {}, hint: '', auto: null, lupa: true, lupaPt: null, comprimido: '', evId: null, date: '', keepVid: false };
+const S = { mode: 'bar', sound: true, live: null, file: null, url: null, times: null, frameDur: 1 / 30, W: 0, Hh: 0, tool: null, scale: null, scalePts: [], pts: [], res: null, abort: null, jumps: [], marks: {}, hint: '', auto: null, lupa: false, lupaPt: null, zoom: 1, zv: null, zm: null, disco: null, recorte: null, comprimido: '', evId: null, date: '', keepVid: false };
 const video = () => $('gy-video'), overlay = () => $('gy-overlay');
 // Deshacer: copia de lo marcado antes de cada cambio (disco, punto seguido, correcciones, saltos)
 const hist = [];
@@ -73,6 +73,8 @@ export function initGym(helpers) {
   ['timeupdate', 'seeked', 'play', 'pause'].forEach(ev => v.addEventListener(ev, draw));
   v.addEventListener('play', () => { const tick = () => { if (!v.paused) { draw(); requestAnimationFrame(tick); } }; requestAnimationFrame(tick); });
   overlay().addEventListener('pointerdown', onTap);
+  gestos();
+  $('gy-player').addEventListener('vb-cerrar', cerrarVideo);
   window.addEventListener('resize', () => { if (S.file) draw(); });
   $('gy-jtype').onchange = () => panel();
   $('gy-live').onclick = () => startLive();
@@ -225,13 +227,31 @@ function calidadVideo() {
   box.hidden = false;
 }
 
+// ✕ del video: lo cierra y vuelve a la elección de video (si hay marcas sin guardar, pregunta antes).
+function cerrarVideo() {
+  const sinGuardar = !S.evId && (S.pts.length > 1 || S.jumps.length || Object.keys(S.marks).length);
+  if (sinGuardar && !confirm('¿Cerrar este video? Las marcas que no guardaste se pierden.')) return;
+  stopLive();
+  const v = video();
+  v.pause(); v.srcObject = null; v.removeAttribute('src'); v.load();
+  if (S.url) URL.revokeObjectURL(S.url);
+  S.file = null; S.url = null; S.times = null;
+  S.scale = null; S.scalePts = []; S.pts = []; S.res = null; S.jumps = []; S.marks = {}; S.tool = null; S.hint = ''; S.auto = null; S.lupaPt = null; S.zoom = 1; S.zv = S.zm = S.disco = null; S.recorte = null; recortar(null); S.evId = null; S.date = ''; hist.length = 0;
+  aplicarZoom(0);
+  $('gy-work').hidden = true;
+  if ($('gy-calidad')) $('gy-calidad').hidden = true;
+  $('gy-panel').innerHTML = '';
+  renderTools();
+  $('view-gym')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+}
+
 async function load(file) {
   stopLive();
-  video().srcObject = null;
+  video().srcObject = null; $('gy-player')?.classList.remove('gy-en-vivo');
   $('gy-show').hidden = true;
   if (S.url) URL.revokeObjectURL(S.url);
   S.file = file; S.url = URL.createObjectURL(file);
-  S.scale = null; S.scalePts = []; S.pts = []; S.res = null; S.jumps = []; S.marks = {}; S.tool = null; S.hint = ''; S.auto = null; S.lupaPt = null; S.evId = null; S.date = ''; hist.length = 0;
+  S.scale = null; S.scalePts = []; S.pts = []; S.res = null; S.jumps = []; S.marks = {}; S.tool = null; S.hint = ''; S.auto = null; S.lupaPt = null; S.zoom = 1; S.zv = S.zm = S.disco = null; S.recorte = null; recortar(null); S.evId = null; S.date = ''; hist.length = 0;
   const v = video();
   await new Promise((resolve, reject) => { v.onloadeddata = resolve; v.onerror = () => reject(new Error('Este navegador no puede leer el video.')); v.src = S.url; v.load(); }).catch(err => { H?.notify?.(err.message); throw err; });
   S.W = v.videoWidth; S.Hh = v.videoHeight;
@@ -254,8 +274,7 @@ async function load(file) {
 // toque sobre el video: escala, punto a seguir
 function toVideo(e) { const r = overlay().getBoundingClientRect(); return [(e.clientX - r.left) / r.width * S.W, (e.clientY - r.top) / r.height * S.Hh]; }
 function onTap(e) {
-  if (S.mode === 'jump' && S.file && S.lupa && !S.tool) { S.lupaPt = toVideo(e); draw(); return; }
-  if (!S.tool || !S.file) return;
+  if (!S.tool || !S.file || S.tool === 'disco') return;
   e.preventDefault();
   if (!S.live) video().pause();
   const p = toVideo(e);
@@ -320,6 +339,112 @@ function compute() {
   S.res = S.scale && S.pts.length > 10 ? analyzeBar(barPath(S.pts, S.scale), S.scale) : null;
 }
 
+// ---------- salto: zoom, recorte y resultado ----------
+// Salto con las marcas puestas (todavía sin agregar): para mostrar la altura apenas se marca.
+function saltoMarcado() {
+  const m = S.marks, drop = $('gy-jtype')?.value === 'drop';
+  if (m.take == null || m.land == null) return null;
+  return drop ? (m.contact != null ? dropJump(m.contact, m.take, m.land, S.frameDur) : null) : jumpHeight(m.take, m.land, S.frameDur);
+}
+// Zoom del video (1× a 4×) centrado en los pies (o donde se tocó): se agranda el video entero,
+// nítido, en vez de un recuadro chico. Las marcas y los toques siguen funcionando igual.
+function aplicarZoom(i) {
+  const st = $('gy-stage');
+  if (!st) return;
+  const z = !S.live ? S.zoom || 1 : 1;
+  if (z === 1) { st.style.transform = ''; st.dataset.tx = st.dataset.ty = 0; $('gy-player')?.classList.remove('gy-zoom'); return; }
+  const w = st.clientWidth, h = st.clientHeight, k = w / S.W;
+  // con los dedos: el punto del video S.zv queda bajo el punto de la pantalla S.zm; si no, centrado en los pies
+  let tx, ty;
+  if (S.zv && S.zm) { tx = S.zm[0] - z * S.zv[0] * k; ty = S.zm[1] - z * S.zv[1] * k; }
+  else { const c = piesEn(i) || [S.W / 2, S.Hh * (S.mode === 'jump' ? 0.85 : 0.5)]; tx = w / 2 - z * c[0] * k; ty = h / 2 - z * c[1] * k; }
+  tx = Math.max(w - z * w, Math.min(0, tx)); ty = Math.max(h - z * h, Math.min(0, ty));
+  st.style.transformOrigin = '0 0';
+  st.style.transform = `translate(${tx}px, ${ty}px) scale(${z})`;
+  st.dataset.tx = tx; st.dataset.ty = ty;
+  $('gy-player')?.classList.add('gy-zoom');
+}
+const fmtZoom = () => `${(S.zoom || 1).toFixed(1).replace('.0', '').replace('.', ',')}×`;
+// punto del video que se ve en el medio de la pantalla (con o sin zoom)
+function centroVisible() {
+  const st = $('gy-stage'), r = overlay().getBoundingClientRect(), base = st.parentElement.getBoundingClientRect();
+  const cx = base.left + st.offsetLeft + st.clientWidth / 2, cy = base.top + st.offsetTop + st.clientHeight / 2;
+  return [(cx - r.left) / r.width * S.W, (cy - r.top) / r.height * S.Hh];
+}
+// Gestos sobre el video: el círculo del disco se arrastra con un dedo y se agranda o achica con dos
+// (o desde el punto del borde); sin herramienta, dos dedos hacen zoom y un dedo mueve el video con zoom.
+function gestos() {
+  const cv = overlay(), st = $('gy-stage');
+  const lista = (e) => [...e.touches].map(t => [t.clientX, t.clientY]);
+  const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  const medio = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  const enVideo = (p) => toVideo({ clientX: p[0], clientY: p[1] });
+  const enStage = (p) => { const base = st.parentElement.getBoundingClientRect(); return [p[0] - base.left - st.offsetLeft, p[1] - base.top - st.offsetTop]; };
+  const pxVideo = () => overlay().getBoundingClientRect().width / S.W;
+  const enBorde = (p) => { const d = S.disco, v = enVideo(p); return d && Math.abs(Math.hypot(v[0] - d.x, v[1] - d.y) - d.r) * pxVideo() < 26; };
+  let g = null;
+  const empezar = (ps) => {
+    if (!S.file && !S.live) return (g = null);
+    if (S.tool === 'disco' && S.disco) {
+      const d0 = { ...S.disco };
+      g = ps.length >= 2 ? { tipo: 'disco2', d0, ps } : { tipo: enBorde(ps[0]) ? 'borde' : 'mover', d0, v0: enVideo(ps[0]) };
+    } else if (ps.length >= 2 && !S.live) {
+      const m = medio(ps[0], ps[1]);
+      g = { tipo: 'zoom', z0: S.zoom || 1, d: dist(ps[0], ps[1]), v0: enVideo(m) };
+    } else if (ps.length === 1 && (S.zoom || 1) > 1 && !S.tool && !S.live) g = { tipo: 'pan', v0: enVideo(ps[0]) };
+    else g = null;
+  };
+  const mover = (ps) => {
+    if (!g) return false;
+    if (g.tipo === 'mover') { const v = enVideo(ps[0]); S.disco = { ...g.d0, x: g.d0.x + v[0] - g.v0[0], y: g.d0.y + v[1] - g.v0[1] }; }
+    else if (g.tipo === 'borde') { const v = enVideo(ps[0]); S.disco = { ...g.d0, r: Math.max(4, Math.hypot(v[0] - g.d0.x, v[1] - g.d0.y)) }; }
+    else if (g.tipo === 'disco2') {
+      if (ps.length < 2) return true;
+      const f = dist(ps[0], ps[1]) / Math.max(1, dist(g.ps[0], g.ps[1])), k = pxVideo();
+      const m0 = medio(g.ps[0], g.ps[1]), m = medio(ps[0], ps[1]);
+      S.disco = { x: g.d0.x + (m[0] - m0[0]) / k, y: g.d0.y + (m[1] - m0[1]) / k, r: Math.max(4, g.d0.r * f) };
+    } else if (g.tipo === 'zoom') {
+      if (ps.length < 2) return true;
+      S.zoom = Math.max(1, Math.min(6, g.z0 * dist(ps[0], ps[1]) / Math.max(1, g.d)));
+      S.zv = g.v0; S.zm = enStage(medio(ps[0], ps[1]));
+      if (S.zoom < 1.05) { S.zoom = 1; S.zv = S.zm = null; }
+    } else if (g.tipo === 'pan') { S.zv = g.v0; S.zm = enStage(ps[0]); }
+    draw();
+    return true;
+  };
+  const terminar = () => { if (g && (g.tipo === 'zoom' || g.tipo === 'pan')) { renderTools(); bindPanel(); } g = null; };
+  cv.addEventListener('touchstart', (e) => { const ps = lista(e); empezar(ps); if (g && (g.tipo !== 'pan' || ps.length > 1)) e.preventDefault(); }, { passive: false });
+  cv.addEventListener('touchmove', (e) => { if (mover(lista(e))) e.preventDefault(); }, { passive: false });
+  cv.addEventListener('touchend', (e) => { const ps = lista(e); if (ps.length) empezar(ps); else terminar(); });
+  cv.addEventListener('touchcancel', terminar);
+  ['gesturestart', 'gesturechange'].forEach(ev => cv.addEventListener(ev, (e) => e.preventDefault()));
+  // con mouse (compu): arrastrar el círculo o su borde, y la rueda lo agranda o achica (o hace zoom)
+  cv.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'mouse' || S.tool !== 'disco') return;
+    empezar([[e.clientX, e.clientY]]);
+    const mv = (ev) => mover([[ev.clientX, ev.clientY]]);
+    const up = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); terminar(); };
+    window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
+  });
+  cv.addEventListener('wheel', (e) => {
+    if (S.tool === 'disco' && S.disco) { e.preventDefault(); S.disco = { ...S.disco, r: Math.max(4, S.disco.r * (e.deltaY < 0 ? 1.05 : 0.95)) }; draw(); }
+  }, { passive: false });
+}
+
+// Recortar: la barra del video y la reproducción quedan solo en el tramo del salto.
+function recortar(r) {
+  const pl = $('gy-player');
+  if (!pl) return;
+  pl.__rango = r;
+  pl.dispatchEvent(new Event('vb-rango'));
+}
+function tramoDelSalto() {
+  const m = S.marks, d = video().duration || 0, t = video().currentTime;
+  const a0 = m.contact ?? m.take, b0 = m.land;
+  let a = a0 != null ? a0 - 0.5 : t - 0.8, b = b0 != null ? b0 + 0.5 : (a0 != null ? a0 + 1.4 : t + 1.2);
+  return { a: Math.max(0, a), b: Math.min(d || b, b) };
+}
+
 // ---------- dibujo ----------
 function draw() {
   const cv = overlay(), st = $('gy-stage');
@@ -333,11 +458,19 @@ function draw() {
   const k = w / S.W, X = (p) => [p[0] * k, p[1] * k];
   const t = S.live ? Infinity : video().currentTime, i = S.live ? -1 : curFrame();
   if (S.mode === 'bar') {
-    if (S.scalePts.length) {
-      ctx.strokeStyle = '#4cc9f0'; ctx.fillStyle = '#4cc9f0'; ctx.lineWidth = 2;
-      const [a, b] = [X(S.scalePts[0]), S.scalePts[1] ? X(S.scalePts[1]) : null];
-      ctx.beginPath(); ctx.arc(a[0], a[1], 4, 0, 7); ctx.fill();
-      if (b) { ctx.beginPath(); ctx.arc(b[0], b[1], 4, 0, 7); ctx.fill(); ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); ctx.setLineDash([]); }
+    // disco: mientras se ajusta, círculo con centro y punto del borde para agrandar; después, solo el contorno fino
+    const z = S.mode === 'bar' && !S.live ? S.zoom || 1 : 1;
+    if (S.tool === 'disco' && S.disco) {
+      const c = X([S.disco.x, S.disco.y]), r = S.disco.r * k;
+      ctx.fillStyle = 'rgba(76,201,240,.14)'; ctx.strokeStyle = '#4cc9f0'; ctx.lineWidth = 2.5 / z;
+      ctx.beginPath(); ctx.arc(c[0], c[1], r, 0, 7); ctx.fill(); ctx.stroke();
+      ctx.lineWidth = 1.5 / z; ctx.beginPath(); ctx.moveTo(c[0] - 8 / z, c[1]); ctx.lineTo(c[0] + 8 / z, c[1]); ctx.moveTo(c[0], c[1] - 8 / z); ctx.lineTo(c[0], c[1] + 8 / z); ctx.stroke();
+      ctx.fillStyle = '#4cc9f0'; ctx.beginPath(); ctx.arc(c[0] + r, c[1], 9 / z, 0, 7); ctx.fill();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2 / z; ctx.stroke();
+    } else if (S.scalePts.length === 2) {
+      const [a, b] = [X(S.scalePts[0]), X(S.scalePts[1])];
+      ctx.strokeStyle = 'rgba(76,201,240,.8)'; ctx.lineWidth = 1.5 / z; ctx.setLineDash([5 / z, 4 / z]);
+      ctx.beginPath(); ctx.arc((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, Math.hypot(b[0] - a[0], b[1] - a[1]) / 2, 0, 7); ctx.stroke(); ctx.setLineDash([]);
     }
     if (S.pts.length > 1) {
       // recorrido hasta el instante actual; las subidas en color
@@ -358,24 +491,13 @@ function draw() {
       }
     }
   }
-  if (S.mode === 'jump' && S.lupa && !S.live) {
-    // lupa: la zona de los pies ampliada, para elegir el cuadro exacto del despegue y del contacto
-    const c = piesEn(i) || [S.W / 2, S.Hh * 0.88];
-    const zoom = 3, R = Math.round(Math.min(w, h) * 0.42), src = R / k / zoom;
-    const sx = Math.max(0, Math.min(S.W - src, c[0] - src / 2)), sy = Math.max(0, Math.min(S.Hh - src, c[1] - src / 2));
-    const tb = $('gy-tools')?.getBoundingClientRect(), sr = st.getBoundingClientRect();
-    const dx = c[0] * k > w / 2 ? 8 : w - R - 8, dy = Math.min(h - R - 8, Math.max(8, tb && tb.height ? tb.bottom - sr.top + 6 : 48));
-    ctx.save();
-    ctx.fillStyle = '#121017'; ctx.fillRect(dx - 2, dy - 2, R + 4, R + 4);
-    try { ctx.imageSmoothingEnabled = false; ctx.drawImage(video(), sx, sy, src, src, dx, dy, R, R); } catch { /* cuadro todavía sin cargar */ }
-    ctx.strokeStyle = '#FF6B35'; ctx.lineWidth = 2; ctx.strokeRect(dx, dy, R, R);
-    const px = dx + (c[0] - sx) / src * R, py = dy + (c[1] - sy) / src * R;
-    ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(px - 12, py); ctx.lineTo(px + 12, py); ctx.moveTo(px, py - 12); ctx.lineTo(px, py + 12); ctx.stroke();
-    ctx.strokeStyle = 'rgba(255,107,53,.85)'; ctx.setLineDash([4, 3]); ctx.strokeRect(sx * k, sy * k, src * k, src * k); ctx.setLineDash([]);
-    ctx.fillStyle = '#FF6B35'; ctx.font = '700 10px Inter, sans-serif'; ctx.fillText('LUPA ×3', dx + 6, dy + R - 7);
-    ctx.restore();
-  }
+  aplicarZoom(i);
+  // el resultado del salto marcado, grande sobre el video (fuera del zoom, para que se lea nítido)
+  let badge = $('gy-jbadge');
+  if (!badge) { badge = document.createElement('div'); badge.id = 'gy-jbadge'; badge.className = 'gy-jbadge'; $('gy-player').appendChild(badge); }
+  const jm = S.mode === 'jump' && !S.live ? saltoMarcado() : null;
+  badge.hidden = !jm;
+  if (jm) badge.innerHTML = `<b>${f(100 * jm.h, 1)} cm</b><span>vuelo ${f(1000 * jm.ft, 0)} ms${jm.rsi != null ? ` · RSI ${f(jm.rsi, 2)}` : ''}</span>`;
   if (S.live) {
     const last = S.res?.reps?.[S.res.reps.length - 1];
     $('gy-hud').textContent = `en vivo · ${f(1 / S.frameDur, 0)} cuadros/s${last ? ` · rep ${last.n}: ${f(last.mv)} m/s` : ''}`;
@@ -406,6 +528,7 @@ async function startLive() {
   const v = video();
   if (S.url) { URL.revokeObjectURL(S.url); S.url = null; }
   v.removeAttribute('src'); v.srcObject = stream;
+  $('gy-player').classList.add('gy-en-vivo'); // en vivo no hay cuadro por cuadro
   await v.play().catch(() => {});
   if (!v.videoWidth) await new Promise(r => v.addEventListener('loadedmetadata', r, { once: true }));
   H?.notify?.('');
@@ -540,7 +663,7 @@ function endLive() {
   S.abort?.abort();
   L.stream.getTracks().forEach(tr => tr.stop());
   L.peer?.close(); L.peer = null;
-  video().srcObject = null;
+  video().srcObject = null; $('gy-player')?.classList.remove('gy-en-vivo');
   S.tool = null;
   compute();
   S.hint = S.pts.length ? `Serie terminada: ${S.pts.length} cuadros seguidos a ${f(1 / S.frameDur, 0)} cuadros por segundo.` : '';
@@ -554,7 +677,7 @@ function stopLive() {
   if (!L.done) { L.done = true; S.abort?.abort(); L.stream.getTracks().forEach(tr => tr.stop()); L.peer?.close(); }
   L.link?.close();
   S.live = null;
-  video().srcObject = null;
+  video().srcObject = null; $('gy-player')?.classList.remove('gy-en-vivo');
 }
 export function leaveGym() { stopLive(); import('./gym-screen.js').then(m => m.closeScreen()).catch(() => {}); }
 
@@ -577,23 +700,27 @@ function renderTools() {
   let h = (S.live && !S.live.done) ? '' : b('gy-undo', '↶ Deshacer', { attr: hist.length && !S.abort ? ' title="Deshacer el último cambio"' : ' disabled' }), tip = '';
   if (S.mode === 'bar') {
     const tracking = !!S.abort, done = !!S.live?.done;
-    if (!done) h += b('gy-scale', S.tool === 'scale' ? `Borde ${S.scalePts.length + 1} de 2…` : S.scale ? 'Disco ✓' : '1 · Marcar disco', { on: S.tool === 'scale', primary: !S.scale });
+    if (S.tool === 'disco') h += b('gy-disco-ok', '✓ Listo, es el disco', { primary: true }) + b('gy-scale', 'Cancelar');
+    else if (!done) h += b('gy-scale', S.scale ? 'Disco ✓' : '1 · Marcar disco', { primary: !S.scale });
     if (tracking) h += b('gy-stop', 'Detener', { primary: true });
-    else if (!done) h += b('gy-center', S.tool === 'center' ? 'Tocá el centro…' : S.pts.length ? (S.live ? 'Tocar el centro de nuevo' : 'Tocar el centro') : '2 · Seguir la barra', { on: S.tool === 'center', primary: !!S.scale && !S.pts.length });
+    else if (!done && S.tool !== 'disco') h += b('gy-center', S.tool === 'center' ? 'Tocá el centro…' : S.pts.length ? (S.live ? 'Tocar el centro de nuevo' : 'Tocar el centro') : '2 · Seguir la barra', { on: S.tool === 'center', primary: !!S.scale && !S.pts.length });
     if (S.pts.length > 1 && !S.live && !tracking) {
       h += b('gy-fix', S.tool === 'fix' ? 'Listo' : 'Corregir punto', { on: S.tool === 'fix' });
       h += b('gy-from', 'Seguir desde acá', { attr: curPoint() ? '' : ' disabled title="En este cuadro no hay punto: tocá el centro"' });
     }
+    if ((S.zoom || 1) > 1 && !S.live) h += b('gy-zoom-off', `🔍 ${fmtZoom()} · Quitar zoom`, { on: true });
     if (S.live && !done) h += b('gy-live-sound', S.sound ? 'Sonido ✓' : 'Sin sonido', { on: S.sound }) + b('gy-live-end', 'Terminar la serie', { primary: true });
-    tip = S.tool === 'scale' ? 'Tocá un borde del disco y después el opuesto, pasando por el centro.'
+    tip = S.tool === 'disco' ? 'Arrastrá el círculo hasta el disco y agrandalo o achicalo con dos dedos (o desde el punto del borde) hasta que coincida con el borde del disco.'
       : S.tool === 'center' ? 'Tocá el centro del disco.'
       : S.tool === 'fix' ? 'Arrastrá el punto naranja al centro del disco (o tocá donde va). Pasá de cuadro con ◀ ▶ y corregí los que haga falta.'
+      : !S.scale && !S.live ? 'Con dos dedos podés hacer zoom sobre el video; con un dedo lo movés.'
       : '';
   } else {
     h += ['contact', 'take', 'land'].filter(k => k !== 'contact' || $('gy-jtype').value === 'drop').map(k => `<button class="btn small${S.marks[k] != null ? ' on' : ' ghost'}" type="button" data-gymark="${k}">${{ contact: 'Contacto', take: 'Despegue', land: 'Caída' }[k]}${S.marks[k] != null ? ' ✓' : ''}</button>`).join('');
     h += b('gy-jadd2', 'Agregar salto', { primary: true });
-    h += b('gy-lupa', S.lupa ? 'Lupa ✓' : 'Lupa', { on: S.lupa });
-    tip = S.lupa ? 'Mové el video cuadro a cuadro con ◀ ▶ y marcá cada momento. Tocá el video para poner la lupa sobre los pies.' : 'Mové el video cuadro a cuadro con ◀ ▶ y marcá cada momento.';
+    h += b('gy-zoom', (S.zoom || 1) > 1 ? `🔍 ${fmtZoom()} · Quitar` : '🔍 2×', { on: (S.zoom || 1) > 1 });
+    h += b('gy-recorte', S.recorte ? '✂ Ver todo' : '✂ Recortar', { on: !!S.recorte });
+    tip = (S.zoom || 1) > 1 ? 'Zoom: con dos dedos agrandás o achicás, con un dedo movés el video. Mové cuadro a cuadro y marcá cada momento.' : 'Mové el video cuadro a cuadro y marcá cada momento. Con dos dedos hacés zoom a los pies; ✂ deja la barra solo en el salto.';
   }
   bar.innerHTML = h + (tip ? `<span class="gy-tip-line">${esc(tip)}</span>` : '');
 }
@@ -610,7 +737,7 @@ function barPanel() {
   if (!S.file) return '<p class="fine">Elegí el video de la serie para empezar.</p>';
   const sc = S.scale, r = S.res;
   let h = `<div class="gy-step"><div class="gy-step-n">1</div><div><b>Escala</b>
-    <p class="fine">Tocá los dos bordes del disco, de lado a lado pasando por el centro. Los discos de competencia miden ${PLATE_MM} mm (reglamento IWF); medí el tuyo si es de otro tipo.</p>
+    <p class="fine">Tocá «Marcar disco», llevá el círculo hasta el disco y agrandalo o achicalo con dos dedos hasta que coincida con el borde. Los discos de competencia miden ${PLATE_MM} mm (reglamento IWF); medí el tuyo si es de otro tipo.</p>
     <div class="gy-row"><label>Diámetro del disco (mm)<input type="text" id="gy-plate" inputmode="decimal" value="${esc(sc ? Math.round(sc.D * 1000) : PLATE_MM)}"></label></div>
     ${sc ? `<p class="fine ok-line">Disco: ${f(sc.px, 0)} px = ${f(sc.D * 1000, 0)} mm. Error de la escala ±${f(100 * sc.rel, 1)} % (1 px en cada borde).</p>` : ''}</div></div>
     <div class="gy-step"><div class="gy-step-n">2</div><div><b>Seguir la barra</b>
@@ -621,6 +748,7 @@ function barPanel() {
   if (!S.live && S.fps) { const fv = fpsVerdict('bar', S.fps); if (fv.text) h = `<p class="${fv.ok ? 'fine ok-line' : 'notice'}">${esc(fv.text)}</p>` + h; }
   if (S.pts.length > 10 && !sc) h += '<p class="notice">Falta la escala (paso 1) para pasar el recorrido a metros.</p>';
   if (r?.error) h += `<p class="notice">${esc(r.error)}</p>`;
+  if (r && !r.error) h = repsTop(r) + h;
   if (r && !r.error) {
     const ex = EXERCISES[$('gy-ex').value]?.label || '', load = num($('gy-load').value);
     h += `<div class="kpis gy-kpis">
@@ -637,6 +765,23 @@ function barPanel() {
     ${saveRow('Guardar la serie en la ficha', `${esc(ex)}${Number.isFinite(load) ? ` · ${f(load, 1)} kg` : ' · sin carga anotada'}`)}`;
   }
   return h;
+}
+
+// Lo principal de la serie, arriba de todo: cada repetición con su velocidad media, una debajo
+// de la otra, y cuánto bajó respecto de la más rápida (la pérdida de velocidad que se va acumulando).
+function repsTop(r) {
+  const reps = r.reps.filter(x => Number.isFinite(x.mv));
+  if (!reps.length) return '';
+  const max = Math.max(...reps.map(x => x.mv)), best = r.best?.mv || max;
+  const filas = reps.map(x => {
+    const caida = best > 0 ? 100 * (best - x.mv) / best : 0;
+    const nivel = caida < 10 ? 'bien' : caida < 20 ? 'medio' : 'mal';
+    const txt = x.mv >= best - 1e-9 ? 'la más rápida' : `−${f(caida, 0)} %`;
+    return `<button type="button" class="gy-rt-fila" data-gyrep="${x.n}" data-nivel="${nivel}"><span class="gy-rt-n">${x.n}</span><span class="gy-rt-bar"><i style="width:${Math.max(4, 100 * x.mv / max).toFixed(1)}%"></i></span><b class="gy-rt-v">${f(x.mv)}<small> m/s</small></b><span class="gy-rt-c">${txt}</span></button>`;
+  }).join('');
+  const ultima = reps[reps.length - 1];
+  const total = reps.length > 1 && best > 0 ? 100 * (best - ultima.mv) / best : null;
+  return `<div class="gy-rt"><div class="gy-rt-head"><b>Velocidad de cada repetición</b>${total != null ? `<span>Pérdida hasta la última: <b>${f(total, 0)} %</b></span>` : ''}</div>${filas}<p class="fine">Tocá una repetición para verla en el video.</p></div>`;
 }
 
 // ---------- zonas de velocidad (tabla de Prilepin adaptada) ----------
@@ -666,8 +811,10 @@ export function zoneHtml(reps, exKey) {
   if (d?.stop) h += `<p class="notice">El déficit de la serie pasó de ${DEFICIT_LIMIT} %: según la tabla, solo una serie más.</p>`;
   if (ex.table === 'other') h += `<p class="fine">Las velocidades de la tabla salen de la sentadilla. En ${esc(ex.label.toLowerCase())} la misma velocidad corresponde a otro porcentaje del máximo (por ejemplo, el 1RM se alcanza a unos 0,30 m/s en sentadilla completa y a unos 0,15 m/s en press de banca), así que tomalo como orientación o usá el perfil carga-velocidad del deportista.</p>`;
   if (ex.table === 'olympic') h += `<p class="fine">En los levantamientos olímpicos la referencia habitual es la velocidad pico, no la media: la zona de la tabla (velocidad media, hecha con sentadilla) no se aplica directamente.</p>`;
-  h += `<details class="gy-table"><summary>Ver la tabla</summary><div class="table-wrap"><table class="data sheet"><tr><th>Calidad</th><th>Velocidad (m/s)</th><th>% de un día normal</th><th>Reps por serie</th><th>Series</th><th>Reps totales</th></tr>${ZONES.map(x => `<tr${x === zr ? ' class="hl"' : ''}><th scope="row">${esc(x.label)}</th><td class="mono">${rng(x)}</td><td>${esc(x.pct)}</td><td>${esc(x.reps)}</td><td>${esc(x.sets)}</td><td>${esc(x.total)}</td></tr>`).join('')}</table></div>
-    <div class="table-wrap"><table class="data sheet"><tr><th>En la práctica</th><th>Velocidad (m/s)</th><th>Reps por serie</th><th>Series</th><th>Reps totales</th></tr>${PRACTICE.map(x => `<tr${x === p?.zone ? ' class="hl"' : ''}><th scope="row">${esc(x.label)}</th><td class="mono">${rng(x)}</td><td>${esc(x.reps)}</td><td>${esc(x.sets)}</td><td>${esc(x.total)}</td></tr>`).join('')}</table></div>
+  // tabla en filas de dos renglones (calidad y velocidad; después %, reps y series) para que entre en el celular
+  const fila = (x, hl, pct) => `<div class="gy-zt-fila${hl ? ' hl' : ''}"><div class="gy-zt-1"><b>${esc(x.label)}</b><span class="mono">${rng(x)} m/s</span></div><div class="gy-zt-2">${pct ? `${esc(x.pct)} de un día normal · ` : ''}${esc(x.reps)} reps por serie · ${esc(x.sets)} series · ${esc(x.total)} en total</div></div>`;
+  h += `<details class="gy-table"><summary>Ver la tabla</summary><div class="gy-zt"><div class="gy-zt-tit">Calidad</div>${ZONES.map(x => fila(x, x === zr, true)).join('')}</div>
+    <div class="gy-zt"><div class="gy-zt-tit">En la práctica</div>${PRACTICE.map(x => fila(x, x === p?.zone, false)).join('')}</div>
     <p class="fine">Tabla de Prilepin adaptada al entrenamiento basado en la velocidad (Medvedyev, 1986; D. Baker y col., 2000). Adaptación a la práctica: Prof. Jorge González Guedes, con datos de sentadilla. Si el déficit de la serie supera −10 %, solo se sigue una serie más. Déficit de la serie = (velocidad media de las repeticiones − velocidad de la 1.ª) / velocidad media.</p></details></div>`;
   return h;
 }
@@ -691,7 +838,7 @@ function jumpPanel() {
   const mk = (k, label) => `<span class="gy-mk"><button class="btn small${m[k] != null ? '' : ' ghost'}" type="button" data-gymark="${k}">${label}${m[k] != null ? `: cuadro ${frameAt(m[k]) + 1}` : ''}</button>${m[k] != null ? `<button class="linkish" type="button" data-gygo="${k}">ver</button>` : ''}</span>`;
   const autoBtn = `<div class="gy-row"><button class="btn small ${S.auto?.busy ? 'ghost' : m.take == null ? 'primary' : 'ghost'}" id="gy-jauto" type="button"${S.auto?.busy ? ' disabled' : ''}>${S.auto?.busy ? `Buscando los pies… ${f(100 * (S.auto.prog || 0), 0)} %` : '✨ Marcar automático'}</button>${S.auto?.busy ? '<button class="linkish" id="gy-jauto-stop" type="button">Cancelar</button>' : ''}</div>
     <p class="fine">${S.auto?.ok ? '<b>Marcas propuestas por la app.</b> Revisalas con «ver» y ◀ ▶. Si alguna no cae justo, parate en el cuadro correcto y tocá su botón: la marca pasa a ese cuadro.' : 'La app sigue los pies y propone las marcas; después podés corregirlas o marcarlas vos a mano.'}</p>`;
-  let h = autoBtn + `<p class="fine">Buscá con los botones de cuadro a cuadro y marcá en el cuadro justo. <b>Despegue</b>: el primer cuadro con los dos pies en el aire. <b>Caída</b>: el primer cuadro con un pie tocando el piso.${drop ? ' <b>Contacto</b>: el primer cuadro en que toca el piso al bajar del cajón.' : ''}</p>
+  let h = saltosTop() + autoBtn + `<p class="fine">Buscá con los botones de cuadro a cuadro y marcá en el cuadro justo. <b>Despegue</b>: el primer cuadro con los dos pies en el aire. <b>Caída</b>: el primer cuadro con un pie tocando el piso.${drop ? ' <b>Contacto</b>: el primer cuadro en que toca el piso al bajar del cajón.' : ''}</p>
     ${fps < 100 ? `<p class="notice">Este video tiene ${f(fps, 0)} cuadros por segundo: la altura de cada salto puede dar hasta ${f(errCm, 1)} cm de más o de menos. En cámara lenta (120 o 240) ese margen baja a la mitad o a la cuarta parte.</p>` : `<p class="fine">${f(fps, 0)} cuadros por segundo: la altura puede dar hasta ${f(errCm, 1)} cm de más o de menos (en un salto de 30 cm).</p>`}
     <div class="gy-row">${drop ? mk('contact', 'Contacto') : ''}${mk('take', 'Despegue')}${mk('land', 'Caída')}</div>
     ${type === 'loaded' ? `<div class="gy-row"><label>Carga agregada (kg)<input type="text" id="gy-jload" inputmode="decimal" placeholder="0"></label></div>` : ''}
@@ -707,6 +854,29 @@ function jumpPanel() {
       <p class="fine" id="gy-hpo-line">${Number.isFinite(num(S.hpo)) ? `Distancia de empuje: ${f(num(S.hpo), 2)} m.` : ''}</p>`;
     if (S.jumps.some(j => j.type === 'loaded')) h += `<div class="mgroup">Perfil fuerza-velocidad</div><div id="gy-fv">${fvHtml()}</div>`;
     h += saveRow('Guardar los saltos en la ficha');
+  }
+  return h;
+}
+
+// Lo principal del salto, arriba de todo: la altura del salto marcado (apenas están el despegue y
+// la caída) y la lista de los saltos agregados, uno debajo del otro, con el mejor marcado.
+function saltosTop() {
+  const j = saltoMarcado(), drop = $('gy-jtype').value === 'drop';
+  let h = '';
+  if (j) {
+    h += `<div class="gy-jres"><span class="fine-label">Este salto</span><b>${f(100 * j.h, 1)}<small> cm</small></b>
+      <span class="fine">±${f(196 * j.se, 1)} cm · vuelo ${f(1000 * j.ft, 0)} ms${j.rsi != null ? ` · contacto ${f(1000 * j.tc, 0)} ms · RSI ${f(j.rsi, 2)}` : ''}</span>
+      <button class="btn primary small" id="gy-jadd3" type="button">Agregar el salto</button></div>`;
+  } else if (S.file) {
+    const falta = [drop && S.marks.contact == null && 'el contacto', S.marks.take == null && 'el despegue', S.marks.land == null && 'la caída'].filter(Boolean);
+    h += `<div class="gy-jres vacio"><span class="fine-label">Este salto</span><span class="fine">Marcá ${falta.join(', ').replace(/, ([^,]*)$/, ' y $1')} y acá aparece cuánto saltó.</span></div>`;
+  }
+  if (S.jumps.length) {
+    const best = Math.max(...S.jumps.map(x => x.h));
+    h += `<div class="gy-rt"><div class="gy-rt-head"><b>Saltos</b><span>Mejor: <b>${f(100 * best, 1)} cm</b></span></div>${S.jumps.map((x, k) => {
+      const caida = best > 0 ? 100 * (best - x.h) / best : 0, nivel = caida < 5 ? 'bien' : caida < 10 ? 'medio' : 'mal';
+      return `<div class="gy-rt-fila" data-nivel="${nivel}"><span class="gy-rt-n">${k + 1}</span><span class="gy-rt-bar"><i style="width:${Math.max(4, 100 * x.h / best).toFixed(1)}%"></i></span><b class="gy-rt-v">${f(100 * x.h, 1)}<small> cm</small></b><span class="gy-rt-c">${x.h >= best ? 'el mejor' : `−${f(caida, 0)} %`}</span></div>`;
+    }).join('')}</div>`;
   }
   return h;
 }
@@ -762,14 +932,34 @@ function fvHtml() {
 
 function bindPanel() {
   const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
-  on('gy-scale', () => { if (S.tool !== 'scale' && S.scalePts.length) snap(); S.tool = S.tool === 'scale' ? null : 'scale'; S.scalePts = []; if (!S.live) video().pause(); panel(); draw(); });
+  on('gy-scale', () => {
+    if (S.tool === 'disco') { S.tool = null; S.disco = null; panel(); draw(); return; }
+    S.tool = 'disco'; if (!S.live) video().pause();
+    // arranca con el círculo anterior, o uno mediano en el centro de lo que se ve
+    if (S.scalePts.length === 2) { const [a, c] = S.scalePts; S.disco = { x: (a[0] + c[0]) / 2, y: (a[1] + c[1]) / 2, r: Math.hypot(c[0] - a[0], c[1] - a[1]) / 2 }; }
+    else { const v = centroVisible(); S.disco = { x: v[0], y: v[1], r: S.W * 0.12 / (S.zoom || 1) }; }
+    panel(); draw();
+  });
+  on('gy-disco-ok', () => {
+    const d = S.disco; if (!d) return;
+    snap();
+    S.scalePts = [[d.x - d.r, d.y], [d.x + d.r, d.y]];
+    S.scale = barScale(S.scalePts[0], S.scalePts[1], num($('gy-plate')?.value) / 1000);
+    S.tool = null; S.disco = null; S.hint = S.scale ? '' : 'El círculo quedó muy chico: agrandalo hasta el borde del disco.';
+    if (!S.scale) { S.tool = 'disco'; S.disco = d; }
+    if (S.scale && S.pts.length > 1) compute();
+    panel(); draw();
+  });
+  on('gy-zoom-off', () => { S.zoom = 1; S.zv = S.zm = null; renderTools(); bindPanel(); draw(); });
   on('gy-center', () => { S.tool = S.tool === 'center' ? null : 'center'; if (!S.live) video().pause(); panel(); });
   on('gy-live-end', () => endLive());
   on('gy-fix', () => { S.tool = S.tool === 'fix' ? null : 'fix'; video().pause(); panel(); draw(); });
   on('gy-from', () => { const q = curPoint(); if (q) { snap(); S.tool = null; track([q.x, q.y]); } });
   on('gy-undo', undo);
   on('gy-jadd2', () => $('gy-jadd')?.click());
-  on('gy-lupa', () => { S.lupa = !S.lupa; panel(); draw(); });
+  on('gy-jadd3', () => $('gy-jadd')?.click());
+  on('gy-zoom', () => { S.zoom = (S.zoom || 1) > 1 ? 1 : 2; S.zv = S.zm = null; renderTools(); bindPanel(); draw(); });
+  on('gy-recorte', () => { S.recorte = S.recorte ? null : tramoDelSalto(); recortar(S.recorte); if (S.recorte) { video().pause(); seekFrame(frameAt(S.recorte.a + 0.001)); } renderTools(); bindPanel(); draw(); });
   on('gy-live-sound', () => { S.sound = !S.sound; unlock(); panel(); });
   on('gy-stop', () => S.abort?.abort());
   const pl = $('gy-plate');

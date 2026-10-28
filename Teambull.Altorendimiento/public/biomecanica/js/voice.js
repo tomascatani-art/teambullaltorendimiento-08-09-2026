@@ -19,7 +19,11 @@ export function bindVoice(p, api) {
   const $ = (id) => document.getElementById(`${p}-${id}`);
   let rec = null;
   if (!canRecordVoice()) { $('go').disabled = true; $('hint').textContent = 'Este navegador no puede grabar audio y video juntos. Probá con Chrome o Safari actualizado.'; return { stop() {} }; }
-  const stop = () => rec?.stop();
+  // Terminar: en iPhone a veces el grabador no avisa que paró (onstop no llega) y la grabación
+  // parecía no cortarse. Ahora se cortan también las pistas y, si en 1,5 s no avisó, se cierra igual
+  // con lo que ya se grabó.
+  let cortar = null;
+  const stop = () => cortar?.();
   $('go').onclick = async () => {
     if (rec) { stop(); return; }
     let mic;
@@ -46,7 +50,20 @@ export function bindVoice(p, api) {
       raf = requestAnimationFrame(loop);
     };
     rec = mr;
+    let listo = false;
+    cortar = () => {
+      cortar = null;
+      cancelAnimationFrame(raf);
+      $('go').textContent = 'Terminando…';
+      try { if (mr.state === 'recording') mr.requestData(); } catch {}
+      try { if (mr.state !== 'inactive') mr.stop(); } catch {}
+      setTimeout(() => { stream.getTracks().forEach(t => t.stop()); }, 300);
+      setTimeout(() => mr.onstop(), 1500);
+    };
     mr.onstop = () => {
+      if (listo) return;
+      listo = true;
+      cortar = null;
       cancelAnimationFrame(raf);
       mic.getTracks().forEach(t => t.stop());
       rec = null;

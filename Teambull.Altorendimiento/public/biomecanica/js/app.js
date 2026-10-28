@@ -1,4 +1,5 @@
 import { bindClipPanel, clipPanelHtml, encodeClip, seekVideo, clipLabels, slowTag } from './clip.js';
+import './videobar.js';
 import { analyze, ANGLE_DEFS, EXTRA_SERIES, SKELETON, LIMITATIONS, DEFAULT_CONFIG } from './analysis.js';
 import { flightOf, drawFlight } from './flight.js';
 import { shotCertificate, certificateHtml } from './certificate.js';
@@ -57,6 +58,9 @@ function show(view) {
   const nav = NAV_OF[view] || '';
   if (view === 'mine') view = 'athlete'; // la ficha propia del nadador usa la misma pantalla
   for (const v of ['auth', 'upload', 'progress', 'results', 'race', 'athletes', 'athlete', 'records', 'live', 'gym']) $('view-' + v).hidden = v !== view;
+  // el video de la pantalla que se deja queda en pausa (no sigue corriendo de fondo)
+  document.querySelectorAll('video').forEach(vd => { if (!vd.paused && !$('view-' + view).contains(vd)) vd.pause(); });
+  document.dispatchEvent(new Event('vb-salir'));
   if (view === 'results' || view === 'race') openAnalysis = view;
   document.body.dataset.view = view;
   document.querySelectorAll('[data-nav]').forEach(b => {
@@ -641,6 +645,31 @@ let drag = null;
 player.addEventListener('pointerdown', e => { if (zoom > 1) { drag = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y }; player.setPointerCapture(e.pointerId); } });
 player.addEventListener('pointermove', e => { if (drag) { pan.x = drag.px + e.clientX - drag.x; pan.y = drag.py + e.clientY - drag.y; applyZoom(); } });
 player.addEventListener('pointerup', () => { drag = null; });
+
+// Zoom con dos dedos: el punto que está entre los dedos queda debajo de los dedos mientras se agranda.
+// Con zoom, un dedo mueve el video (arrastre de arriba) y «Quitar zoom» lo devuelve a su lugar.
+{
+  let pz = null;
+  const dd = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  const mm = (t) => { const r = player.getBoundingClientRect(); return [(t[0].clientX + t[1].clientX) / 2 - r.left - stage.offsetLeft, (t[0].clientY + t[1].clientY) / 2 - r.top - stage.offsetTop]; };
+  player.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 2) return;
+    e.preventDefault(); drag = null;
+    const m = mm(e.touches);
+    pz = { d: dd(e.touches), z: zoom, ux: (m[0] - pan.x) / zoom, uy: (m[1] - pan.y) / zoom };
+  }, { passive: false });
+  player.addEventListener('touchmove', (e) => {
+    if (!pz || e.touches.length !== 2) return;
+    e.preventDefault();
+    const m = mm(e.touches);
+    zoom = Math.max(1, Math.min(6, pz.z * dd(e.touches) / Math.max(1, pz.d)));
+    if (zoom < 1.05) zoom = 1;
+    pan = { x: m[0] - zoom * pz.ux, y: m[1] - zoom * pz.uy };
+    applyZoom();
+  }, { passive: false });
+  player.addEventListener('touchend', (e) => { if (e.touches.length < 2) pz = null; });
+  ['gesturestart', 'gesturechange'].forEach(ev => player.addEventListener(ev, (e) => e.preventDefault()));
+}
 
 // Compensación del movimiento de la cámara: solo si se movió y está activada.
 function camOf(r) { return r?.cam && r.meta.camera?.moved && $('t-cam').checked ? r.cam : null; }
