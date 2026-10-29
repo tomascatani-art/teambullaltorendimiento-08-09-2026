@@ -1,6 +1,7 @@
 // Alumnos, fichas e historial de evaluaciones.
 import { store } from './store.js';
 import { xlsxBlob } from './xlsx.js';
+import { inTeamBull, pedirInforme } from './store-teambull.js';
 import { athleteSheets } from './exports.js';
 import { MOMENT_IDS, SHORT } from './moments.js';
 import { computeRace, compare, angleValue } from './race.js';
@@ -35,6 +36,12 @@ export function initAthletes(helpers) {
   $('ap-back').onclick = () => openList();
   $('ap-edit').onclick = () => { openList(false); openForm(current); };
   $('ap-new').onclick = () => H.newAnalysisFor(current);
+  // hoja como la del informe del alumno (gráficos y análisis), para mandar por WhatsApp; la arma Team Bull
+  $('ap-informe').onclick = () => {
+    if (!inTeamBull) { msg('ap-msg', 'El informe para compartir se arma dentro de Team Bull.'); return; }
+    pedirInforme(current.id);
+    msg('ap-msg', 'Se descargó el informe: abrilo, tocá «Imprimir / Guardar como PDF» y compartilo por WhatsApp.');
+  };
   $('ap-xlsx').onclick = async () => {
     try { const evs = await store.listEvaluations(current.id); await H.download(xlsxBlob(athleteSheets(current, evs)), `${current.name.replace(/[^\w\-]+/g, '_')}_ficha.xlsx`, 'ap-msg'); }
     catch (err) { msg('ap-msg', 'No se pudo armar la planilla: ' + err.message); }

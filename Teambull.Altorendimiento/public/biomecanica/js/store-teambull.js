@@ -12,6 +12,9 @@ export const inTeamBull = (() => { try { return window.self !== window.top; } ca
 
 function enviar(msg) { window.parent.postMessage({ tb: 'bio', ...msg }, ORIGIN); }
 
+// Le pide a Team Bull el informe de biomecánica del alumno (hoja con gráficos y análisis para compartir)
+export function pedirInforme(alumnoId) { enviar({ type: 'informe', alumnoId }); }
+
 // Dirección y clave pública de la nube de Team Bull: solo para el canal en vivo con la tablet
 let nube = null;
 export const teambullNube = () => nube;

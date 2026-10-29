@@ -467,6 +467,35 @@ $('rc-ang-cancel').onclick = () => { S.angTool = null; angToolUi(); drawOverlay(
 // toques sobre un video (1 = principal, 2 = segundo video): marcar o arrastrar puntos
 function bindAngleCanvas(cv, vid, v) {
   const px = (e) => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * vid.videoWidth, (e.clientY - r.top) / r.height * vid.videoHeight]; };
+  // el punto más cerca del toque (de un ángulo o de la escuadra), a menos de `radio` píxeles de pantalla
+  const buscarPunto = (p, radio) => {
+    const r = cv.getBoundingClientRect();
+    const tol = radio / (r.width / vid.videoWidth);
+    let best = null;
+    for (const a of visibleAngles(v)) a.pts.forEach((q, k) => {
+      const d = Math.hypot(q[0] - p[0], q[1] - p[1]);
+      if (d < tol && (!best || d < best.d)) best = { a, k, d };
+    });
+    if (!best && v === 1 && S.square) {
+      for (const k of ['r', 'c']) { const q = S.square[k]; const d = Math.hypot(q[0] - p[0], q[1] - p[1]); if (d < tol * 1.2) { best = { sq: k, d }; break; } }
+      if (!best && sqArmHit(p, tol)) best = { sq: 'c', d: 0, grab: [p[0] - S.square.c[0], p[1] - S.square.c[1]] };
+    }
+    return best;
+  };
+  // con el dedo: si el toque agarra un punto (o hay una herramienta elegida), que la página no se
+  // desplace; si no, el navegador corta el arrastre a mitad de camino y el punto queda trabado
+  cv.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    if (S.angTool || (v === 1 && S.pathTool) || buscarPunto(px(e.touches[0]), 30)) e.preventDefault();
+  }, { passive: false });
+  cv.addEventListener('touchmove', (e) => { if (S.angDrag || S.angPlace) e.preventDefault(); }, { passive: false });
+  // el dibujo (lupa y líneas) se hace una vez por cuadro de pantalla, así el punto sigue al dedo sin trabarse
+  let rafP = 0, lupaEn = null;
+  const pintar = (p) => {
+    lupaEn = p;
+    if (rafP) return;
+    rafP = requestAnimationFrame(() => { rafP = 0; loupe(cv, vid, (S.angDrag && !S.angDrag.sq) || S.angPlace ? lupaEn : null); drawOverlay(); });
+  };
   cv.addEventListener('pointerdown', (e) => {
     if (v === 1 && ((S.measure && S.measure.waiting != null) || S.calWait != null)) return;
     const p = px(e);
@@ -481,22 +510,12 @@ function bindAngleCanvas(cv, vid, v) {
       loupe(cv, vid, p); drawOverlay();
       return;
     }
-    const r = cv.getBoundingClientRect();
-    const tol = 22 / (r.width / vid.videoWidth);
-    let best = null;
-    for (const a of visibleAngles(v)) a.pts.forEach((q, k) => {
-      const d = Math.hypot(q[0] - p[0], q[1] - p[1]);
-      if (d < tol && (!best || d < best.d)) best = { a, k, d };
-    });
-    if (!best && v === 1 && S.square) {
-      for (const k of ['r', 'c']) { const q = S.square[k]; const d = Math.hypot(q[0] - p[0], q[1] - p[1]); if (d < tol * 1.2) { best = { sq: k, d }; break; } }
-      if (!best && sqArmHit(p, tol)) best = { sq: 'c', d: 0, grab: [p[0] - S.square.c[0], p[1] - S.square.c[1]] };
-    }
+    const best = buscarPunto(p, e.pointerType === 'mouse' ? 16 : 30);
     if (best) { e.preventDefault(); e.stopPropagation(); S.angDrag = best; cv.setPointerCapture(e.pointerId); }
   });
   cv.addEventListener('pointermove', (e) => {
     if (S.angPlace && S.angTool) {
-      const p = clampP(px(e)); S.angTool.pts[S.angPlace.k] = p; loupe(cv, vid, p); drawOverlay(); return;
+      const p = clampP(px(e)); S.angTool.pts[S.angPlace.k] = p; pintar(p); return;
     }
     if (!S.angDrag) return;
     const p = px(e);
@@ -505,14 +524,13 @@ function bindAngleCanvas(cv, vid, v) {
       const sq = S.square;
       if (S.angDrag.sq === 'r') sq.r = p;
       else { const g = S.angDrag.grab || [0, 0], dx = p[0] - g[0] - sq.c[0], dy = p[1] - g[1] - sq.c[1]; sq.c = [sq.c[0] + dx, sq.c[1] + dy]; sq.r = [sq.r[0] + dx, sq.r[1] + dy]; }
-      drawOverlay(); return;
+      pintar(null); return;
     }
     if ((S.angDrag.a.v || 1) !== v) return;
     // ajustar un ángulo fijo en otro cuadro lo pasa a medir ese cuadro
     if (!atFrame(S.angDrag.a)) { S.angDrag.a.t = currentFrameTime(); S.angDrag.moved = true; }
     S.angDrag.a.pts[S.angDrag.k] = clampP(p);
-    loupe(cv, vid, S.angDrag.a.pts[S.angDrag.k]);
-    drawOverlay();
+    pintar(S.angDrag.a.pts[S.angDrag.k]);
     const el = document.querySelector(`[data-angval="${S.angDrag.a.id}"]`);
     if (el) el.innerHTML = `${f(angleValue(S.angDrag.a), 1)}°<small>${angErrTxt(S.angDrag.a)}</small>`;
   });

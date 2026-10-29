@@ -53,7 +53,7 @@ function montar({ player, video, prev, next, play, back10, fwd10, speed, dentro,
   const bar = document.createElement('div');
   bar.className = 'vb';
   bar.innerHTML = `<div class="vb-jog" role="slider" aria-label="Deslizá para pasar cuadro por cuadro"><span class="vb-jog-txt">◀ deslizá cuadro por cuadro ▶</span></div>
-    <input type="range" class="vb-seek" min="0" max="1000" step="1" value="0" aria-label="Mover el video">
+    <div class="vb-fila"><input type="range" class="vb-seek" min="0" max="1000" step="1" value="0" aria-label="Mover el video"><button type="button" class="vb-min" aria-label="Achicar los controles" title="Achicar o agrandar los controles">▾</button></div>
     <div class="vb-btns">
       ${back10 ? '<button type="button" class="vb-btn vb-txt" data-vb="b10" aria-label="Retroceder 10 cuadros">−10</button>' : ''}
       <button type="button" class="vb-btn" data-vb="prev" aria-label="Cuadro anterior">${ICON.prev}<span>1</span></button>
@@ -125,6 +125,18 @@ function montar({ player, video, prev, next, play, back10, fwd10, speed, dentro,
     sel.addEventListener('change', velTxt);
     velTxt();
   }
+
+  // Achicar: deja solo la barra para deslizar (el video queda casi libre); el mismo botón la vuelve a abrir.
+  // Se recuerda en este celular.
+  const minBtn = bar.querySelector('.vb-min');
+  const ponerMini = (on) => { bar.classList.toggle('vb-mini', on); minBtn.textContent = on ? '▴' : '▾'; minBtn.setAttribute('aria-label', on ? 'Mostrar los controles' : 'Achicar los controles'); };
+  try { ponerMini(localStorage.getItem('vb-mini') === '1'); } catch { ponerMini(false); }
+  minBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const on = !bar.classList.contains('vb-mini');
+    document.querySelectorAll('.vb').forEach(b => { b.classList.toggle('vb-mini', on); const m = b.querySelector('.vb-min'); if (m) { m.textContent = on ? '▴' : '▾'; m.setAttribute('aria-label', on ? 'Mostrar los controles' : 'Achicar los controles'); } });
+    try { localStorage.setItem('vb-mini', on ? '1' : '0'); } catch {}
+  });
 
   // Ruedita: deslizando el dedo sobre la franja pasa de a un cuadro (unos 14 px por cuadro),
   // hacia la derecha adelante y hacia la izquierda atrás. Usa los botones de cuadro de cada pantalla.

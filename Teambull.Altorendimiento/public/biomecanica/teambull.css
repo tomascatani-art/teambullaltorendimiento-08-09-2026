@@ -341,3 +341,61 @@ html.vb-full-on .tabbar, html.vb-full-on .topbar { visibility: hidden; }
 .qt-mic { left: auto; right: 8px; top: 46px; transform: none; min-width: 32px; height: 32px; padding: 0 8px; gap: 4px; }
 .qt-mic svg { width: 15px; height: 15px; }
 .qt-mic span { font-size: 12px !important; }
+/* Barra de controles más finita, con botón para achicarla a solo la línea para deslizar. */
+.vb-fila { display: flex; align-items: center; gap: 8px; }
+.vb-fila .vb-seek { flex: 1; min-width: 0; }
+.vb-min { flex: none; width: 30px; height: 26px; border-radius: 8px; border: 1px solid rgba(255,255,255,.3); background: rgba(18,16,23,.78); color: #fff; font: 700 13px/1 var(--sans); padding: 0; cursor: pointer; touch-action: manipulation; }
+.vb.vb-mini .vb-jog, .vb.vb-mini .vb-btns { display: none; }
+.vb-jog { height: 24px; margin-bottom: 2px; }
+.vb-jog-txt { font-size: 10px; padding: 1px 7px; }
+.vb-btn { height: 36px; }
+.con-vb .qt-fab { bottom: 118px; }
+.con-vb .qt-wrap { bottom: 110px; }
+.con-vb:has(.vb-mini) .qt-fab { bottom: 52px; }
+.con-vb:has(.vb-mini) .qt-wrap { bottom: 44px; }
+/* El video que queda fijo arriba al bajar (Técnica y Competencia) usa como mucho la mitad de la
+   pantalla, así los botones de abajo (Elegir nadador, Corregir puntos…) se ven y se pueden tocar.
+   En «Grande» deja de quedar fijo. */
+.stick .player.vb-entero:not(.vb-full) .stage { width: min(100%, calc(48svh * var(--vb-ar, 1.7778))); }
+.stick:has(.vb-grande) { position: static; }
+/* Pantalla del deportista: no se sale del ancho del celular (el 16:9 con alto mínimo lo ensanchaba). */
+.gy-show-stage { width: 100%; max-width: 100%; box-sizing: border-box; min-height: 0; }
+.gy-show-stage[data-image="none"] { min-height: min(60vh, 900px); }
+.gy-show-big { overflow-wrap: anywhere; }
+.gy-show-bar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; align-items: end; }
+.gy-show-bar > label:not(.check), .gy-show-bar .fine { grid-column: 1 / -1; }
+.gy-show-bar .gy-sound { grid-column: 1 / -1; flex-direction: row !important; align-items: center; gap: 8px !important; }
+.gy-show-bar .btn { width: 100%; justify-content: center; }
+.gs-salir { display: none; position: absolute; top: calc(10px + env(safe-area-inset-top, 0px)); right: 10px; z-index: 3; width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgba(255,255,255,.4); background: rgba(18,16,23,.7); color: #fff; font: 700 18px/1 var(--sans); }
+.gy-show-stage.gs-full { position: fixed; inset: 0; z-index: 1000; margin: 0; border-radius: 0; aspect-ratio: auto; min-height: 100dvh; }
+.gy-show-stage.gs-full .gs-salir { display: block; }
+
+/* «Ver mi serie en vivo» desde la app del alumno/a: solo la pantalla del deportista */
+html.solo-vivo .topbar, html.solo-vivo.in-teambull .tabbar, html.solo-vivo .tabbar, .solo-vivo #view-gym > .results-head, .solo-vivo #view-gym > .gym-setup, .solo-vivo #gy-work, .solo-vivo #gy-guide { display: none !important; }
+html.solo-vivo main, html.solo-vivo.in-teambull main { padding-top: 12px; }
+.solo-vivo #gy-show { margin-top: 0; }
+
+/* ficha del alumno: «Informe para compartir» en su propia fila, a todo el ancho */
+#view-athlete .head-actions { flex-wrap: wrap; }
+#view-athlete #ap-informe { order: 9; flex: 1 0 100%; }
+
+/* Gym: los botones de medir (disco, seguir la barra…) debajo del video, más cerca del pulgar,
+   en vez de arriba de todo. En pantalla completa siguen sobre el video. */
+#gy-tools.gy-afuera { position: static; background: none; padding: 10px 0 2px; gap: 8px; }
+#gy-tools.gy-afuera .vb-grip { display: none; }
+#gy-tools.gy-afuera:not(:has(.btn)) { display: none; }
+#gy-tools.gy-afuera .btn { min-height: 44px; font-size: 14px; padding: 0 14px; }
+#gy-player.vb-full.gy-en-vivo .gy-ov-bottom, #gy-player.vb-full.gy-en-vivo #gy-tools .vb-grip { display: none; }
+/* En vivo: cámara a pantalla completa, botones grandes abajo y el código y la última repetición arriba. */
+#gy-player.vb-full.gy-en-vivo #gy-tools { top: auto; bottom: 0; justify-content: center; gap: 10px; padding: 34px 12px calc(18px + env(safe-area-inset-bottom, 0px)); background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,.72)); }
+#gy-player.vb-full.gy-en-vivo #gy-tools .btn { min-height: 52px; padding: 0 20px; font-size: 16px; border-radius: 14px; }
+#gy-player.vb-full.gy-en-vivo #gy-tools .gy-tip-line { display: block; order: -1; width: 100%; text-align: center; color: #fff; font: 600 13px var(--sans); text-shadow: 0 1px 3px #000; }
+.gy-vivo-hud { position: absolute; z-index: 5; top: calc(10px + env(safe-area-inset-top, 0px)); left: 10px; right: 52px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; pointer-events: none; }
+.gy-vivo-hud[hidden], #gy-player:not(.vb-full) .gy-vivo-hud { display: none; }
+.gy-vivo-code { background: rgba(18,16,23,.82); border: 1px solid rgba(255,255,255,.25); border-radius: 999px; padding: 6px 12px; color: #fff; font: 600 12px var(--sans); }
+.gy-vivo-code b { color: var(--accent, #FF6B35); font-size: 16px; margin-left: 4px; letter-spacing: .06em; }
+.gy-vivo-rep { margin-left: auto; display: flex; align-items: baseline; gap: 5px; background: rgba(18,16,23,.82); border-radius: 14px; padding: 6px 12px; color: #fff; }
+.gy-vivo-rep b { font: 600 30px/1 var(--display); color: var(--ok, #80ed99); }
+.gy-vivo-rep small { font: 600 11px var(--sans); color: #ddd; }
+.gy-vivo-hint { width: 100%; background: rgba(18,16,23,.78); border-radius: 10px; padding: 6px 10px; color: #fff; font: 600 12px var(--sans); }
+.gy-vivo-code.bajo { border-color: var(--warn, #FFC94A); color: var(--warn, #FFC94A); }

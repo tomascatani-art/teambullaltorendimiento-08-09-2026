@@ -20,7 +20,7 @@ import { suggestStart } from './autostart.js';
 import { strokePhases, phaseAt, PHASES, PHASE_COLORS, EVENT_LABEL } from './phases.js';
 import { headAt, packSeries, startOf, alignOf, compareMoments, compareFlight, flightSaved, cmpCols } from './starts.js';
 import { SERIES_COLORS, MAX_SERIES, SHORT, isDegree, toggleSeries, momentRows, usedCols } from './moments.js';
-import { readFrameTimes, probeFrameTimes, getLandmarker, runPose, refinePose } from './pose.js';
+import { readFrameTimes, probeFrameTimes, getLandmarker, runPose, refinePose, poseEnPunto, seguirPose } from './pose.js';
 import { GUIDE, fpsHint, fpsVerdict, fpsTable } from './fpsguide.js';
 import { filmGuide } from './filmguide.js';
 import { fixSwaps, despike, applyEdits } from './refine.js';
@@ -1773,6 +1773,8 @@ window.addEventListener('teambull-alumnos', () => {
   import('./gym-ui.js').then(m => m.refreshAthletes?.()).catch(() => {});
   if (document.body.dataset.view === 'athletes') $('btn-athletes').click();
 });
+const soloVivo = new URLSearchParams(location.search).has('vivo');
+if (soloVivo) document.documentElement.classList.add('solo-vivo');
 initCloud({ show, onReady: async () => {
   // portal del nadador: si un entrenador compartió una ficha con este email, se ofrece "Mi ficha";
   // si además no tiene alumnos propios, la app abre directamente en su ficha (modo nadador)
@@ -1782,6 +1784,8 @@ initCloud({ show, onReady: async () => {
   document.body.dataset.role = athleteMode ? 'athlete' : 'coach';
   document.querySelectorAll('[data-nav="mine"]').forEach(b => { b.hidden = !sheets.length; });
   $('btn-mine').onclick = () => openAthlete(sheets[0].id);
+  // alumno/a dentro de Team Bull («Ver mi serie en vivo»): solo la pantalla del deportista
+  if (soloVivo) { show('gym'); (await import('./gym-screen.js')).openScreen(); return; }
   if (athleteMode) openAthlete(sheets[0].id); else { show('upload'); refreshSelect(); }
 } });
 
@@ -1948,7 +1952,7 @@ $('t-fix-undo').onclick = () => { state.pointEdits.pop(); recompute(state.frame)
 $('t-fix-del').onclick = () => { const j = +$('t-fix-joint').value; state.pointEdits = state.pointEdits.filter(e => e.j !== j); recompute(state.frame); fixUi(true); };
 const fixPos = (e) => { const rc = overlay.getBoundingClientRect(); return [(e.clientX - rc.left) / rc.width, (e.clientY - rc.top) / rc.height, rc]; };
 $('player').addEventListener('pointerdown', (e) => {
-  if (!state.fix || !state.result || e.target.closest('button, .ov-chip')) return;
+  if (!state.fix || !state.result || e.target.closest('button, .ov-chip, .vb, input, select, .loupe')) return;
   e.stopPropagation(); e.preventDefault();
   video.pause();
   const r = state.result, i = state.frame, [x, y, rc] = fixPos(e);
@@ -1973,9 +1977,11 @@ $('player').addEventListener('pointermove', (e) => {
   e.stopPropagation();
   const [x, y] = fixPos(e);
   state.fixDrag.x = Math.min(1, Math.max(0, x)); state.fixDrag.y = Math.min(1, Math.max(0, y));
-  draw();
+  // se dibuja una vez por cuadro de pantalla: el punto sigue al dedo o al mouse sin trabarse
+  if (!fixRaf) fixRaf = requestAnimationFrame(() => { fixRaf = 0; draw(); });
 }, true);
-$('player').addEventListener('pointerup', (e) => {
+let fixRaf = 0;
+const fixSoltar = (e) => {
   const d = state.fixDrag;
   if (!d) return;
   e.stopPropagation();
@@ -1985,7 +1991,9 @@ $('player').addEventListener('pointerup', (e) => {
   recompute(i);
   fixUi(true);
   $('t-fix-hint').textContent = `Listo: ${FIX_NAMES[d.j]} corregido en el cuadro ${i + 1}. Recalculé ángulos y métricas. Correcciones: ${state.pointEdits.length}.`;
-}, true);
+};
+$('player').addEventListener('pointerup', fixSoltar, true);
+$('player').addEventListener('pointercancel', fixSoltar, true);
 $('t-find').onclick = async () => {
   const r = state.result, btn = $('t-find');
   if (!state.raw || !state.techFile) return;
@@ -2005,6 +2013,36 @@ $('t-find').onclick = async () => {
   fixUi(state.fix);
 };
 
+// Tocar al nadador donde la app no lo detectó: lo busca ahí mismo con un recorte agrandado, y después
+// lo sigue cuadro a cuadro hacia adelante y hacia atrás. Lo encontrado se suma a las personas de cada
+// cuadro y se elige a esa persona, así se recalculan los puntos, los ángulos y las métricas.
+let buscandoToque = false;
+async function buscarDondeToco(i, x, y) {
+  const r = state.result, hint = $('t-pick-hint');
+  if (buscandoToque || !r || !state.raw) return;
+  buscandoToque = true; hint.hidden = false;
+  hint.textContent = 'Buscando al nadador donde tocaste…';
+  const keep = state.frame;
+  try {
+    const sample = document.createElement('canvas'); sample.width = r.meta.width; sample.height = r.meta.height;
+    sample.getContext('2d').drawImage(video, 0, 0, sample.width, sample.height);
+    const lm = await getLandmarker(/Lite/.test(r.meta.model) ? 'lite' : 'full', BASE, sample, ':crop');
+    const fd = 1 / (r.meta.sourceFps || r.meta.fps || 30);
+    const pose = await poseEnPunto(video, state.raw[i].t + fd * 0.5, x * video.videoWidth, y * video.videoHeight, lm);
+    if (!pose) { hint.textContent = 'Tampoco lo encontré buscando de cerca. Probá tocarlo en otro cuadro donde se vea más el cuerpo, o usá «Corregir puntos».'; seekFrame(keep); return; }
+    state.raw[i].cands = [...(state.raw[i].cands || []), pose];
+    hint.textContent = 'Lo encontré. Siguiéndolo en los otros cuadros…';
+    const seguidos = await seguirPose(video, state.raw.map(f => f.t), i, pose, lm, { frameDur: fd, onProgress: ({ done }) => { hint.textContent = `Lo encontré. Siguiéndolo en los otros cuadros… ${done}`; } });
+    seguidos.forEach((p, k) => { state.raw[k].cands = [...(state.raw[k].cands || []), p]; });
+    state.anchors = state.anchors.filter(a => a.i !== i).concat({ i, x, y }).sort((a, b) => a.i - b.i);
+    state.found = null;
+    recompute(i);
+    pickUi(true);
+    hint.textContent = `Listo: lo encontré donde tocaste y lo seguí en ${seguidos.size} cuadros más. Recalculé los puntos, los ángulos y las métricas. Revisá con la ruedita; si algún punto quedó corrido, usá «Corregir puntos».`;
+  } catch (e) { console.error(e); hint.textContent = 'No se pudo buscar: ' + e.message; seekFrame(keep); }
+  finally { buscandoToque = false; }
+}
+
 $('t-pick-undo').onclick = () => {
   state.anchors.pop(); state.found = null; recompute(state.frame); pickUi(state.pick);
   if (!state.pick) $('t-pick-hint').textContent = state.anchors.length ? `Correcciones: ${state.anchors.length}.` : '';
@@ -2014,7 +2052,7 @@ $('player').addEventListener('click', (e) => {
   const rc = $('stage').getBoundingClientRect();
   const x = (e.clientX - rc.left) / rc.width, y = (e.clientY - rc.top) / rc.height;
   const i = state.frame, cands = state.raw[i].cands || [];
-  if (candidateAt(cands, x, y, aspectOf()) < 0) { $('t-pick-hint').textContent = 'No detecté a ninguna persona ahí en este cuadro. Probá en otro cuadro donde se vea mejor.'; return; }
+  if (candidateAt(cands, x, y, aspectOf()) < 0) { buscarDondeToco(i, x, y); return; }
   state.anchors = state.anchors.filter(a => a.i !== i).concat({ i, x, y }).sort((a, b) => a.i - b.i);
   state.found = null; // la búsqueda en cuadros perdidos seguía a la persona anterior
   recompute(i);

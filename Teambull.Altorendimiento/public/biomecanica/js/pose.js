@@ -309,3 +309,58 @@ export async function refinePose(video, frames, landmarker, { frameDur, size = 5
 
 // Nota: el modelo .task se publica con extensión .wasm solo porque el hosting de Artifacts
 // únicamente sirve tipos web estándar; el contenido es el archivo .task original de MediaPipe.
+
+// ---------- buscar al nadador donde lo toca el entrenador ----------
+// Recorta un cuadrado centrado en (cx, cy) (píxeles del video), lo agranda y busca una persona ahí.
+// Devuelve la pose normalizada a la imagen entera, o null.
+function detectarEnRecorte(video, landmarker, ctx, size, cx, cy, side) {
+  const W = video.videoWidth, H = video.videoHeight, x0 = cx - side / 2, y0 = cy - side / 2, s = size / side;
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, size, size);
+  ctx.drawImage(video, -x0 * s, -y0 * s, W * s, H * s);
+  const ts = (landmarker.__lastTs || 0) + 33;
+  landmarker.__lastTs = ts;
+  let cands = [];
+  landmarker.detectForVideo(ctx.canvas, ts, (res) => { cands = (res.landmarks || []).map(p => p.map(q => [q.x, q.y, q.visibility ?? 0, q.presence ?? 1])); });
+  let best = null, bd = Infinity;
+  for (const p of cands) {
+    const bb = poseBox(p, 1, 1);
+    if (!bb) continue;
+    const d = Math.hypot(bb[0] - 0.5, bb[1] - 0.5);
+    if (d < bd && d < 0.35) { bd = d; best = p; }
+  }
+  return best ? best.map(q => [(q[0] * side + x0) / W, (q[1] * side + y0) / H, q[2], q[3]]) : null;
+}
+const lienzo = (size) => { const c = document.createElement('canvas'); c.width = c.height = size; return c.getContext('2d'); };
+
+// En el cuadro del tiempo t, prueba recortes de varios tamaños alrededor del toque.
+export async function poseEnPunto(video, t, cx, cy, landmarker, { size = 512 } = {}) {
+  await seekTo(video, Math.min(video.duration - 1e-3, t));
+  const ctx = lienzo(size), m = Math.min(video.videoWidth, video.videoHeight);
+  for (const f of [0.35, 0.5, 0.7, 0.95, 1.3]) {
+    const p = detectarEnRecorte(video, landmarker, ctx, size, cx, cy, f * m);
+    if (p) return p;
+  }
+  return null;
+}
+
+// Sigue a esa persona hacia adelante y hacia atrás: en cada cuadro busca alrededor de donde estaba en el
+// anterior. Corta después de `maxMiss` cuadros seguidos sin encontrarla. Devuelve Map(índice → pose).
+export async function seguirPose(video, times, i0, pose0, landmarker, { frameDur, size = 512, maxMiss = 6, onProgress, signal } = {}) {
+  const W = video.videoWidth, H = video.videoHeight, ctx = lienzo(size), out = new Map();
+  const minSide = 0.2 * Math.min(W, H);
+  let hechos = 0;
+  for (const dir of [1, -1]) {
+    let prev = pose0, miss = 0;
+    for (let k = i0 + dir; k >= 0 && k < times.length; k += dir) {
+      if (signal?.aborted) throw new DOMException('Cancelado', 'AbortError');
+      const b = poseBox(prev, W, H);
+      if (!b) break;
+      await seekTo(video, Math.min(video.duration - 1e-3, times[k] + frameDur * 0.5));
+      const p = detectarEnRecorte(video, landmarker, ctx, size, b[0], b[1], Math.max(minSide, b[2] * (1.6 + 0.3 * miss)));
+      if (p) { out.set(k, p); prev = p; miss = 0; } else if (++miss > maxMiss) break;
+      hechos++;
+      if (onProgress && hechos % 5 === 0) onProgress({ done: hechos, total: times.length });
+    }
+  }
+  return out;
+}

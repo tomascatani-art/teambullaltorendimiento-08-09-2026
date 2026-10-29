@@ -59,6 +59,18 @@ export function initGym(helpers) {
   H = helpers;
   if (ready) return;
   ready = true;
+  // los botones de medir van debajo del video (más cerca del pulgar); en pantalla completa, sobre el video
+  const ubicarHerramientas = () => {
+    const pl = $('gy-player'), t = $('gy-tools');
+    if (!pl || !t) return;
+    const full = pl.classList.contains('vb-full');
+    if (full && t.parentElement !== pl) pl.appendChild(t);
+    else if (!full && t.parentElement === pl) pl.after(t);
+    t.__volver?.();
+    t.classList.toggle('gy-afuera', !full);
+  };
+  ubicarHerramientas();
+  new MutationObserver(ubicarHerramientas).observe($('gy-player'), { attributes: true, attributeFilter: ['class'] });
   const groups = [...new Set(Object.values(EXERCISES).map(e => e.group))];
   $('gy-ex').innerHTML = groups.map(g => `<optgroup label="${esc(g)}">${Object.entries(EXERCISES).filter(([, e]) => e.group === g).map(([k, e]) => `<option value="${k}">${esc(e.label)}</option>`).join('')}</optgroup>`).join('');
   $('gy-ex').onchange = () => { if (S.mode === 'bar' && S.res) panel(); };
@@ -474,14 +486,22 @@ function draw() {
     }
     if (S.pts.length > 1) {
       // recorrido hasta el instante actual; las subidas en color
+      // dos trazos (subidas y el resto) en vez de uno por cuadro; en vivo, solo los últimos 8 s,
+      // así el dibujo no se pone más pesado a medida que la serie se alarga
       const reps = S.res?.reps || [];
-      const upAt = (tt) => reps.some(r => tt >= r.t0 && tt <= r.t1);
-      ctx.lineWidth = 2.5;
-      for (let j = 1; j < S.pts.length && S.pts[j].t <= t + 1e-6; j++) {
+      const subida = new Path2D(), resto = new Path2D();
+      let j = 1, r = 0;
+      if (S.live) { const t0 = S.pts[S.pts.length - 1].t - 8; while (j < S.pts.length - 1 && S.pts[j].t < t0) j++; }
+      for (; j < S.pts.length && S.pts[j].t <= t + 1e-6; j++) {
+        const tt = S.pts[j].t;
+        while (r < reps.length && reps[r].t1 < tt) r++;
         const a = X([S.pts[j - 1].x, S.pts[j - 1].y]), b = X([S.pts[j].x, S.pts[j].y]);
-        ctx.strokeStyle = upAt(S.pts[j].t) ? '#ff9f1c' : 'rgba(255,255,255,.75)';
-        ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+        const pa = r < reps.length && tt >= reps[r].t0 ? subida : resto;
+        pa.moveTo(a[0], a[1]); pa.lineTo(b[0], b[1]);
       }
+      ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+      ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.stroke(resto);
+      ctx.strokeStyle = '#ff9f1c'; ctx.stroke(subida);
       const cur = S.live ? S.pts[S.pts.length - 1] : S.pts.find(q => Math.abs(q.t - timeOf(i)) < S.frameDur * 0.5);
       if (cur) {
         const c = X([cur.x, cur.y]), big = S.tool === 'fix';
@@ -516,6 +536,42 @@ function draw() {
   $('gy-play-ico').setAttribute('d', video().paused ? 'M7 5l12 7-12 7z' : 'M7 5h4v14H7zM13 5h4v14h-4z');
 }
 
+// En vivo la cámara se abre a pantalla completa, con los botones abajo (a mano del pulgar) y el código
+// y la última repetición arriba: no hace falta bajar para encuadrar. Al terminar la serie se vuelve.
+function vivoCompleto(on) {
+  const pl = $('gy-player');
+  if (!pl || pl.classList.contains('vb-full') === on) return;
+  pl.classList.toggle('vb-full', on);
+  document.documentElement.classList.toggle('vb-full-on', on);
+  if (S.W && S.Hh) pl.style.setProperty('--vb-ar', S.W / S.Hh);
+  try { if (window.parent !== window) window.parent.postMessage({ tb: 'bio', type: 'pantallaCompleta', on }, location.origin); } catch {}
+  [60, 350, 800].forEach(ms => setTimeout(() => window.dispatchEvent(new Event('resize')), ms));
+}
+function hudVivo() {
+  const pl = $('gy-player');
+  let el = $('gy-vivo-hud');
+  if (!S.live || S.live.done) { if (el) el.hidden = true; return; }
+  if (!el) { el = document.createElement('div'); el.id = 'gy-vivo-hud'; el.className = 'gy-vivo-hud'; pl.appendChild(el); }
+  const reps = S.res?.reps || [], u = reps[reps.length - 1];
+  el.hidden = false;
+  const fc = fpsCamara(), cuadros = Number.isFinite(fc) ? `<span class="gy-vivo-code${fc < 50 ? ' bajo' : ''}">${f(fc, 0)} cuadros/s${fc < 50 ? ' · poné más luz' : ''}</span>` : '';
+  el.innerHTML = `<span class="gy-vivo-code">Código <b class="mono">${S.live.code}</b></span>${cuadros}${u ? `<span class="gy-vivo-rep"><small>Rep ${u.n}</small><b class="mono">${f(u.mv)}</b><small>m/s</small></span>` : ''}${S.hint ? `<span class="gy-vivo-hint">${esc(S.hint)}</span>` : ''}`;
+}
+
+// Cuadros por segundo fijos: la cámara baja sola a 30 (o menos) cuando hay poca luz, y entonces la
+// velocidad de la barra sale más gruesa. Si la cámara puede, se le pide que no baje de 50 y se queda en 60.
+async function fijarCuadros(stream) {
+  const tr = stream.getVideoTracks()[0];
+  if (!tr?.applyConstraints) return;
+  const max = tr.getCapabilities?.().frameRate?.max;
+  if (!(max >= 50)) return;
+  const fps = Math.min(60, Math.floor(max));
+  for (const extra of [{}, { width: { ideal: 1280 }, height: { ideal: 720 } }, { width: { ideal: 960 }, height: { ideal: 540 } }]) {
+    try { await tr.applyConstraints({ ...extra, frameRate: { min: Math.min(50, fps), ideal: fps, max: fps } }); return; } catch { /* probar con menos resolución */ }
+  }
+}
+const fpsCamara = () => S.live?.stream?.getVideoTracks()[0]?.getSettings?.().frameRate;
+
 // ---------- en vivo: la cámara de este dispositivo, con las velocidades hacia la pantalla del deportista ----------
 async function startLive() {
   if (!navigator.mediaDevices?.getUserMedia) { H?.notify?.('Este navegador no deja usar la cámara. Probá con Chrome o Safari actualizado.'); return; }
@@ -525,6 +581,7 @@ async function startLive() {
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60 } } });
   } catch (err) { H?.notify?.('No pude abrir la cámara: ' + (err.message || err.name)); return; }
+  await fijarCuadros(stream);
   const v = video();
   if (S.url) { URL.revokeObjectURL(S.url); S.url = null; }
   v.removeAttribute('src'); v.srcObject = stream;
@@ -539,7 +596,10 @@ async function startLive() {
   $('gy-stage').style.aspectRatio = `${S.W} / ${S.Hh}`; $('gy-stage').style.setProperty('--ar', S.W / S.Hh);
   $('gy-work').hidden = false;
   panel();
-  const tick = () => { if (S.live && !S.live.done) { draw(); requestAnimationFrame(tick); } };
+  vivoCompleto(true);
+  // se redibuja solo cuando llega un punto nuevo o cambia la herramienta (no 60 veces por segundo)
+  let ult = '';
+  const tick = () => { if (S.live && !S.live.done) { const k = S.pts.length + '|' + S.tool + '|' + (S.disco ? S.disco.x + ',' + S.disco.y + ',' + S.disco.r : '') + '|' + S.scalePts.length; if (k !== ult) { ult = k; draw(); } requestAnimationFrame(tick); } };
   requestAnimationFrame(tick);
   const L = S.live;
   try { L.link = await openLink(L.code, onLinkMsg); L.kind = L.link.kind; } catch (err) { L.kind = 'error'; S.hint = err.message; }
@@ -624,7 +684,7 @@ async function liveTrack(p0) {
       onPoint: (pt, k) => {
         if (first) { S.pts.push({ t: times[0], x: p0[0], y: p0[1] }); first = false; }
         S.pts.push({ t: times[pt.i], x: pt.x / sc, y: pt.y / sc });
-        if (k - k0 >= 2) { k0 = k; liveUpdate(); }
+        if (k - k0 >= 5) { k0 = k; liveUpdate(); } // unas 6 veces por segundo a 30 cuadros
       },
     });
   } finally { S.abort = null; }
@@ -636,7 +696,8 @@ async function liveTrack(p0) {
 
 function liveUpdate(force = false) {
   if (S.pts.length < 3) return;
-  const ts = S.pts.map(p => p.t), d = [];
+  // cuadros por segundo con los últimos 120 cuadros (no con toda la serie, que se alarga)
+  const ts = S.pts.slice(-121).map(p => p.t), d = [];
   for (let i = 1; i < ts.length; i++) d.push(ts[i] - ts[i - 1]);
   d.sort((a, b) => a - b);
   if (d[d.length >> 1] > 0) S.frameDur = d[d.length >> 1];
@@ -664,11 +725,14 @@ function endLive() {
   L.stream.getTracks().forEach(tr => tr.stop());
   L.peer?.close(); L.peer = null;
   video().srcObject = null; $('gy-player')?.classList.remove('gy-en-vivo');
+  vivoCompleto(false);
   S.tool = null;
   compute();
   S.hint = S.pts.length ? `Serie terminada: ${S.pts.length} cuadros seguidos a ${f(1 / S.frameDur, 0)} cuadros por segundo.` : '';
   sendState(true);
   panel(); draw();
+  // de vuelta en la página: directo a los resultados y a guardar
+  setTimeout(() => $('gy-panel')?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 400);
 }
 
 function stopLive() {
@@ -678,6 +742,7 @@ function stopLive() {
   L.link?.close();
   S.live = null;
   video().srcObject = null; $('gy-player')?.classList.remove('gy-en-vivo');
+  vivoCompleto(false); hudVivo();
 }
 export function leaveGym() { stopLive(); import('./gym-screen.js').then(m => m.closeScreen()).catch(() => {}); }
 
@@ -723,6 +788,7 @@ function renderTools() {
     tip = (S.zoom || 1) > 1 ? 'Zoom: con dos dedos agrandás o achicás, con un dedo movés el video. Mové cuadro a cuadro y marcá cada momento.' : 'Mové el video cuadro a cuadro y marcá cada momento. Con dos dedos hacés zoom a los pies; ✂ deja la barra solo en el salto.';
   }
   bar.innerHTML = h + (tip ? `<span class="gy-tip-line">${esc(tip)}</span>` : '');
+  hudVivo();
 }
 
 function fixAt(p) {
@@ -1004,7 +1070,9 @@ function bindPanel() {
 async function save() {
   const aid = $('gy-athlete').value;
   if (!aid) { H?.notify?.('Elegí el deportista arriba para guardar.'); $('gy-athlete').focus(); return; }
-  const btn = $('gy-save'); btn.disabled = true;
+  const btn = $('gy-save'), txt = btn.textContent; btn.disabled = true; btn.textContent = 'Guardando…';
+  // que el botón muestre «Guardando…» antes de hacer el trabajo
+  await new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
   try {
     const meta = { fileName: S.file.name, fps: +(1 / S.frameDur).toFixed(2), width: S.W, height: S.Hh };
     const date = $('gy-date')?.value || today();
@@ -1028,7 +1096,7 @@ async function save() {
     S.evId = rec.id; S.date = date;
     panel();
     H?.notify?.(nuevo ? `Guardado en la ficha con fecha ${date.split('-').reverse().join('/')}. Para corregirlo después: Alumnos → la ficha → tocá la medición.` : 'Cambios guardados.');
-  } catch (err) { H?.notify?.('No se pudo guardar: ' + err.message); btn.disabled = false; }
+  } catch (err) { H?.notify?.('No se pudo guardar: ' + err.message); btn.disabled = false; btn.textContent = txt; }
 }
 
 // ---------- ficha del deportista ----------

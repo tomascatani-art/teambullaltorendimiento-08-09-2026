@@ -1,7 +1,7 @@
 // Service worker: guarda la app en el celular para que abra al instante y sin conexión.
 // Todo sale del caché; cada versión nueva (VERSION) baja la app completa de una vez y reemplaza la anterior,
 // así nunca se mezclan archivos viejos y nuevos. Una actualización se ve a partir de la apertura siguiente.
-const VERSION = 'teambull-bio-v30';
+const VERSION = 'teambull-bio-v39';
 // Modelos y motor de la pose (unos 20 MB): no cambian entre versiones, quedan en un caché aparte.
 const MODELS = 'teambull-bio-modelos';
 const SHELL = ['./', 'index.html', 'styles.css', 'teambull.css', 'manifest.webmanifest', 'icons/icon-192.png',

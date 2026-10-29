@@ -18,8 +18,23 @@ export function openScreen() {
     $('gy-join').onclick = () => join();
     $('gy-code').onkeydown = (e) => { if (e.key === 'Enter') join(); };
     $('gy-view').onchange = () => { if (X.link) setView(); };
-    $('gy-full').onclick = () => { const st = $('gy-show-stage'); (st.requestFullscreen || st.webkitRequestFullscreen)?.call(st)?.catch?.(() => {}); };
+    // pantalla completa con estilos (el iPhone no deja poner en pantalla completa algo que no sea un video);
+    // dentro de Team Bull se le pide que esconda su barra. Se sale con la ✕ o con Escape.
+    const full = (on) => {
+      const st = $('gy-show-stage');
+      st.classList.toggle('gs-full', on);
+      document.documentElement.classList.toggle('vb-full-on', on);
+      try { if (window.parent !== window) window.parent.postMessage({ tb: 'bio', type: 'pantallaCompleta', on }, location.origin); } catch {}
+    };
+    $('gy-full').onclick = () => full(true);
+    const salir = document.createElement('button');
+    salir.type = 'button'; salir.className = 'gs-salir'; salir.textContent = '✕'; salir.setAttribute('aria-label', 'Salir de pantalla completa');
+    salir.onclick = () => full(false);
+    $('gy-show-stage').appendChild(salir);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') full(false); });
+    document.addEventListener('vb-salir', () => full(false));
   }
+  $('gy-show-stage').dataset.image = X.link ? $('gy-view').value : 'none';
   render(null);
   $('gy-show').scrollIntoView({ block: 'start' });
   $('gy-code').focus();
