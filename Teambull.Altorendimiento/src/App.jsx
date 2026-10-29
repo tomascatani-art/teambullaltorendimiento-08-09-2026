@@ -3370,6 +3370,209 @@ function ProximosTorneos({ alumnos }) {
   );
 }
 
+// ---------- Calendario de CADDA ----------
+// Torneos nacionales e internacionales de natación de CADDA. Se lee al día de su página (vía
+// /api/exterior); si no responde, se usa este calendario 2026 (Informativa 084/2025).
+const CALENDARIO_CADDA = [
+  ["2026-02-08", "2026-02-22", "Campus Altitud", "Juvenil", "Colombia / México", 1],
+  ["2026-02-16", "2026-02-20", "Campus", "Absoluto", "Buenos Aires", 0],
+  ["2026-03-04", "2026-03-07", "TYR Westmont", "2012 y mayores", "Westmont, EE.UU.", 1],
+  ["2026-04-12", "2026-04-19", "ODESUR Juvenil", "2009, 2010, 2011", "Panamá", 1],
+  ["2026-04-21", "2026-04-25", "República Juveniles y Juniors", "2005 a 2010", "Argentina (a confirmar)", 0],
+  ["2026-05-06", "2026-05-09", "Nacional Open", "2012 y mayores", "Argentina (a confirmar)", 0],
+  ["2026-05-15", "2026-05-20", "Trofeo Internacional", "2012 y mayores", "Brasil", 1],
+  ["2026-05-21", "2026-05-23", "República Cadetes", "2011, 2012", "Argentina (a confirmar)", 0],
+  ["2026-05-22", "2026-05-24", "Promesas Olímpicas Sudamericanas", "2013 a 2016", "Santiago, Chile", 1],
+  ["2026-05-23", "2026-05-31", "Mare Nostrum 2026", "2012 y mayores", "Mónaco / Barcelona / Canet", 1],
+  ["2026-06-04", "2026-06-07", "SZ South Sectional", "2012 y mayores", "Ocala, EE.UU.", 1],
+  ["2026-06-08", "2026-06-13", "Campus", "Absoluto", "Buenos Aires", 0],
+  ["2026-06-10", "2026-06-13", "República Infantiles y Menores", "2013 a 2016", "Argentina (a confirmar)", 0],
+  ["2026-06-18", "2026-06-21", "Speedo Summer Classic", "2012 y mayores", "Fort Lauderdale, EE.UU.", 1],
+  ["2026-07-01", "2026-07-17", "Campus Altitud", "Juvenil", "Colombia / México", 1],
+  ["2026-07-08", "2026-07-12", "Panamericano PANAM Aquatics", "2004 a 2013", "Ibagué, Colombia", 1],
+  ["2026-07-13", "2026-08-01", "Campus Altitud", "Absoluto", "San Luis Potosí, México", 1],
+  ["2026-08-01", "2026-08-11", "Campus Adaptación", "Absoluto", "California, EE.UU.", 1],
+  ["2026-08-12", "2026-08-15", "Pan Pacific Mayores", "Absoluto", "Irvine, EE.UU.", 1],
+  ["2026-08-17", "2026-08-20", "Pan Pacific Junior", "2008 a 2013", "Vancouver, Canadá", 1],
+  ["2026-09-12", "2026-09-26", "ODESUR Mayores · Sudamericano", "2012 y mayores", "Rosario", 1],
+  ["2026-09-29", "2026-10-03", "Nacional Juveniles y Juniors", "2005 a 2010", "Argentina", 0],
+  ["2026-10-12", "2026-10-15", "Mococa", "2009 a 2013", "Mococa, Brasil", 1],
+  ["2026-10-22", "2026-10-24", "Selectivo Mundial 25 m", "2012 y mayores", "Argentina", 0],
+  ["2026-10-30", "2026-11-13", "Juegos Olímpicos de la Juventud", "2009 y menores", "Dakar, Senegal", 1],
+  ["2026-11-15", "2026-11-20", "Copa Pacífico", "2008 a 2012", "A confirmar", 1],
+  ["2026-11-19", "2026-11-21", "Nacional Cadetes", "2011, 2012", "Argentina (a confirmar)", 0],
+  ["2026-11-21", "2026-11-27", "Campus", "Absoluto", "China", 1],
+  ["2026-12-01", "2026-12-06", "Mundial de Natación 25 m", "Absoluto", "Beijing, China", 1],
+  ["2026-12-09", "2026-12-12", "Nacional Infantiles y Menores", "2013 a 2016", "Argentina (a confirmar)", 0],
+  ["2026-12-13", "2026-12-16", "Sudamericano Escolar", "2012, 2013, 2014", "A confirmar", 1],
+  ["2026-12-16", "2026-12-19", "Argentino Open", "2012 y mayores", "Argentina (a confirmar)", 0],
+].map(([start_date, end_date, name, categoria, location, internacional]) => ({ id: `cadda-${start_date}-${normalizarTexto(name).replace(/[^a-z0-9]+/g, "-")}`, name, start_date, end_date, categoria, location, internacional: !!internacional }));
+const PAIS_EXTRANJERO = /brasil|chile|uruguay|paraguay|per[uú]|colombia|m[eé]xico|panam|ee\.?\s?uu|usa|estados unidos|canad|espa|europa|china|senegal|m[oó]naco|barcelona|jap[oó]n|australia/i;
+// Se pide una sola vez por sesión y lo comparten el Dashboard y las fichas.
+let _promesaCadda = null;
+function useCalendarioCadda() {
+  const [eventos, setEventos] = useState(null);
+  useEffect(() => {
+    if (!_promesaCadda) {
+      _promesaCadda = exteriorGet("cadda=1")
+        .then((d) => (Array.isArray(d.eventos) && d.eventos.length ? d.eventos.map((e) => ({ ...e, internacional: PAIS_EXTRANJERO.test(`${e.location} ${e.name}`) || /internacional/i.test(e.categoria || "") })) : CALENDARIO_CADDA))
+        .catch(() => CALENDARIO_CADDA);
+    }
+    let vivo = true;
+    _promesaCadda.then((ev) => { if (vivo) setEventos(ev); });
+    return () => { vivo = false; };
+  }, []);
+  return eventos;
+}
+const competenciaDeEvento = (c, e) => c.id === `sr-${e.id}` || (normalizarTexto(c.nombre) === normalizarTexto(e.name) && c.fecha === e.start_date);
+// Competencias de un alumno/a: se tildan en el calendario de CADDA, y abajo, en chico, se puede
+// sumar a mano cualquier otro torneo (de club, provincial, del exterior...).
+function CompetenciasAlumno({ alumno, onUpdate }) {
+  const eventos = useCalendarioCadda();
+  const [verTodos, setVerTodos] = useState(false);
+  const [agregando, setAgregando] = useState(false);
+  const [nombre, setNombre] = useState("");
+  const [fecha, setFecha] = useState("");
+  const comps = alumno.competencias || [];
+  const hoy = todayISO();
+  const proximos = (eventos || []).filter((e) => (e.end_date || e.start_date) >= hoy).sort((a, b) => a.start_date.localeCompare(b.start_date));
+  const va = (e) => comps.some((c) => competenciaDeEvento(c, e));
+  const alternar = (e) => onUpdate({ competencias: va(e) ? comps.filter((c) => !competenciaDeEvento(c, e)) : [...comps, { id: `sr-${e.id}`, nombre: e.name, fecha: e.start_date }] });
+  // a la vista: los que ya tildó y los próximos 4; el resto con "Ver todo el calendario"
+  const visibles = verTodos ? proximos : proximos.filter((e, i) => i < 4 || va(e));
+  const otras = comps.filter((c) => !(eventos || []).some((e) => competenciaDeEvento(c, e))).sort((a, b) => (a.fecha || "").localeCompare(b.fecha || ""));
+  const agregar = () => {
+    if (!nombre.trim()) return;
+    onUpdate({ competencias: [...comps, { id: uid(), nombre: nombre.trim(), fecha }] });
+    setNombre(""); setFecha(""); setAgregando(false);
+  };
+  const inp = { background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "6px 8px", fontSize: 11, boxSizing: "border-box" };
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 8 }}>
+        <div className="font-body" style={{ fontSize: 11, color: "#FF6B35", fontWeight: 600 }}>COMPETENCIAS</div>
+        <div className="font-body" style={{ fontSize: 9, color: "#6B6678" }}>tildá los torneos de CADDA a los que va</div>
+      </div>
+      <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, padding: "4px 10px" }}>
+        {eventos === null && <div className="font-body" style={{ color: "#8B8698", fontSize: 10.5, padding: "6px 0" }}>Buscando el calendario de CADDA…</div>}
+        {eventos && proximos.length === 0 && <div className="font-body" style={{ color: "#8B8698", fontSize: 10.5, padding: "6px 0" }}>No quedan torneos de CADDA este año.</div>}
+        {visibles.map((e, i) => {
+          const si = va(e);
+          return (
+            <button key={e.id} onClick={() => alternar(e)} className="font-body" style={{ width: "100%", display: "flex", alignItems: "center", gap: 9, background: "none", border: "none", borderTop: i ? "1px solid #26232F" : "none", padding: "8px 0", cursor: "pointer", textAlign: "left" }}>
+              <span style={{ width: 20, height: 20, borderRadius: 6, flexShrink: 0, border: `1.5px solid ${si ? "#FF6B35" : "#4A4558"}`, background: si ? "#FF6B35" : "transparent", color: "#121017", fontSize: 13, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center" }}>{si ? "✓" : ""}</span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: "block", color: si ? "#F4F1EA" : "#C9C4D3", fontSize: 11.5, fontWeight: si ? 700 : 600 }}>{e.name} <span style={{ fontSize: 8, fontWeight: 700, color: e.internacional ? "#7DD6C0" : "#FFC94A" }}>{e.internacional ? "INT" : "NAC"}</span></span>
+                <span style={{ display: "block", color: "#8B8698", fontSize: 9.5 }}>{mostrarFecha(e.start_date)}{e.location ? ` · ${e.location}` : ""}{e.categoria ? ` · ${e.categoria}` : ""}</span>
+              </span>
+            </button>
+          );
+        })}
+        {proximos.length > visibles.length || verTodos ? (
+          <button onClick={() => setVerTodos(!verTodos)} className="font-body" style={{ width: "100%", background: "none", border: "none", borderTop: "1px solid #26232F", color: "#8B8698", fontSize: 10, padding: 6, cursor: "pointer" }}>{verTodos ? "▲ Ver menos" : `▼ Ver todo el calendario (${proximos.length})`}</button>
+        ) : null}
+      </div>
+      {otras.map((c) => (
+        <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 8, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: "6px 9px", marginTop: 6 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="font-body" style={{ color: "#F4F1EA", fontSize: 11, fontWeight: 600 }}>{c.nombre || "Sin nombre"}</div>
+            <div className="font-body" style={{ color: "#8B8698", fontSize: 9.5 }}>{c.fecha ? mostrarFecha(c.fecha) : "Sin fecha"}</div>
+          </div>
+          <button onClick={() => onUpdate({ competencias: comps.filter((x) => x.id !== c.id) })} className="font-body" style={{ background: "none", border: "none", color: "#E85D5D", fontSize: 10, cursor: "pointer" }}>Quitar</button>
+        </div>
+      ))}
+      {agregando ? (
+        <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+          <input value={nombre} onChange={(e) => setNombre(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") agregar(); }} placeholder="Nombre del torneo" className="font-body" style={{ ...inp, flex: 1, minWidth: 0 }} />
+          <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} className="font-body" style={{ ...inp, width: 118, flexShrink: 0 }} />
+          <button onClick={agregar} className="font-body" style={{ background: "#FF6B35", border: "none", borderRadius: 6, color: "#121017", fontWeight: 700, fontSize: 10.5, padding: "0 10px", cursor: "pointer" }}>Sumar</button>
+        </div>
+      ) : (
+        <button onClick={() => setAgregando(true)} className="font-body" style={{ background: "none", border: "none", color: "#8B8698", fontSize: 10, padding: "6px 0 0", cursor: "pointer", textDecoration: "underline" }}>+ Sumar otro torneo a mano</button>
+      )}
+    </div>
+  );
+}
+// Lo que ve el alumno/a: el calendario de CADDA (plegable) con sus torneos marcados por el coach.
+function CalendarioCaddaAlumno({ competencias }) {
+  const eventos = useCalendarioCadda();
+  const [verTodos, setVerTodos] = useState(false);
+  const comps = competencias || [];
+  const hoy = todayISO();
+  const proximos = (eventos || []).filter((e) => (e.end_date || e.start_date) >= hoy).sort((a, b) => a.start_date.localeCompare(b.start_date));
+  const va = (e) => comps.some((c) => competenciaDeEvento(c, e));
+  const visibles = verTodos ? proximos : proximos.filter((e, i) => i < 4 || va(e));
+  const cuantos = proximos.filter(va).length;
+  return (
+    <Seccion id="cadda-alumno" titulo="📅 Calendario CADDA" resumen={cuantos ? `vas a ${cuantos}` : ""} color="#FF6B35">
+      <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 12, padding: "4px 10px" }}>
+        {eventos === null && <div className="font-body" style={{ color: "#8B8698", fontSize: 10.5, padding: "6px 0" }}>Buscando el calendario…</div>}
+        {eventos && proximos.length === 0 && <div className="font-body" style={{ color: "#8B8698", fontSize: 10.5, padding: "6px 0" }}>No quedan torneos de CADDA este año.</div>}
+        {visibles.map((e, i) => {
+          const si = va(e);
+          return (
+            <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 8, borderTop: i ? "1px solid #26232F" : "none", padding: "8px 0" }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="font-body" style={{ color: si ? "#F4F1EA" : "#C9C4D3", fontSize: 11.5, fontWeight: si ? 700 : 600 }}>{e.name} <span style={{ fontSize: 8, fontWeight: 700, color: e.internacional ? "#7DD6C0" : "#FFC94A" }}>{e.internacional ? "INT" : "NAC"}</span></div>
+                <div className="font-body" style={{ color: "#8B8698", fontSize: 9.5 }}>{mostrarFecha(e.start_date)}{e.location ? ` · ${e.location}` : ""}{e.categoria ? ` · ${e.categoria}` : ""}</div>
+              </div>
+              {si && <span className="font-body" style={{ background: "rgba(255,107,53,0.12)", border: "1px solid #FF6B35", borderRadius: 6, color: "#FF6B35", fontWeight: 700, fontSize: 9.5, padding: "3px 7px", whiteSpace: "nowrap" }}>✓ Vas</span>}
+            </div>
+          );
+        })}
+        {proximos.length > visibles.length || verTodos ? (
+          <button onClick={() => setVerTodos(!verTodos)} className="font-body" style={{ width: "100%", background: "none", border: "none", borderTop: "1px solid #26232F", color: "#8B8698", fontSize: 10, padding: 6, cursor: "pointer" }}>{verTodos ? "▲ Ver menos" : `▼ Ver todo el calendario (${proximos.length})`}</button>
+        ) : null}
+      </div>
+    </Seccion>
+  );
+}
+function CalendarioCadda({ alumnos }) {
+  const sr = React.useContext(SwimRecordsCtx);
+  const eventos = useCalendarioCadda();
+  const [verTodos, setVerTodos] = useState(false);
+  const [soloNac, setSoloNac] = useState(false);
+  const hoy = todayISO();
+  const proximos = (eventos || []).filter((e) => (e.end_date || e.start_date) >= hoy).sort((a, b) => a.start_date.localeCompare(b.start_date));
+  const lista = soloNac ? proximos.filter((e) => !e.internacional) : proximos;
+  const visibles = verTodos ? lista : lista.slice(0, 5);
+  const nadadores = alumnos.filter((a) => a.swimrecords?.ids?.length || a.exterior?.ids?.length);
+  const rango = (e) => (e.end_date && e.end_date !== e.start_date ? `${mostrarFecha(e.start_date)} al ${mostrarFecha(e.end_date)}` : mostrarFecha(e.start_date));
+  return (
+    <Seccion id="cadda" titulo="📅 Calendario CADDA" resumen={eventos === null ? "" : lista.length ? `${lista.length}` : ""} color="#8B8698">
+      <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 12, padding: 10 }}>
+        {eventos === null && <div className="font-body" style={{ color: "#8B8698", fontSize: 10.5 }}>Buscando el calendario…</div>}
+        {eventos && (
+          <div style={{ display: "flex", gap: 6, marginBottom: 4 }}>
+            {[[false, "Todos"], [true, "Solo nacionales"]].map(([v, txt]) => (
+              <button key={txt} onClick={() => setSoloNac(v)} className="font-body" style={{ background: soloNac === v ? "rgba(255,107,53,0.12)" : "#26232F", border: `1px solid ${soloNac === v ? "#FF6B35" : "#322E3D"}`, borderRadius: 999, color: soloNac === v ? "#FF6B35" : "#8B8698", fontWeight: 700, fontSize: 9.5, padding: "4px 10px", cursor: "pointer" }}>{txt}</button>
+            ))}
+          </div>
+        )}
+        {eventos && lista.length === 0 && <div className="font-body" style={{ color: "#8B8698", fontSize: 10.5, padding: "6px 0" }}>No quedan torneos de CADDA este año. Cuando publiquen el calendario nuevo aparece acá solo.</div>}
+        {visibles.map((e) => {
+          const yaCargado = nadadores.length > 0 && nadadores.every((a) => (a.competencias || []).some((c) => competenciaDeEvento(c, e)));
+          return (
+            <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0", borderTop: "1px solid #26232F" }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="font-body" style={{ color: "#F4F1EA", fontSize: 11, fontWeight: 700 }}>
+                  {e.name} <span style={{ fontSize: 8.5, fontWeight: 700, color: e.internacional ? "#7DD6C0" : "#FFC94A", border: `1px solid ${e.internacional ? "#7DD6C0" : "#FFC94A"}`, borderRadius: 4, padding: "0 4px", marginLeft: 2 }}>{e.internacional ? "INTERNACIONAL" : "NACIONAL"}</span>
+                </div>
+                <div className="font-body" style={{ color: "#8B8698", fontSize: 9.5 }}>{rango(e)}{e.location ? ` · ${e.location}` : ""}{e.categoria ? ` · ${e.categoria}` : ""}</div>
+              </div>
+              {nadadores.length > 0 && sr && (
+                <button disabled={yaCargado} onClick={() => sr.agregarCompetencia(e)} className="font-body" style={{ background: yaCargado ? "#26232F" : "rgba(255,107,53,0.12)", border: `1px solid ${yaCargado ? "#322E3D" : "#FF6B35"}`, borderRadius: 6, color: yaCargado ? "#6B6678" : "#FF6B35", fontWeight: 700, fontSize: 9.5, padding: "5px 8px", cursor: yaCargado ? "default" : "pointer", whiteSpace: "nowrap" }}>{yaCargado ? "✓ Cargado" : "+ Al equipo"}</button>
+              )}
+            </div>
+          );
+        })}
+        {lista.length > 5 && <button onClick={() => setVerTodos(!verTodos)} className="font-body" style={{ width: "100%", background: "none", border: "none", color: "#8B8698", fontSize: 10, padding: 4, cursor: "pointer" }}>{verTodos ? "▲ Ver menos" : `▼ Ver los ${lista.length}`}</button>}
+        <div className="font-body" style={{ color: "#6B6678", fontSize: 9, marginTop: 4 }}>Fuente: <a href="https://cadda.org.ar/events/" target="_blank" rel="noopener noreferrer" style={{ color: "#7DD6C0" }}>cadda.org.ar</a>. Las sedes "a confirmar" se actualizan cuando CADDA las publica.</div>
+      </div>
+    </Seccion>
+  );
+}
+
 // Copias de seguridad: bajar una copia de todo a este celular y, en modo seguro, volver a una de
 // las copias diarias que guarda el servidor.
 function CopiasSeguridad() {
@@ -3727,6 +3930,7 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
         )}
         <CuotasDashboard alumnos={alumnosActivos} coachNombre={coachNombre} />
         <ProximosTorneos alumnos={alumnosActivos} />
+        <CalendarioCadda alumnos={alumnosActivos} />
         {(() => {
           const todasLasAlertas = alumnosActivos.flatMap((a) => generarAlertas(a, diasAvisoPlan));
           const envolver = (contenido) => (
@@ -4088,9 +4292,6 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
   const [verRutinasExtra, setVerRutinasExtra] = useState(false);
   const [pasandoVersion, setPasandoVersion] = useState(null);
   const [agregandoSecundaria, setAgregandoSecundaria] = useState(false);
-  const [agregandoCompetencia, setAgregandoCompetencia] = useState(false);
-  const [nombreCompNueva, setNombreCompNueva] = useState("");
-  const [fechaCompNueva, setFechaCompNueva] = useState("");
   const [nombreSecundaria, setNombreSecundaria] = useState("");
   const [plantillaSecundaria, setPlantillaSecundaria] = useState("");
   const [notifState, setNotifState] = useState(() => (typeof Notification !== "undefined" ? Notification.permission : "default"));
@@ -4535,34 +4736,7 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
             <MiniInput label="Equipo" value={alumno.equipo} onChange={(v) => onUpdateAlumno(alumno.id, { equipo: v })} wide />
           </div>
           <CuotaAlumno alumno={alumno} onUpdate={(patch) => onUpdateAlumno(alumno.id, patch)} />
-          <div className="font-body" style={{ fontSize: 11, color: "#FF6B35", fontWeight: 600, marginBottom: 8 }}>COMPETENCIAS</div>
-          <div style={{ marginBottom: 16 }}>
-            {(alumno.competencias || []).map((c) => (
-              <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 8, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 6 }}>
-                <div style={{ flex: 1 }}>
-                  <div className="font-body" style={{ color: "#F4F1EA", fontSize: 12, fontWeight: 600 }}>{c.nombre || "Sin nombre"}</div>
-                  <div className="font-body" style={{ color: "#8B8698", fontSize: 10 }}>{c.fecha ? mostrarFecha(c.fecha) : "Sin fecha"}</div>
-                </div>
-                <button onClick={() => onUpdateAlumno(alumno.id, { competencias: alumno.competencias.filter((x) => x.id !== c.id) })} className="font-body" style={{ background: "none", border: "none", color: "#E85D5D", fontSize: 10, cursor: "pointer" }}>Quitar</button>
-              </div>
-            ))}
-            {agregandoCompetencia ? (
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
-                <MiniInput label="Nombre" value={nombreCompNueva} onChange={setNombreCompNueva} wide />
-                <div style={{ width: 78, flexShrink: 0 }}>
-                  <div className="font-body" style={{ fontSize: 8, color: "#8B8698", marginBottom: 2 }}>Fecha</div>
-                  <input type="date" value={fechaCompNueva} onChange={(e) => setFechaCompNueva(e.target.value)} className="font-body" style={{ width: "100%", background: "#26232F", border: "none", borderRadius: 6, color: "#F4F1EA", padding: "4px 5px", fontSize: 10, boxSizing: "border-box" }} />
-                </div>
-                <button onClick={() => {
-                  if (!nombreCompNueva.trim()) return;
-                  onUpdateAlumno(alumno.id, { competencias: [...(alumno.competencias || []), { id: uid(), nombre: nombreCompNueva.trim(), fecha: fechaCompNueva }] });
-                  setNombreCompNueva(""); setFechaCompNueva(""); setAgregandoCompetencia(false);
-                }} className="font-body" style={{ background: "#FF6B35", border: "none", borderRadius: 6, color: "#121017", fontWeight: 700, fontSize: 11, padding: "8px 12px", cursor: "pointer" }}>Agregar</button>
-              </div>
-            ) : (
-              <button onClick={() => setAgregandoCompetencia(true)} className="font-body" style={{ width: "100%", background: "rgba(255,107,53,0.1)", border: "1px dashed #FF6B35", borderRadius: 8, color: "#FF6B35", fontWeight: 700, fontSize: 11, padding: 9, cursor: "pointer" }}>+ Agregar competencia</button>
-            )}
-          </div>
+          <CompetenciasAlumno alumno={alumno} onUpdate={(patch) => onUpdateAlumno(alumno.id, patch)} />
           <div className="font-body" style={{ fontSize: 11, color: "#7DD6C0", fontWeight: 600, marginBottom: 8 }}>🏊 MARCAS DE NATACIÓN</div>
           <MarcasNatacion alumno={alumno} onChange={(patch) => onUpdateAlumno(alumno.id, patch)} />
           <CruceGimnasioPileta alumno={alumno} />
@@ -5452,6 +5626,10 @@ function AthleteInicio({ alumno, goEntrenar, onCheckin, onUpdateFoto, onMarcarAv
         <CalendarioSesiones historialSesiones={alumno.historialSesiones} />
 
         <CompetitionCountdown competencias={alumno.competencias} />
+
+        {(/nataci/i.test(alumno.deportes || "") || alumno.swimrecords?.ids?.length || (alumno.marcasNatacion || []).length > 0) && (
+          <div style={{ marginTop: 12 }}><CalendarioCaddaAlumno competencias={alumno.competencias} /></div>
+        )}
       </div>
     </div>
   );
@@ -5898,25 +6076,29 @@ function CompetitionCountdown({ competencias }) {
   const futuras = (competencias || []).filter((c) => c.fecha).map((c) => ({ ...c, dias: Math.ceil((new Date(c.fecha + "T00:00:00") - hoy) / (1000 * 60 * 60 * 24)) })).filter((c) => c.dias >= 0).sort((a, b) => a.dias - b.dias);
   if (futuras.length === 0) {
     return (
-      <div style={{ background: "#1C1A24", border: "1px dashed #322E3D", borderRadius: 14, padding: 14, textAlign: "center" }}>
-        <div className="font-body" style={{ color: "#8B8698", fontSize: 11 }}>Todavía no tenés una competencia cargada. Pedile a tu coach que la sume en tu perfil.</div>
+      <div style={{ background: "#1C1A24", border: "1px dashed #322E3D", borderRadius: 12, padding: "9px 12px", textAlign: "center" }}>
+        <div className="font-body" style={{ color: "#8B8698", fontSize: 10.5 }}>Todavía no tenés una competencia cargada. Pedile a tu coach que la sume en tu perfil.</div>
       </div>
     );
   }
   const proxima = futuras[0];
   return (
     <div>
-      <div style={{ background: "linear-gradient(135deg, #1C1A24, #26232F)", border: "1px solid #FF6B35", borderRadius: 14, padding: 16, textAlign: "center" }}>
-        <div className="font-body" style={{ color: "#FF6B35", fontSize: 11, fontWeight: 700, marginBottom: 4 }}>🏆 PRÓXIMA COMPETENCIA</div>
-        <div className="font-display" style={{ color: "#F4F1EA", fontSize: 16, fontWeight: 600, marginBottom: 8 }}>{proxima.nombre || "Sin nombre"}</div>
-        <div className="font-display" style={{ color: "#FF6B35", fontSize: 42, fontWeight: 700 }}>{proxima.dias}</div>
-        <div className="font-body" style={{ color: "#8B8698", fontSize: 11 }}>{proxima.dias === 1 ? "día restante" : "días restantes"}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, background: "linear-gradient(135deg, #1C1A24, #26232F)", border: "1px solid #FF6B35", borderRadius: 12, padding: "9px 12px" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="font-body" style={{ color: "#FF6B35", fontSize: 9.5, fontWeight: 700 }}>🏆 PRÓXIMA COMPETENCIA</div>
+          <div className="font-display" style={{ color: "#F4F1EA", fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{proxima.nombre || "Sin nombre"}</div>
+        </div>
+        <div style={{ textAlign: "center", flexShrink: 0 }}>
+          <div className="font-display" style={{ color: "#FF6B35", fontSize: 24, fontWeight: 700, lineHeight: 1 }}>{proxima.dias}</div>
+          <div className="font-body" style={{ color: "#8B8698", fontSize: 9 }}>{proxima.dias === 1 ? "día" : "días"}</div>
+        </div>
       </div>
       {futuras.length > 1 && (
-        <div style={{ marginTop: 8 }}>
+        <div style={{ marginTop: 6 }}>
           {futuras.slice(1).map((c) => (
-            <div key={c.id} style={{ display: "flex", justifyContent: "space-between", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, padding: "8px 12px", marginBottom: 6 }}>
-              <span className="font-body" style={{ color: "#F4F1EA", fontSize: 12 }}>{c.nombre || "Sin nombre"}</span>
+            <div key={c.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: "5px 12px", marginBottom: 4 }}>
+              <span className="font-body" style={{ color: "#F4F1EA", fontSize: 11 }}>{c.nombre || "Sin nombre"}</span>
               <span className="font-body" style={{ color: "#8B8698", fontSize: 11 }}>{c.dias === 1 ? "1 día" : `${c.dias} días`}</span>
             </div>
           ))}
@@ -6042,6 +6224,51 @@ async function traerTiemposSwimRecords(fichas) {
     out.push({ id: `sr-${r.id}`, distancia: r.distance, estilo, segundos, fecha: c.start_date || "", pileta, torneo: c.name || "", origen: "swimrecords", parciales: Array.isArray(r.splits) ? r.splits.slice(0, 32) : null });
   }
   return out;
+}
+
+// ---------- Tiempos del exterior (SwimRankings) ----------
+// SwimRankings junta resultados de torneos de todo el mundo. Se lee a través de /api/exterior
+// (el navegador no puede leerlo directo). Se vincula a mano: entre nadadores de todos los países
+// no hay forma segura de adivinar solo quién es quién.
+async function exteriorGet(params) {
+  const r = await fetch(`/api/exterior?${params}`);
+  if (!r.ok) throw new Error("No se pudo conectar (" + r.status + ").");
+  return r.json();
+}
+const buscarEnExterior = async (texto) => (await exteriorGet(`buscar=${encodeURIComponent(texto)}`)).nadadores || [];
+async function traerTiemposExterior(ids) {
+  const out = [];
+  for (const id of ids) {
+    const d = await exteriorGet(`atleta=${id}`);
+    (d.tiempos || []).forEach((t) => out.push({ ...t, origen: "exterior" }));
+  }
+  return out;
+}
+// "https://www.swimrankings.net/index.php?page=athleteDetail&athleteId=5123456" → "5123456"
+function idDeLinkSwimRankings(txt) {
+  const t = String(txt || "").trim();
+  return (t.match(/athleteId=(\d+)/i) || t.match(/^(\d{4,12})$/) || [])[1] || null;
+}
+// Busca sola la ficha de SwimRankings de un alumno/a que ya está en SwimRecords. Solo vincula si
+// hay una única ficha argentina con el mismo nombre y apellido y el mismo año de nacimiento.
+async function encontrarFichaExterior(alumno) {
+  const v = alumno.swimrecords || {};
+  const anio = String(v.anio || "");
+  const nombre = alumno.nombre || v.nombre || "";
+  if (!anio || !nombre) return null;
+  const candidatos = (await buscarEnExterior(nombre)).filter((r) =>
+    parecidoConFicha(nombre, r.nombre) === 3 && String(r.anio || "") === anio && (!r.pais || /^arg/i.test(r.pais)));
+  if (candidatos.length !== 1) return null;
+  const r = candidatos[0];
+  return { ids: [String(r.id)], nombre: r.nombre, pais: r.pais || "", club: r.club || "", anio: r.anio || "", automatico: true };
+}
+// La misma carrera cargada dos veces (de SwimRecords, del exterior o a mano): misma prueba,
+// mismo tiempo y fecha parecida.
+function mismaCarrera(a, b) {
+  if (Number(a.distancia) !== Number(b.distancia) || a.estilo !== b.estilo || (a.pileta || "") !== (b.pileta || "")) return false;
+  if (Math.abs(a.segundos - b.segundos) > 0.005) return false;
+  if (!a.fecha || !b.fecha) return true;
+  return Math.abs(new Date(a.fecha) - new Date(b.fecha)) <= 4 * 864e5;
 }
 
 // ---- Encontrar solo la ficha de SwimRecords de un alumno/a ----
@@ -6217,6 +6444,119 @@ function BloqueSwimRecords({ alumno, onChange, puedeVincular }) {
           <button onClick={() => { setBuscando(true); setTexto(alumno.nombre || ""); }} className="font-body" style={{ width: "100%", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, color: "#F4F1EA", fontWeight: 700, fontSize: 11, padding: 9, cursor: "pointer", marginTop: 6 }}>🔎 Buscar sus tiempos en SwimRecords</button>
         )
       ) : null}
+    </div>
+  );
+}
+
+// Vínculo con la ficha de SwimRankings (torneos del exterior): se busca una vez y después los
+// tiempos nuevos se suman solos, igual que los de SwimRecords.
+function BloqueExterior({ alumno, onChange, puedeVincular }) {
+  const sr = React.useContext(SwimRecordsCtx);
+  const v = alumno.exterior || {};
+  const vinculado = Array.isArray(v.ids) && v.ids.length > 0;
+  const [buscando, setBuscando] = useState(false);
+  const [texto, setTexto] = useState(alumno.nombre || "");
+  const [link, setLink] = useState("");
+  const [resultados, setResultados] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState(null);
+  const [info, setInfo] = useState(null);
+  if (!sr?.sincronizarExterior) return null;
+  const buscar = async () => {
+    setCargando(true); setError(null); setResultados(null);
+    try { setResultados(await buscarEnExterior(texto)); } catch (e) { setError("No se pudo conectar con SwimRankings. Probá de nuevo en un rato."); }
+    setCargando(false);
+  };
+  const vincular = async (r) => {
+    setCargando(true); setError(null);
+    try {
+      const res = await sr.sincronizarExterior(alumno.id, { ids: [String(r.id)], nombre: r.nombre || alumno.nombre, pais: r.pais || "", club: r.club || "", anio: r.anio || "" });
+      setInfo(res ? `✓ Vinculado. Se ${res.nuevas === 1 ? "cargó 1 tiempo" : `cargaron ${res.nuevas} tiempos`} del exterior${res.nuevas ? "" : " (los que ya estaban no se repiten)"}.` : "✓ Vinculado.");
+      setBuscando(false); setResultados(null); setLink("");
+    } catch (e) { setError("No se pudieron traer los tiempos. Probá de nuevo en un rato."); }
+    setCargando(false);
+  };
+  const vincularLink = () => {
+    const id = idDeLinkSwimRankings(link);
+    if (!id) { setError("Ese link no parece de una ficha de SwimRankings (tiene que tener athleteId=...)."); return; }
+    vincular({ id, nombre: "" });
+  };
+  const actualizar = async () => {
+    setCargando(true); setError(null);
+    try {
+      const res = await sr.sincronizarExterior(alumno.id);
+      setInfo(res && res.nuevas ? `✓ ${res.nuevas} ${res.nuevas === 1 ? "tiempo nuevo" : "tiempos nuevos"}.` : "✓ Ya estaba todo al día.");
+    } catch (e) { setError("No se pudo conectar con SwimRankings. Probá de nuevo en un rato."); }
+    setCargando(false);
+  };
+  const mejoras = (v.mejoras || []).filter((m) => !m.visto);
+  const caja = { background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: 9, marginTop: 6 };
+  const inp = { background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "7px 8px", fontSize: 11, boxSizing: "border-box" };
+  if (!vinculado && !puedeVincular) return null;
+  return (
+    <div style={{ marginTop: 4 }}>
+      {mejoras.length > 0 && (
+        <div style={{ background: "rgba(51,214,166,0.1)", border: "1px solid #33D6A6", borderRadius: 8, padding: "8px 10px", marginBottom: 6 }}>
+          <div style={{ display: "flex", alignItems: "center" }}>
+            <div className="font-body" style={{ flex: 1, color: "#33D6A6", fontSize: 10, fontWeight: 700 }}>🎉 {mejoras.length === 1 ? "NUEVA MEJOR MARCA" : "NUEVAS MEJORES MARCAS"}</div>
+            <button onClick={() => onChange({ exterior: { ...v, mejoras: (v.mejoras || []).map((m) => ({ ...m, visto: true })) } })} style={{ background: "none", border: "none", color: "#8B8698", cursor: "pointer" }}>✕</button>
+          </div>
+          {mejoras.map((m) => (
+            <div key={m.id} className="font-body" style={{ color: "#F4F1EA", fontSize: 11, marginTop: 3 }}>
+              <b>{m.prueba}</b>: {fmtTiempo(m.de)} → <b style={{ color: "#33D6A6" }}>{fmtTiempo(m.a)}</b> <span style={{ color: "#33D6A6", fontSize: 9, fontWeight: 700 }}>(−{(m.de - m.a).toFixed(2)} s)</span>{m.torneo ? <span style={{ color: "#8B8698", fontSize: 9 }}> · {m.torneo}</span> : null}
+            </div>
+          ))}
+        </div>
+      )}
+      {(info || error) && (
+        <div className="font-body" style={{ display: "flex", gap: 8, alignItems: "center", background: error ? "rgba(232,93,93,0.1)" : "rgba(125,214,192,0.08)", border: `1px solid ${error ? "#E85D5D" : "#7DD6C0"}`, borderRadius: 8, padding: "7px 9px", marginBottom: 6, color: "#F4F1EA", fontSize: 10.5 }}>
+          <span style={{ flex: 1 }}>{error || info}</span>
+          <button onClick={() => { setInfo(null); setError(null); }} style={{ background: "none", border: "none", color: "#8B8698", cursor: "pointer" }}>✕</button>
+        </div>
+      )}
+      {vinculado ? (
+        <div style={{ ...caja, display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="font-body" style={{ color: "#F4F1EA", fontSize: 11, fontWeight: 700 }}>🌎 Exterior (SwimRankings): {v.nombre || alumno.nombre}</div>
+            <div className="font-body" style={{ color: "#8B8698", fontSize: 9.5, marginTop: 2 }}>
+              {[v.pais, v.club, v.anio].filter(Boolean).join(" · ")}{v.ultimaSync ? `${v.pais || v.club || v.anio ? " · " : ""}actualizado ${haceCuanto(v.ultimaSync)}` : ""}
+            </div>
+            <div className="font-body" style={{ color: "#6B6678", fontSize: 9, marginTop: 2 }}>{v.automatico ? "Vinculado solo por nombre y año. " : ""}Sus tiempos de afuera se suman a los mismos de siempre: la mejor marca es la mejor de todas.</div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <button disabled={cargando} onClick={actualizar} className="font-body" style={{ background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#7DD6C0", fontWeight: 700, fontSize: 10, padding: "5px 9px", cursor: "pointer", whiteSpace: "nowrap" }}>{cargando ? "…" : "↻ Actualizar"}</button>
+            {puedeVincular && <button onClick={() => { if (window.confirm("¿Desvincular de SwimRankings? Los tiempos ya cargados quedan.")) onChange({ exterior: { noVincular: true } }); }} className="font-body" style={{ background: "none", border: "none", color: "#8B8698", fontSize: 9.5, cursor: "pointer" }}>{v.automatico ? "No es este/a" : "Desvincular"}</button>}
+          </div>
+        </div>
+      ) : buscando ? (
+        <div style={caja}>
+          <div className="font-body" style={{ color: "#8B8698", fontSize: 9.5, marginBottom: 6 }}>Buscá al nadador/a en SwimRankings, que junta torneos de todo el mundo.</div>
+          <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+            <input value={texto} onChange={(e) => setTexto(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") buscar(); }} placeholder="Nombre y apellido" className="font-body" style={{ ...inp, flex: 1, minWidth: 0 }} />
+            <button disabled={cargando} onClick={buscar} className="font-body" style={{ background: "#7DD6C0", border: "none", borderRadius: 6, color: "#0B2A2E", fontWeight: 700, fontSize: 11, padding: "0 12px", cursor: "pointer" }}>{cargando ? "…" : "Buscar"}</button>
+          </div>
+          {resultados && resultados.length === 0 && <div className="font-body" style={{ color: "#6B6678", fontSize: 10.5, marginBottom: 6 }}>No apareció nadie con ese nombre. Probá solo con el apellido, o pegá el link de su ficha acá abajo.</div>}
+          {(resultados || []).map((r) => (
+            <button key={r.id} disabled={cargando} onClick={() => vincular(r)} className="font-body" style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, padding: "8px 9px", marginBottom: 5, cursor: "pointer", textAlign: "left" }}>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: "block", color: "#F4F1EA", fontSize: 11, fontWeight: 700 }}>{r.nombre}</span>
+                <span style={{ display: "block", color: "#8B8698", fontSize: 9.5 }}>{[r.pais, r.club, r.anio].filter(Boolean).join(" · ")}</span>
+              </span>
+              <span style={{ color: "#7DD6C0", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}>Es este/a ›</span>
+            </button>
+          ))}
+          <div className="font-body" style={{ color: "#6B6678", fontSize: 9, margin: "4px 0" }}>
+            ¿No aparece? Buscalo en <a href="https://www.swimrankings.net/index.php?page=athleteSelect&nationId=0&selectPage=SEARCH" target="_blank" rel="noopener noreferrer" style={{ color: "#7DD6C0" }}>swimrankings.net</a>, copiá el link de su ficha y pegalo acá:
+          </div>
+          <div style={{ display: "flex", gap: 6, marginBottom: 4 }}>
+            <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://www.swimrankings.net/...athleteId=..." className="font-body" style={{ ...inp, flex: 1, minWidth: 0 }} />
+            <button disabled={cargando || !link.trim()} onClick={vincularLink} className="font-body" style={{ background: "#26232F", border: "1px solid #7DD6C0", borderRadius: 6, color: "#7DD6C0", fontWeight: 700, fontSize: 10.5, padding: "0 10px", cursor: "pointer" }}>Vincular</button>
+          </div>
+          <button onClick={() => { setBuscando(false); setResultados(null); }} className="font-body" style={{ width: "100%", background: "none", border: "none", color: "#8B8698", fontSize: 10, padding: 4, cursor: "pointer" }}>Cancelar</button>
+        </div>
+      ) : (
+        <button onClick={() => { setBuscando(true); setTexto(alumno.nombre || ""); }} className="font-body" style={{ width: "100%", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, color: "#F4F1EA", fontWeight: 700, fontSize: 11, padding: 9, cursor: "pointer", marginTop: 6 }}>🌎 Sumar sus tiempos del exterior</button>
+      )}
     </div>
   );
 }
@@ -6407,7 +6747,7 @@ function MarcasNatacion({ alumno, onChange, onSincronizar, puedeVincular = true 
   const btnSec = { flex: 1, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, color: "#8B8698", fontWeight: 700, fontSize: 10.5, padding: 8, cursor: "pointer" };
   return (
     <div style={{ marginBottom: 16 }}>
-      <div style={{ marginBottom: 8 }}><BloqueSwimRecords alumno={alumno} onChange={onChange} onSincronizar={onSincronizar} puedeVincular={puedeVincular} /></div>
+      <div style={{ marginBottom: 8 }}><BloqueSwimRecords alumno={alumno} onChange={onChange} onSincronizar={onSincronizar} puedeVincular={puedeVincular} /><BloqueExterior alumno={alumno} onChange={onChange} puedeVincular={puedeVincular} /></div>
       {msg && (
         <div className="font-body" style={{ display: "flex", gap: 8, alignItems: "center", background: msg.error ? "rgba(232,93,93,0.1)" : "rgba(51,214,166,0.1)", border: `1px solid ${msg.error ? "#E85D5D" : "#33D6A6"}`, borderRadius: 8, padding: "7px 9px", marginBottom: 8, color: "#F4F1EA", fontSize: 10.5 }}>
           <span style={{ flex: 1 }}>{msg.t}</span>
@@ -6435,8 +6775,8 @@ function MarcasNatacion({ alumno, onChange, onSincronizar, puedeVincular = true 
                 {[...p.ms].reverse().map((m) => (
                   <div key={m.id} className="font-body" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10.5, color: "#B8B3C4", padding: "4px 0", borderTop: "1px solid #26232F" }}>
                     <span style={{ width: 62, color: m.id === p.mejor.id ? "#7DD6C0" : "#F4F1EA", fontWeight: 700 }}>{fmtTiempo(m.segundos)}{m.id === p.mejor.id ? " ★" : ""}</span>
-                    <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.fecha ? mostrarFecha(m.fecha) : "Sin fecha"}{m.pileta ? ` · pileta ${m.pileta} m` : ""}{m.torneo ? ` · ${m.torneo}` : ""}{m.origen === "swimrecords" ? " · SwimRecords" : ""}</span>
-                    <button onClick={() => onChange({ marcasNatacion: marcas.filter((x) => x.id !== m.id), ...(m.origen === "swimrecords" && alumno.swimrecords ? { swimrecords: { ...alumno.swimrecords, ocultas: [...(alumno.swimrecords.ocultas || []), m.id] } } : {}) })} style={{ background: "none", border: "none", color: "#E85D5D", fontSize: 10, cursor: "pointer" }}>Quitar</button>
+                    <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.fecha ? mostrarFecha(m.fecha) : "Sin fecha"}{m.pileta ? ` · pileta ${m.pileta} m` : ""}{m.torneo ? ` · ${m.torneo}` : ""}{m.origen === "swimrecords" ? " · SwimRecords" : m.origen === "exterior" ? " · 🌎 SwimRankings" : ""}</span>
+                    <button onClick={() => onChange({ marcasNatacion: marcas.filter((x) => x.id !== m.id), ...(m.origen === "swimrecords" && alumno.swimrecords ? { swimrecords: { ...alumno.swimrecords, ocultas: [...(alumno.swimrecords.ocultas || []), m.id] } } : {}), ...(m.origen === "exterior" && alumno.exterior ? { exterior: { ...alumno.exterior, ocultas: [...(alumno.exterior.ocultas || []), m.id] } } : {}) })} style={{ background: "none", border: "none", color: "#E85D5D", fontSize: 10, cursor: "pointer" }}>Quitar</button>
                   </div>
                 ))}
               </div>
@@ -6631,7 +6971,7 @@ function AthleteProgreso({ alumno, onGuardarHistorialRM, onCerrarAvisosRM, onUpd
         {onUpdateMarcas && (
           <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 14, padding: 14, marginBottom: 14 }}>
             <div className="font-body" style={{ fontSize: 11, color: "#8B8698", fontWeight: 600, marginBottom: 4 }}>🏊 MIS MARCAS DE NATACIÓN</div>
-            <div className="font-body" style={{ fontSize: 9, color: "#6B6678", marginBottom: 10 }}>Tus tiempos de los torneos (de SwimRecords) se cargan solos. También podés sumar otros a mano.</div>
+            <div className="font-body" style={{ fontSize: 9, color: "#6B6678", marginBottom: 10 }}>Tus tiempos de los torneos (de SwimRecords y, si nadaste afuera, de SwimRankings) se cargan solos. También podés sumar otros a mano.</div>
             <MarcasNatacion alumno={alumno} onChange={onUpdateMarcas} puedeVincular={false} />
           </div>
         )}
@@ -7611,6 +7951,7 @@ function sanearAlumno(a) {
       avisosRM: Array.isArray(a.avisosRM) ? a.avisosRM.filter((x) => x && x.id) : [],
       marcasNatacion: Array.isArray(a.marcasNatacion) ? a.marcasNatacion.filter((x) => x && x.id) : [],
       swimrecords: a.swimrecords && typeof a.swimrecords === "object" ? a.swimrecords : null,
+      exterior: a.exterior && typeof a.exterior === "object" ? a.exterior : null,
       cuota: a.cuota && typeof a.cuota === "object" ? { ...a.cuota, pagos: Array.isArray(a.cuota.pagos) ? a.cuota.pagos : [] } : null,
     };
   } catch {
@@ -8230,21 +8571,26 @@ export default function GymPlannerCoachApp() {
   alumnosRef.current = alumnos;
   const srEnCursoRef = useRef(new Set());
   const srIntentadosRef = useRef(new Set());
+  const extIntentadosRef = useRef(new Set());
   // Trae los tiempos de SwimRecords del alumno/a y suma los nuevos. Si alguno es mejor que su marca
   // anterior en la misma prueba y pileta, queda anotado y se avisa (al coach y al alumno/a).
-  const sincronizarSwimRecords = async (alumnoId, vinculoNuevo) => {
-    if (srEnCursoRef.current.has(alumnoId)) return null;
-    srEnCursoRef.current.add(alumnoId);
+  // Trae los tiempos de una fuente (campo "swimrecords" o "exterior" del alumno/a) y suma los nuevos.
+  const sincronizarTiempos = async (alumnoId, campo, traer, vinculoNuevo) => {
+    const clave = `${campo}:${alumnoId}`;
+    if (srEnCursoRef.current.has(clave)) return null;
+    srEnCursoRef.current.add(clave);
     try {
       const a0 = alumnosRef.current.find((a) => a.id === alumnoId);
-      const v0 = vinculoNuevo || a0?.swimrecords;
+      const v0 = vinculoNuevo || a0?.[campo];
       if (!a0 || !v0?.ids?.length) return null;
-      const tiempos = await traerTiemposSwimRecords(v0.ids);
+      const tiempos = await traer(v0.ids);
       const calcular = (a, vin) => {
         const ocultas = new Set(vin.ocultas || []);
         const marcas = a.marcasNatacion || [];
         const ya = new Set(marcas.map((m) => m.id));
-        const nuevas = tiempos.filter((t) => !ya.has(t.id) && !ocultas.has(t.id));
+        // si la misma carrera ya está cargada desde otro lado (ej. un torneo argentino que también
+        // figura en SwimRankings), no se repite
+        const nuevas = tiempos.filter((t) => !ya.has(t.id) && !ocultas.has(t.id) && !marcas.some((m) => m.origen !== t.origen && mismaCarrera(m, t)));
         const mejoras = [];
         // en la primera carga no se avisa nada (son tiempos viejos); después, cada marca que baja
         if (vin.ultimaSync) {
@@ -8256,16 +8602,16 @@ export default function GymPlannerCoachApp() {
         }
         return { nuevas, mejoras };
       };
-      const vinBase = vinculoNuevo ? { ...vinculoNuevo } : { ...a0.swimrecords };
+      const vinBase = vinculoNuevo ? { ...vinculoNuevo } : { ...a0[campo] };
       const { nuevas, mejoras } = calcular(a0, vinBase);
       const ahora = new Date().toISOString();
       setAlumnos((prev) => prev.map((a) => {
         if (a.id !== alumnoId) return a;
-        const vin = vinculoNuevo ? { ...vinculoNuevo } : a.swimrecords;
+        const vin = vinculoNuevo ? { ...vinculoNuevo } : a[campo];
         if (!vin?.ids?.length) return a; // se desvinculó mientras tanto
         const r = calcular(a, vin);
         const yaMej = new Set((vin.mejoras || []).map((m) => m.id));
-        return { ...a, marcasNatacion: [...(a.marcasNatacion || []), ...r.nuevas], swimrecords: { ...vin, ultimaSync: ahora, mejoras: [...(vin.mejoras || []), ...r.mejoras.filter((m) => !yaMej.has(m.id))].slice(-20) } };
+        return { ...a, marcasNatacion: [...(a.marcasNatacion || []), ...r.nuevas], [campo]: { ...vin, ultimaSync: ahora, mejoras: [...(vin.mejoras || []), ...r.mejoras.filter((m) => !yaMej.has(m.id))].slice(-20) } };
       }));
       if (mejoras.length) {
         const txt = mejoras.map((m) => `${m.prueba}: ${fmtTiempo(m.de)} → ${fmtTiempo(m.a)}`).join(" · ");
@@ -8274,9 +8620,11 @@ export default function GymPlannerCoachApp() {
       }
       return { nuevas: nuevas.length, mejoras };
     } finally {
-      srEnCursoRef.current.delete(alumnoId);
+      srEnCursoRef.current.delete(clave);
     }
   };
+  const sincronizarSwimRecords = (alumnoId, vinculoNuevo) => sincronizarTiempos(alumnoId, "swimrecords", traerTiemposSwimRecords, vinculoNuevo);
+  const sincronizarExterior = (alumnoId, vinculoNuevo) => sincronizarTiempos(alumnoId, "exterior", traerTiemposExterior, vinculoNuevo);
   // Solo, al abrir la app: actualiza los tiempos de los ya vinculados (cada 6 h como mucho) y, si
   // entra el coach, busca la ficha de los que todavía no están vinculados (una vez por sesión).
   useEffect(() => {
@@ -8300,6 +8648,20 @@ export default function GymPlannerCoachApp() {
         } catch {
           // sin conexión con SwimRecords: se reintenta la próxima vez que se abra la app
         }
+        // tiempos del exterior: si ya está vinculado se actualiza; si no, el coach lo busca solo
+        // (una vez por sesión) a partir de su ficha de SwimRecords
+        const a1 = alumnosRef.current.find((x) => x.id === a.id) || a;
+        const ve = a1.exterior;
+        try {
+          if (cancelado) return;
+          if (ve?.ids?.length) {
+            if (!ve.ultimaSync || Date.now() - new Date(ve.ultimaSync).getTime() > 12 * 60 * 60 * 1000) await sincronizarExterior(a.id);
+          } else if (session.role === "coach" && !ve?.noVincular && a1.swimrecords?.ids?.length && !extIntentadosRef.current.has(a.id)) {
+            extIntentadosRef.current.add(a.id);
+            const vin = await encontrarFichaExterior(a1);
+            if (vin && !cancelado) await sincronizarExterior(a.id, vin);
+          }
+        } catch { /* se reintenta la próxima vez */ }
       }
     })();
     return () => { cancelado = true; };
@@ -8307,14 +8669,14 @@ export default function GymPlannerCoachApp() {
   }, [remotoListo, session?.role, session?.athleteId, alumnos.length, clubSwimRecords]);
   // Suma un torneo a las Competencias de todos los nadadores vinculados con SwimRecords.
   const agregarCompetenciaEquipo = (t) => setAlumnos((prev) => prev.map((a) => {
-    if (!a.swimrecords?.ids?.length || a.activo === false) return a;
+    if (!(a.swimrecords?.ids?.length || a.exterior?.ids?.length) || a.activo === false) return a;
     if (session?.role === "coach" && !(a.coachIds === null || a.coachIds.includes(session.coachId))) return a;
     const comps = a.competencias || [];
     if (comps.some((c) => c.id === `sr-${t.id}` || (normalizarTexto(c.nombre) === normalizarTexto(t.name) && c.fecha === t.start_date))) return a;
     return { ...a, competencias: [...comps, { id: `sr-${t.id}`, nombre: t.name, fecha: t.start_date }] };
   }));
   const accionesCtx = { updateAlumno: (id, patch) => setAlumnos((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a))) };
-  const swimRecordsCtx = { sincronizar: sincronizarSwimRecords, club: clubSwimRecords, setClub: setClubSwimRecords, agregarCompetencia: agregarCompetenciaEquipo };
+  const swimRecordsCtx = { sincronizar: sincronizarSwimRecords, sincronizarExterior, club: clubSwimRecords, setClub: setClubSwimRecords, agregarCompetencia: agregarCompetenciaEquipo };
 
   const finalizarEntrenamiento = (alumnoId) => {
     setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...a, sesionesCompletadas: (a.sesionesCompletadas || 0) + 1, historialSesiones: [...(a.historialSesiones || []), todayISO()], wellness: { ...a.wellness, encuestaPendiente: true } } : a)));
