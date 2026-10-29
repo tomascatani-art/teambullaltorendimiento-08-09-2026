@@ -1357,6 +1357,60 @@ function cruceBiomecanicaGimnasio(alumno, series) {
   return lineas;
 }
 
+// Detalle de las últimas evaluaciones de Gym para el informe de biomecánica: barras con la velocidad
+// de cada repetición (o la altura de cada salto) y lo que se lee de cada serie, en vez de una planilla.
+const SALTOS_BIO = { cmj: "CMJ", sj: "SJ", abk: "Abalakov", drop: "Drop jump", loaded: "Con carga" };
+function svgBarrasBio(items, unidad, dec, colorDe) {
+  const w = 640, h = 170, padX = 18, padTop = 22, padBot = 30;
+  const max = Math.max(...items.map((x) => x.v)) || 1;
+  const ancho = (w - padX * 2) / items.length, barra = Math.min(54, ancho * 0.62);
+  return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;display:block;">
+    <line x1="${padX}" y1="${h - padBot}" x2="${w - padX}" y2="${h - padBot}" stroke="#E8E3D8" stroke-width="1"/>
+    ${items.map((x, i) => {
+      const alto = ((h - padTop - padBot) * x.v) / max, cx = padX + ancho * i + ancho / 2, y = h - padBot - alto;
+      return `<rect x="${(cx - barra / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barra.toFixed(1)}" height="${alto.toFixed(1)}" rx="4" fill="${colorDe(x, i)}"/>
+      <text x="${cx.toFixed(1)}" y="${(y - 6).toFixed(1)}" text-anchor="middle" font-size="10.5" font-weight="700" fill="#121017" font-family="-apple-system,sans-serif">${fmtBio(x.v, dec)}</text>
+      <text x="${cx.toFixed(1)}" y="${h - 11}" text-anchor="middle" font-size="9.5" fill="#8B8698" font-family="-apple-system,sans-serif">${x.etiqueta}</text>`;
+    }).join("")}
+  </svg><div style="font-size:9.5px;color:#8B8698;text-align:right;margin-top:2px;">${unidad}</div>`;
+}
+function seccionSeriesBioHTML(evs) {
+  const gym = evs.filter((e) => e.kind === "gym" && e.data && ((e.data.type === "bar" && (e.data.reps || []).some((r) => Number.isFinite(r.mv))) || (e.data.type === "jump" && (e.data.jumps || []).some((j) => Number.isFinite(j.h)))));
+  if (!gym.length) return "";
+  const leyenda = (c, t) => `<span style="display:inline-flex;align-items:center;gap:5px;margin-right:12px;"><span style="width:10px;height:10px;border-radius:3px;background:${c};display:inline-block;"></span>${t}</span>`;
+  const bloques = [...gym].reverse().slice(0, 4).map((e) => {
+    const d = e.data, nombre = (e.title || "").replace(/^Gym · /, "");
+    if (d.type === "bar") {
+      const reps = d.reps.filter((r) => Number.isFinite(r.mv));
+      const mejor = Math.max(...reps.map((r) => r.mv));
+      // color según cuánto cae cada repetición respecto de la mejor
+      const color = (x) => { const caida = (1 - x.v / mejor) * 100; return caida < 10 ? "#1a9c6e" : caida < 20 ? "#E39B2D" : "#c94a3a"; };
+      const media = reps.reduce((a, r) => a + r.mv, 0) / reps.length;
+      const lineas = [];
+      lineas.push(`Mejor repetición: ${fmtBio(mejor, 2)} m/s (rep ${reps.find((r) => r.mv === mejor).n}). Promedio de la serie: ${fmtBio(media, 2)} m/s en ${reps.length} repeticiones.`);
+      if (d.vl && Number.isFinite(d.vl.v)) lineas.push(d.vl.v < 10 ? `Pérdida de velocidad de ${fmtBio(d.vl.v, 1)}%: la serie se mantuvo rápida, sin fatiga marcada.` : d.vl.v < 20 ? `Pérdida de velocidad de ${fmtBio(d.vl.v, 1)}%: fatiga moderada, dentro de lo habitual para fuerza.` : `Pérdida de velocidad de ${fmtBio(d.vl.v, 1)}%: fatiga alta; conviene cortar antes o bajar la carga si el objetivo es velocidad.`);
+      const rom = reps.map((r) => r.rom).filter(Number.isFinite);
+      if (rom.length > 1) { const dif = (Math.max(...rom) - Math.min(...rom)) * 100; lineas.push(dif > 5 ? `El recorrido varió ${fmtBio(dif, 0)} cm entre repeticiones: revisar que la profundidad sea siempre la misma.` : `Recorrido parejo entre repeticiones (diferencia de ${fmtBio(dif, 0)} cm).`); }
+      return `<div class="chart-box"><div class="titulo">${nombre}${e.event ? ` · ${e.event}` : ""} · ${mostrarFecha(e.date)}</div>
+        ${svgBarrasBio(reps.map((r) => ({ v: r.mv, etiqueta: "Rep " + r.n })), "velocidad media de cada repetición (m/s)", 2, color)}
+        <div style="font-size:10.5px;color:#5E5A6B;margin:6px 0 4px;">${leyenda("#1a9c6e", "menos de 10% más lenta que la mejor")}${leyenda("#E39B2D", "10 a 20%")}${leyenda("#c94a3a", "más de 20%")}</div>
+        <div class="resumen-notas">${lineas.map((l) => `<p>${l}</p>`).join("")}</div></div>`;
+    }
+    const js = d.jumps.filter((j) => Number.isFinite(j.h));
+    const mejor = Math.max(...js.map((j) => j.h));
+    const prom = js.reduce((a, j) => a + j.h, 0) / js.length;
+    const lineas = [`Mejor salto: ${fmtBio(mejor * 100, 1)} cm. Promedio: ${fmtBio(prom * 100, 1)} cm en ${js.length} saltos.`];
+    const cv = js.length > 1 ? (Math.sqrt(js.reduce((a, j) => a + (j.h - prom) ** 2, 0) / (js.length - 1)) / prom) * 100 : null;
+    if (cv !== null) lineas.push(cv < 5 ? `Saltos parejos entre sí (variación de ${fmtBio(cv, 1)}%): la técnica es estable.` : `Los saltos variaron ${fmtBio(cv, 1)}% entre sí: conviene repetir la técnica de despegue para que sean más parejos.`);
+    const rsi = js.map((j) => j.rsi).filter(Number.isFinite);
+    if (rsi.length) lineas.push(`Índice de fuerza reactiva (RSI) máximo: ${fmtBio(Math.max(...rsi), 2)}.`);
+    return `<div class="chart-box"><div class="titulo">Saltos${e.event ? ` · ${e.event}` : ""} · ${mostrarFecha(e.date)}</div>
+      ${svgBarrasBio(js.map((j, i) => ({ v: j.h * 100, etiqueta: `${i + 1} · ${SALTOS_BIO[j.type] || ""}` })), "altura de cada salto (cm)", 1, (x) => (x.v === mejor * 100 ? "#FF6B35" : "#7DD6C0"))}
+      <div class="resumen-notas">${lineas.map((l) => `<p>${l}</p>`).join("")}</div></div>`;
+  });
+  return `<h2 class="seccion">Detalle de las últimas series</h2>${bloques.join("")}`;
+}
+
 // Informe solo de biomecánica: mismo formato que el informe individual, con los gráficos de
 // evolución, el detalle de cada evaluación y la relación con los avances del gimnasio.
 function generarHTMLInformeBiomecanica(alumno) {
@@ -1385,6 +1439,7 @@ function generarHTMLInformeBiomecanica(alumno) {
           <div class="perfil-item"><b>Objetivo</b>${alumno.objetivo || "—"}</div>
         </div>
         ${seccionBiomecanicaHTML(bio, true)}
+        ${seccionSeriesBioHTML(bio.evs)}
         ${cruce.length ? `<h2 class="seccion">🏋️ Relación con el gimnasio</h2>
         <div class="stats">
           <div class="stat"><div class="num">${calcularCumplimiento(alumno)}%</div><div class="label">Cumplimiento</div></div>
@@ -5295,6 +5350,7 @@ function JuegoLargada({ reacciones, onGuardar, onClose, ranking, yoId }) {
 
 function AthleteInicio({ alumno, goEntrenar, onCheckin, onUpdateFoto, onMarcarAvisoVisto, onGuardarReaccion, rankingReaccion }) {
   const [juego, setJuego] = useState(false);
+  const [vivo, setVivo] = useState(false);
   const primerDia = alumno.plan.dias[0];
   const total = flatEjercicios(primerDia).length;
   const hoy = todayISO();
@@ -5362,6 +5418,17 @@ function AthleteInicio({ alumno, goEntrenar, onCheckin, onUpdateFoto, onMarcarAv
           </button>
         )}
         {juego && <JuegoLargada reacciones={alumno.reacciones} onGuardar={onGuardarReaccion} onClose={() => setJuego(false)} ranking={rankingReaccion} yoId={alumno.id} />}
+
+        {/* La pantalla del deportista de Biomecánica Gym: el/la entrenador/a filma y acá se ve cada repetición */}
+        <button onClick={() => setVivo(true)} className="font-body" style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 14, padding: "12px 16px", marginBottom: 14, cursor: "pointer", textAlign: "left" }}>
+          <span style={{ fontSize: 28 }}>📡</span>
+          <span style={{ flex: 1 }}>
+            <span className="font-display" style={{ display: "block", color: "#F4F1EA", fontSize: 16, fontWeight: 700 }}>VER MI SERIE EN VIVO</span>
+            <span style={{ display: "block", color: "#8B8698", fontSize: 11, marginTop: 2 }}>Poné el código que te muestra tu entrenador/a y mirá la velocidad de cada repetición</span>
+          </span>
+          <span style={{ color: "#FF6B35", fontSize: 18 }}>▶</span>
+        </button>
+        {vivo && <SerieEnVivo onClose={() => setVivo(false)} />}
 
         {/* Check-in diario de ánimo — tu coach lo ve para saber cómo venís */}
         <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 14, padding: 16, marginBottom: 14 }}>
@@ -6909,21 +6976,25 @@ function SentadillaIcon({ size = 18 }) {
 // ficha del alumno (alumno.biomecanica), así se sube a la nube y entra en su informe.
 function BiomecanicaScreen({ alumnos, onGuardar, onBorrar, completa, onPantallaCompleta }) {
   const frameRef = useRef(null);
+  // si el cambio de alumnos lo mandó Biomecánica (guardar o borrar una medición), ya lo tiene:
+  // no se le vuelve a mandar la lista entera, que es lo que trababa un poco al guardar
+  const propioRef = useRef(false);
   const enviarAlumnos = () => {
     const w = frameRef.current?.contentWindow;
     if (!w) return;
     w.postMessage({ tb: "bio", type: "alumnos", alumnos: alumnos.map((a) => ({ id: a.id, nombre: a.nombre, equipo: a.equipo || "", nivel: a.nivel || "", deportes: a.deportes || "", pruebas: a.pruebasNatacion || "", peso: Number(a.peso) || null, altura: Number(a.altura) || null, bio: a.biomecanica || [] })), nube: { url: SUPABASE_URL, key: SUPABASE_KEY } }, window.location.origin);
   };
-  useEffect(() => { enviarAlumnos(); }, [alumnos]);
+  useEffect(() => { if (propioRef.current) { propioRef.current = false; return; } enviarAlumnos(); }, [alumnos]);
   useEffect(() => {
     const onMsg = (e) => {
       if (e.origin !== window.location.origin || e.source !== frameRef.current?.contentWindow) return;
       const d = e.data;
       if (!d || d.tb !== "bio") return;
       if (d.type === "hola") enviarAlumnos();
-      else if (d.type === "guardar" && d.evaluacion && alumnos.some((a) => a.id === d.alumnoId)) onGuardar(d.alumnoId, d.evaluacion);
-      else if (d.type === "borrar" && alumnos.some((a) => a.id === d.alumnoId)) onBorrar(d.alumnoId, d.evaluacionId);
+      else if (d.type === "guardar" && d.evaluacion && alumnos.some((a) => a.id === d.alumnoId)) { propioRef.current = true; onGuardar(d.alumnoId, d.evaluacion); }
+      else if (d.type === "borrar" && alumnos.some((a) => a.id === d.alumnoId)) { propioRef.current = true; onBorrar(d.alumnoId, d.evaluacionId); }
       else if (d.type === "pantallaCompleta") onPantallaCompleta?.(!!d.on);
+      else if (d.type === "informe") { const a = alumnos.find((x) => x.id === d.alumnoId); if (a) descargarInformeBiomecanicaPDF(a); }
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
@@ -6936,6 +7007,37 @@ function BiomecanicaScreen({ alumnos, onGuardar, onBorrar, completa, onPantallaC
       <iframe ref={frameRef} src="/biomecanica/index.html" title="Biomecánica" allow="camera; microphone; fullscreen; autoplay; clipboard-write; web-share" allowFullScreen style={{ flex: 1, width: 1, minWidth: "100%", maxWidth: "100%", border: "none", background: "#121017", display: "block" }} />
     </div>
   );
+}
+
+// «Ver mi serie en vivo» del alumno/a: abre solo la pantalla del deportista de Biomecánica Gym
+// (código de 4 números y el número grande), sin el resto del apartado.
+function SerieEnVivo({ onClose }) {
+  const frameRef = useRef(null);
+  const [completa, setCompleta] = useState(false);
+  useEffect(() => {
+    const onMsg = (e) => {
+      if (e.origin !== window.location.origin || e.source !== frameRef.current?.contentWindow) return;
+      const d = e.data;
+      if (!d || d.tb !== "bio") return;
+      // solo la conexión en vivo: no se le pasa ningún alumno/a
+      if (d.type === "hola") frameRef.current.contentWindow.postMessage({ tb: "bio", type: "alumnos", alumnos: [], nube: { url: SUPABASE_URL, key: SUPABASE_KEY } }, window.location.origin);
+      else if (d.type === "pantallaCompleta") setCompleta(!!d.on);
+    };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, []);
+  // portal a <body>: así tapa el «Cerrar sesión» y la barra de abajo
+  return createPortal((
+    <div style={{ position: "fixed", inset: 0, zIndex: 10000, background: "#121017", display: "flex", flexDirection: "column" }}>
+      {!completa && (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(14px + env(safe-area-inset-top, 0px)) 20px 10px", borderBottom: "1px solid #26232F" }}>
+          <div className="font-display" style={{ flex: 1, color: "#F4F1EA", fontSize: 20, fontWeight: 700 }}>MI SERIE EN VIVO</div>
+          <button onClick={onClose} aria-label="Cerrar" style={{ width: 38, height: 38, borderRadius: 19, border: "1px solid #322E3D", background: "#1C1A24", color: "#F4F1EA", fontSize: 18, cursor: "pointer" }}>✕</button>
+        </div>
+      )}
+      <iframe ref={frameRef} src="/biomecanica/index.html?vivo=1" title="Mi serie en vivo" allow="camera; autoplay; fullscreen" style={{ flex: 1, width: 1, minWidth: "100%", maxWidth: "100%", border: "none", background: "#121017", display: "block" }} />
+    </div>
+  ), document.body);
 }
 
 function BullLogo({ size = 44 }) {
