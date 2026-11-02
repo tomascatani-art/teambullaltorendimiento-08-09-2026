@@ -91,6 +91,30 @@ export function seriesDeficit(reps) {
   return { v: d, se: Math.sqrt(s2), first: v1, mean: m, stop: d < DEFICIT_LIMIT };
 }
 
+// Cuándo avisar que se corta la serie. «def»: el déficit de la planilla (pasado −10 %, una serie más).
+// El resto: pérdida de velocidad desde la mejor repetición (en %), según lo que se busca entrenar.
+export const CORTES = [
+  { id: 'def', label: 'Déficit de la planilla (−10 %)' },
+  { id: 'vl10', label: 'Al perder 10 % de velocidad · fuerza máxima', vl: 10 },
+  { id: 'vl20', label: 'Al perder 20 % · fuerza y potencia', vl: 20 },
+  { id: 'vl30', label: 'Al perder 30 % · hipertrofia', vl: 30 },
+  { id: 'vl40', label: 'Al perder 40 % · resistencia', vl: 40 },
+  { id: 'no', label: 'Sin aviso de corte' },
+];
+const coma = (v, d) => v.toFixed(d).replace('.', ',');
+export function corteSerie(reps, id = 'def') {
+  const c = CORTES.find(x => x.id === id) || CORTES[0];
+  const v = reps.map(r => r.mv);
+  if (c.id === 'no' || v.length < 2 || !v.every(Number.isFinite)) return null;
+  if (c.vl) {
+    const best = Math.max(...v), p = 100 * (best - v[v.length - 1]) / best;
+    return { stop: p >= c.vl, v: p, corto: `pérdida ${coma(p, 0)} % (corte ${c.vl} %)`,
+      aviso: `La velocidad bajó ${coma(p, 0)} % desde la mejor repetición: llegó al corte del ${c.vl} %, cortá la serie.` };
+  }
+  const d = seriesDeficit(reps);
+  return d ? { stop: d.stop, v: d.v, corto: `déficit ${coma(d.v, 2)} %`, aviso: `El déficit de la serie pasó de ${DEFICIT_LIMIT} %: según la tabla, solo una serie más.` } : null;
+}
+
 // Carga efectiva: la serie posterior a la mayor pérdida (series del mismo día y ejercicio, en orden).
 export function effectiveSet(deficits) {
   let k = -1, worst = Infinity;

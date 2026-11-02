@@ -373,13 +373,15 @@ async function process() {
   sample.width = W; sample.height = H;
   sample.getContext('2d').drawImage(video, 0, 0, W, H);
   const landmarker = await getLandmarker(model, BASE, sample);
+  // otra instancia para buscar de cerca al nadador cuando está lejos (si no se puede, se sigue sin ella)
+  const zoom = await getLandmarker(model, BASE, sample, ':zoom').catch(() => null);
   stepState('model', 'done');
 
   // 3. pose
   stepState('pose', 'active');
   const step = timing.fps > 65 ? Math.round(timing.fps / 60) : 1;
   const frames = await runPose(video, timing, landmarker, {
-    step, signal, camera: true,
+    step, signal, camera: true, zoom,
     onProgress: ({ done, total, eta }) => {
       $('pose-count').textContent = `${done}/${total}${eta > 3 ? ` · faltan ~${Math.ceil(eta)} s` : ''}`;
       $('bar-fill').style.width = (5 + 85 * done / total).toFixed(1) + '%';

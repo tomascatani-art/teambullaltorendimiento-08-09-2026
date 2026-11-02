@@ -170,7 +170,8 @@ function seekTo(video, t) {
 
 // Recorre todos los cuadros (o uno de cada `step`) y ejecuta la pose. Con camera: true estima además el
 // movimiento de la cámara (frames[k].cam = transformación al primer cuadro, en píxeles del video).
-export async function runPose(video, timing, landmarker, { step = 1, onProgress, signal, camera = false } = {}) {
+// zoom: otra instancia del modelo para buscar de cerca a una persona chica o lejana (ver abajo).
+export async function runPose(video, timing, landmarker, { step = 1, onProgress, signal, camera = false, zoom = null } = {}) {
   const frames = [];
   const idx = [];
   for (let i = 0; i < timing.times.length; i += step) idx.push(i);
@@ -184,6 +185,12 @@ export async function runPose(video, timing, landmarker, { step = 1, onProgress,
   const gcv = camera ? Object.assign(document.createElement('canvas'), { width: gw, height: gh }) : null;
   const gctx = gcv?.getContext('2d', { willReadFrequently: true });
   const camTr = camera ? cameraTracker(gw, gh) : null;
+  // De lejos el nadador ocupa pocos píxeles y el modelo, que mira la imagen entera achicada, no lo ve
+  // (o ve solo un brazo o la cabeza). Entonces se lo busca en un recorte agrandado: alrededor de donde
+  // estaba en el cuadro anterior y, si se perdió, recorriendo la imagen por partes cada medio segundo.
+  const W = canvas.width, H = canvas.height, m = Math.min(W, H), chico = 0.3 * m;
+  const zctx = zoom ? lienzo(512) : null, scanCada = Math.max(1, Math.round(0.5 / (timing.frameDur * step)));
+  let prevBox = null, ultScan = -Infinity;
   for (let k = 0; k < idx.length; k++) {
     if (signal?.aborted) throw new DOMException('Cancelado', 'AbortError');
     const t = timing.times[idx[k]];
@@ -196,6 +203,21 @@ export async function runPose(video, timing, landmarker, { step = 1, onProgress,
     landmarker.detectForVideo(canvas, ts, (res) => {
       cands = (res.landmarks || []).map(p => p.map(q => [q.x, q.y, q.visibility ?? 0, q.presence ?? 1]));
     });
+    if (zoom) {
+      const b0 = cands[0] ? poseBox(cands[0], W, H) : null;
+      let p = null;
+      if (!b0 || b0[2] < chico) {
+        const ref = b0 || prevBox;
+        if (ref) p = detectarEnRecorte(video, zoom, zctx, 512, ref[0], ref[1], Math.max(0.35 * m, ref[2] * 1.8));
+        else if (k - ultScan >= scanCada) {
+          ultScan = k;
+          const side = 0.6 * m, paso = side * 0.6;
+          for (let y = side / 2; !p && y <= H - side / 2 + 1; y += paso) for (let x = side / 2; !p && x <= W - side / 2 + 1; x += paso) p = detectarEnRecorte(video, zoom, zctx, 512, x, y, side);
+        }
+      }
+      if (p) cands = b0 ? [p, ...cands.slice(1)] : [p, ...cands];
+      prevBox = cands[0] ? poseBox(cands[0], W, H) : null;
+    }
     const fr = { t, lm: cands[0] || null, cands };
     if (camTr) {
       gctx.drawImage(canvas, 0, 0, gw, gh);

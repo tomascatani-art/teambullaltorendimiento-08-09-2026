@@ -1960,6 +1960,25 @@ const clonarPlan = (p) => ({
   rm: p.rm.map((r) => ({ ...r, id: uid() })),
 });
 
+// Pasar un plan de una persona a otra: va solo la planificación (días, ejercicios, series, %). Los RM son
+// de cada persona: quedan los que ya tenía el/la destino/a, y los ejercicios con RM que no tenía se suman
+// vacíos para completar. También quedan sus datos propios (masa adiposa y muscular).
+// Antes de reemplazarle el plan a alguien, el que tenía queda en sus "Versiones guardadas".
+function conPlanAnteriorGuardado(a, motivo) {
+  if (!a.plan || !(a.plan.dias || []).length) return a;
+  return { ...a, historialPlanes: [{ id: uid(), nombre: `Plan anterior (${motivo})`, fecha: todayISO(), plan: clonarPlan(a.plan) }, ...(a.historialPlanes || [])] };
+}
+function planParaOtraPersona(planOrigen, planDestino) {
+  const nuevo = clonarPlan(planOrigen);
+  const propios = (planDestino && planDestino.rm) || [];
+  const rm = propios.map((r) => ({ ...r }));
+  nuevo.rm.forEach((r) => {
+    if (!rm.some((x) => normalizarTexto(x.ejercicio || "").trim() === normalizarTexto(r.ejercicio || "").trim() || mismoEjercicio(x.ejercicio, r.ejercicio))) rm.push({ ...r, valor: "" });
+  });
+  const meta = { ...nuevo.meta, masaAdiposa: planDestino?.meta?.masaAdiposa || "", masaMuscular: planDestino?.meta?.masaMuscular || "" };
+  return { ...nuevo, meta, rm };
+}
+
 // Busca el 1RM base cargado (en la tabla de RM del plan) para un ejercicio por nombre — ignora
 // mayúsculas, acentos y espacios de más (ej. "Press De Bánca" = "press de banca"), para que no
 // haga falta que quede escrito carácter por carácter igual.
@@ -2010,6 +2029,35 @@ function pesosSugeridos(rmList, nombreEjercicio, textoRM) {
   return pcts.map((pct) => Math.round(((base * pct) / 100) * 2) / 2);
 }
 
+// RM del día según la velocidad de barra (Biomecánica → Gym): con las series de ese día de un mismo
+// ejercicio a dos cargas o más, la recta carga-velocidad da la carga con la que la barra subiría a la
+// velocidad típica del 1RM (mismo cálculo y mismas velocidades que el «RM estimado» de Biomecánica).
+const V1RM_BIO = {
+  squat: ["Sentadilla", 0.30], front_squat: ["Sentadilla frontal", 0.30], half_squat: ["Media sentadilla", 0.30],
+  split_squat: ["Sentadilla búlgara", 0.30], lunge: ["Estocada", 0.30], leg_press: ["Prensa", 0.21],
+  deadlift: ["Peso muerto", 0.15], rdl: ["Peso muerto rumano", 0.20], hip_thrust: ["Hip thrust", 0.25],
+  bench: ["Press de banca", 0.17], incline_bench: ["Press inclinado", 0.17], ohp: ["Press militar", 0.19],
+  row: ["Remo con barra", 0.45], prone_row: ["Remo en banco plano", 0.50], pullup: ["Dominadas con lastre", 0.23],
+};
+function rmsDelDiaBio(alumno, fecha = todayISO()) {
+  const porEj = {};
+  (alumno?.biomecanica || []).forEach((e) => {
+    const d = e && e.data;
+    if (!d || e.kind !== "gym" || e.date !== fecha || d.type !== "bar" || !V1RM_BIO[d.exercise]) return;
+    const load = Number(d.load), v = Number(d.best && d.best.mv);
+    if (load > 0 && v > 0) (porEj[d.exercise] = porEj[d.exercise] || []).push({ load, v });
+  });
+  return Object.entries(porEj).map(([k, P]) => {
+    if (new Set(P.map((p) => p.load)).size < 2) return null;
+    const n = P.length, mx = P.reduce((s, p) => s + p.load, 0) / n, my = P.reduce((s, p) => s + p.v, 0) / n;
+    const sxx = P.reduce((s, p) => s + (p.load - mx) ** 2, 0), sxy = P.reduce((s, p) => s + (p.load - mx) * (p.v - my), 0);
+    const b = sxy / sxx, a = my - b * mx;
+    if (!(b < 0)) return null;
+    const rm = (V1RM_BIO[k][1] - a) / b;
+    return rm > 0 ? { ejercicio: V1RM_BIO[k][0], valor: String(Math.round(rm * 2) / 2), cargas: P.length } : null;
+  }).filter(Boolean);
+}
+
 // Sin % pero con RIR (ej. "RIR 2") y las repeticiones de la semana (ej. "3x8" o "4x8/6/4"): peso
 // APROXIMADO, contando las reps que harían hasta el fallo (8 + 2 = 10) con la fórmula de Epley
 // (10 reps ≈ 75% del RM). Es una guía: el alumno/a elige el peso según cómo se sienta.
@@ -2033,7 +2081,10 @@ const primerDiaMesSiguiente = () => { const d = new Date(); return new Date(d.ge
 const diaAnteriorISO = (f) => { const d = new Date(f + "T12:00:00"); d.setDate(d.getDate() - 1); return d.toISOString().slice(0, 10); };
 // Todo sale de los datos (sin ids nuevos ni "hoy"), así da igual en qué celular se active: el plan
 // que ve el alumno/a ese día es exactamente el mismo que después queda guardado.
-const planProximoVencido = (a) => !!(a && a.planProximo && a.planProximo.fecha && a.planProximo.fecha <= todayISO());
+// Con la fecha del celular (hora de Argentina), no la UTC: así el plan nuevo arranca a las 0:00 de ese día
+// y no a las 21 h del día anterior.
+const hoyLocalISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+const planProximoVencido = (a) => !!(a && a.planProximo && a.planProximo.fecha && a.planProximo.fecha <= hoyLocalISO());
 function activarPlanProximo(a) {
   const pp = a.planProximo;
   const plan = { ...pp.plan, meta: { ...pp.plan.meta, fechaInicio: pp.fecha } };
@@ -3536,7 +3587,7 @@ function CalendarioCadda({ alumnos }) {
   const proximos = (eventos || []).filter((e) => (e.end_date || e.start_date) >= hoy).sort((a, b) => a.start_date.localeCompare(b.start_date));
   const lista = soloNac ? proximos.filter((e) => !e.internacional) : proximos;
   const visibles = verTodos ? lista : lista.slice(0, 5);
-  const nadadores = alumnos.filter((a) => a.swimrecords?.ids?.length || a.exterior?.ids?.length);
+  const nadadores = alumnos.filter((a) => a.swimrecords?.ids?.length);
   const rango = (e) => (e.end_date && e.end_date !== e.start_date ? `${mostrarFecha(e.start_date)} al ${mostrarFecha(e.end_date)}` : mostrarFecha(e.start_date));
   return (
     <Seccion id="cadda" titulo="📅 Calendario CADDA" resumen={eventos === null ? "" : lista.length ? `${lista.length}` : ""} color="#8B8698">
@@ -3631,10 +3682,24 @@ function CopiasSeguridad() {
   );
 }
 
+// Buscador de alumnos/as por nombre (sin importar tildes ni mayúsculas).
+const normNombre = (t) => (t || "").toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+const coincideNombre = (a, q) => { const n = normNombre(q); if (!n) return true; const t = normNombre(`${a.nombre || ""} ${a.apellido || ""} ${a.usuario || ""}`); return n.split(/\s+/).every((p) => t.includes(p)); };
+function CampoBuscarAlumno({ valor, onChange, placeholder = "🔍 Buscar alumno/a por nombre…" }) {
+  return (
+    <div style={{ position: "relative" }}>
+      <input value={valor} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="font-body" autoComplete="off"
+        style={{ width: "100%", boxSizing: "border-box", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 12, color: "#F4F1EA", padding: "11px 36px 11px 12px", fontSize: 14, outline: "none" }} />
+      {valor && <button onClick={() => onChange("")} aria-label="Borrar búsqueda" style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#8B8698", fontSize: 16, cursor: "pointer", padding: 6 }}>✕</button>}
+    </div>
+  );
+}
+
 function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coaches, onAddCoach, onRemoveCoach, mensajeRecordatorio, onUpdateMensajeRecordatorio, notificacionesActivas, onToggleNotificaciones, modoPausa, onToggleModoPausa, diasAvisoPlan, onSetDiasAvisoPlan, coachId, onCambiarPassword, onSetRecoveryPin, onSetTelefono, onReclamarAlumnos, logActividad, grupos, onCrearGrupo, onEliminarGrupo }) {
   const [editando, setEditando] = useState(false);
   const [tipoAlertaAbierto, setTipoAlertaAbierto] = useState(null);
   const [verTodoRanking, setVerTodoRanking] = useState(false);
+  const [buscaAlumno, setBuscaAlumno] = useState("");
   const [verTodasConexiones, setVerTodasConexiones] = useState(false);
   const [agregandoCoach, setAgregandoCoach] = useState(false);
   const [nombreNuevoCoach, setNombreNuevoCoach] = useState("");
@@ -3681,6 +3746,23 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
     <div>
       <TopBar title="Dashboard" subtitle={coachNombre ? `Entrenador: ${coachNombre}` : "Team Bull"}
         right={<button onClick={() => setEditando(!editando)} style={{ background: "none", border: "none", color: "#8B8698", fontSize: 16, cursor: "pointer", marginTop: 26 }}>⚙️</button>} />
+      <div style={{ padding: "0 20px 12px" }}>
+        <CampoBuscarAlumno valor={buscaAlumno} onChange={setBuscaAlumno} />
+        {buscaAlumno.trim() && (() => {
+          const hallados = alumnos.filter((a) => coincideNombre(a, buscaAlumno)).slice(0, 12);
+          return (
+            <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 12, marginTop: 6, overflow: "hidden" }}>
+              {hallados.length === 0 && <div className="font-body" style={{ color: "#8B8698", fontSize: 12, padding: 12 }}>No hay nadie con "{buscaAlumno.trim()}".</div>}
+              {hallados.map((a) => (
+                <button key={a.id} onClick={() => { setBuscaAlumno(""); goAlumnos(a.id); }} className="font-body" style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", background: "none", border: "none", borderTop: "1px solid #26232F", padding: "10px 12px", cursor: "pointer", textAlign: "left" }}>
+                  <span style={{ color: "#F4F1EA", fontSize: 14, fontWeight: 700, flex: 1 }}>{a.nombre}{a.activo === false ? " (baja)" : ""}</span>
+                  <span style={{ color: "#FF6B35", fontSize: 12, fontWeight: 700 }}>Abrir ›</span>
+                </button>
+              ))}
+            </div>
+          );
+        })()}
+      </div>
       {editando && (
         <div style={{ padding: "0 20px 14px" }}>
           <MiniInput label="Nombre del entrenador (aparece en la ficha)" value={coachNombre} onChange={onUpdateCoach} wide />
@@ -3887,7 +3969,13 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
                       <span className="font-body" style={{ flex: 1, minWidth: 0, color: "#F4F1EA", fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.nombre}</span>
                       <span className="font-body" style={{ textAlign: "right", flexShrink: 0 }}>
                         <span style={{ display: "block", color: reciente ? "#33D6A6" : "#F4F1EA", fontSize: 11, fontWeight: 700 }}>{reciente ? "● Entró " : ""}{formatoConexion(a.ultimaConexion)}</span>
-                        <span style={{ display: "block", color: "#8B8698", fontSize: 9 }}>{tiempoRelativo(a.ultimaConexion)}</span>
+                        <span style={{ display: "block", color: "#8B8698", fontSize: 9 }}>{(() => {
+                          // si ese día entró antes, se muestra también la primera hora (la de arriba es la última vez)
+                          const p = a.primeraConexionDia, mismoDia = p && new Date(p).toDateString() === new Date(a.ultimaConexion).toDateString();
+                          return mismoDia && new Date(a.ultimaConexion) - new Date(p) >= 10 * 60000
+                            ? `1.º ingreso ${new Date(p).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })} · ${tiempoRelativo(a.ultimaConexion)}`
+                            : tiempoRelativo(a.ultimaConexion);
+                        })()}</span>
                       </span>
                     </button>
                   );
@@ -3923,11 +4011,16 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
           )}
         </div>
         </Seccion>
-        {rankingLargada(alumnosActivos).length > 0 && (
-          <Seccion id="largada" titulo="⚡ Ranking de largada" resumen={`${(rankingLargada(alumnosActivos)[0].mejor / 1000).toFixed(3)} s`} color="#FFC94A">
-            <RankingLargada ranking={rankingLargada(alumnosActivos)} max={10} titulo="" />
-          </Seccion>
-        )}
+        {[["largada", "⚡ Ranking de largada"], ["relevo", "🔄 Ranking de relevo"]].map(([juego, tit]) => {
+          // del mes: arranca de 0 cada mes y arriba queda quién ganó el anterior
+          const r = rankingJuego(alumnosActivos, null, juego), g = ganadorMesPasado(alumnosActivos, null, juego);
+          if (!r.length && !g) return null;
+          return (
+            <Seccion key={juego} id={juego} titulo={`${tit} · ${nombreDeMes(mesDe())}`} resumen={r.length ? `${nombreCorto(r[0].nombre)} · ${r[0].mejor} ms` : "nadie todavía"} color="#FFC94A">
+              <RankingLargada ranking={r} max={10} titulo="" ganador={g} />
+            </Seccion>
+          );
+        })}
         <CuotasDashboard alumnos={alumnosActivos} coachNombre={coachNombre} />
         <ProximosTorneos alumnos={alumnosActivos} />
         <CalendarioCadda alumnos={alumnosActivos} />
@@ -4028,6 +4121,7 @@ function CoachAlumnos({ alumnos, selectedId, setSelectedId, templates, onAsignar
   const [creando, setCreando] = useState(false);
   const [credencialesNuevas, setCredencialesNuevas] = useState(null);
   const [verBajas, setVerBajas] = useState(false);
+  const [buscaAlumno, setBuscaAlumno] = useState("");
   const [filtroGrupo, setFiltroGrupo] = useState("todos"); // "todos" | id de plantelGrupo | "sin-grupo"
   const [editandoGrupos, setEditandoGrupos] = useState(false);
   const [gestionandoMiembrosDe, setGestionandoMiembrosDe] = useState(null);
@@ -4043,11 +4137,12 @@ function CoachAlumnos({ alumnos, selectedId, setSelectedId, templates, onAsignar
       if (b.ultimoAcceso) return 1;
       return 0; // entre los nunca tocados, se respeta el orden original
     });
-    const activos = filtroGrupo === "todos" ? activosTodos : filtroGrupo === "sin-grupo" ? activosTodos.filter((a) => !a.plantelGrupoId) : activosTodos.filter((a) => a.plantelGrupoId === filtroGrupo);
+    const buscando = !!buscaAlumno.trim();
+    const activos = buscando ? activosTodos.filter((a) => coincideNombre(a, buscaAlumno)) : filtroGrupo === "todos" ? activosTodos : filtroGrupo === "sin-grupo" ? activosTodos.filter((a) => !a.plantelGrupoId) : activosTodos.filter((a) => a.plantelGrupoId === filtroGrupo);
     const bajas = alumnos.filter((a) => a.activo === false);
     // Si no hay ningún filtro puntual elegido, agrupamos visualmente por subgrupo (con encabezado
     // de sección); si hay un filtro elegido, mostramos la lista plana de ese grupo nomás.
-    const seccionesAgrupadas = plantelGrupos.length === 0 ? [{ id: "todos", nombre: null, items: activos }]
+    const seccionesAgrupadas = buscando ? [{ id: "busqueda", nombre: null, items: activos }] : plantelGrupos.length === 0 ? [{ id: "todos", nombre: null, items: activos }]
       : filtroGrupo === "todos"
       ? [...plantelGrupos.map((g) => ({ id: g.id, nombre: g.nombre, items: activos.filter((a) => a.plantelGrupoId === g.id) })), { id: "sin-grupo", nombre: "Sin grupo asignado", items: activos.filter((a) => !a.plantelGrupoId) }].filter((s) => s.items.length > 0)
       : [{ id: filtroGrupo, nombre: null, items: activos }];
@@ -4055,15 +4150,17 @@ function CoachAlumnos({ alumnos, selectedId, setSelectedId, templates, onAsignar
       <div>
         <TopBar title="Alumnos/as" subtitle={`${activosTodos.length} en tu plantel`} />
         <div style={{ padding: "0 20px", display: "flex", flexDirection: "column", gap: 10 }}>
+          <CampoBuscarAlumno valor={buscaAlumno} onChange={setBuscaAlumno} />
+          {buscando && activos.length === 0 && <div className="font-body" style={{ color: "#8B8698", fontSize: 12 }}>No hay nadie con "{buscaAlumno.trim()}" en el plantel activo.</div>}
           {plantelGrupos.length > 0 && (
             <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>
               <Pill active={filtroGrupo === "todos"} onClick={() => setFiltroGrupo("todos")}>Todos</Pill>
               {plantelGrupos.map((g) => <Pill key={g.id} active={filtroGrupo === g.id} onClick={() => setFiltroGrupo(g.id)} activeColor="#7DD6C0">{g.nombre}</Pill>)}
-              <Pill active={editandoGrupos} onClick={() => setEditandoGrupos(!editandoGrupos)}>⚙️ Editar grupos</Pill>
+              <Pill active={editandoGrupos} onClick={() => setEditandoGrupos(!editandoGrupos)}>👥 Editar subgrupos</Pill>
             </div>
           )}
           {plantelGrupos.length === 0 && (
-            <button onClick={() => setEditandoGrupos(!editandoGrupos)} className="font-body" style={{ background: "none", border: "1px dashed #322E3D", borderRadius: 10, color: "#8B8698", fontWeight: 700, fontSize: 11, padding: 8, cursor: "pointer" }}>⚙️ Armar subgrupos (ej: Plantel A, Sub-18)</button>
+            <button onClick={() => setEditandoGrupos(!editandoGrupos)} className="font-body" style={{ background: "rgba(125,214,192,0.08)", border: "1px dashed #7DD6C0", borderRadius: 10, color: "#7DD6C0", fontWeight: 700, fontSize: 13, padding: 11, cursor: "pointer" }}>👥 Subgrupos: armar grupos (ej: Plantel A, Sub-18)</button>
           )}
           {editandoGrupos && (
             <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 12, padding: 12 }}>
@@ -4445,7 +4542,7 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
           )}
           {copiandoPlan && (
             <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 10 }}>
-              <div className="font-body" style={{ color: "#8B8698", fontSize: 10, marginBottom: 6 }}>Elegí a quién copiarle este plan (reemplaza el suyo):</div>
+              <div className="font-body" style={{ color: "#8B8698", fontSize: 10, marginBottom: 6 }}>Elegí a quién copiarle este plan. Va solo la planificación (sus RM no se tocan) y su plan anterior queda en sus versiones guardadas:</div>
               {alumnos.filter((a) => a.id !== alumno.id).length === 0 && <div className="font-body" style={{ color: "#8B8698", fontSize: 11 }}>No hay otros/as alumnos/as todavía.</div>}
               {alumnos.filter((a) => a.id !== alumno.id).map((a) => (
                 <button key={a.id} onClick={() => { onCopiarPlan(alumno.id, a.id); setCopiandoPlan(false); }} className="font-body" style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, padding: 8, cursor: "pointer", textAlign: "left", marginBottom: 4 }}>
@@ -4497,7 +4594,7 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
                 <span>🗓️ Versiones guardadas ({alumno.historialPlanes.length})</span><span>{verVersionesGuardadas ? "▲" : "▼"}</span>
               </button>
               {verVersionesGuardadas && (<>
-              <div className="font-body" style={{ fontSize: 9, color: "#6B6678", margin: "8px 0" }}>Tocá el nombre para ver esa versión. "Restaurar" reemplaza el plan actual por esa versión.</div>
+              <div className="font-body" style={{ fontSize: 9, color: "#6B6678", margin: "8px 0" }}>Tocá el nombre para ver esa versión. "Restaurar" reemplaza el plan actual por esa versión, "👥 Pasar" se la copia a otra persona y 📤 la comparte (PDF o WhatsApp).</div>
               {alumno.historialPlanes.map((v) => (
                 <div key={v.id} style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: 8, marginBottom: 6 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -4506,12 +4603,13 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
                       <div style={{ color: "#8B8698", fontSize: 9 }}>Guardado el {mostrarFecha(v.fecha)}</div>
                     </button>
                     <button onClick={() => onRestaurarVersion(alumno.id, v.id)} className="font-body" style={{ background: "#FF6B35", border: "none", borderRadius: 6, color: "#121017", fontWeight: 700, fontSize: 10, padding: "6px 10px", cursor: "pointer" }}>Restaurar</button>
-                    <button onClick={() => setPasandoVersion(pasandoVersion === v.id ? null : v.id)} className="font-body" style={{ background: "none", border: "1px solid #5AA0E6", borderRadius: 6, color: "#5AA0E6", fontWeight: 700, fontSize: 10, padding: "6px 10px", cursor: "pointer" }}>📤 Pasar</button>
+                    <button onClick={() => setPasandoVersion(pasandoVersion === v.id ? null : v.id)} className="font-body" style={{ background: "none", border: "1px solid #5AA0E6", borderRadius: 6, color: "#5AA0E6", fontWeight: 700, fontSize: 10, padding: "6px 10px", cursor: "pointer" }}>👥 Pasar</button>
+                    <button onClick={() => compartirPlan({ ...alumno, plan: v.plan })} title="Compartir esta versión (PDF / WhatsApp)" className="font-body" style={{ background: "none", border: "1px solid #7DD6C0", borderRadius: 6, color: "#7DD6C0", fontWeight: 700, fontSize: 10, padding: "6px 8px", cursor: "pointer" }}>📤</button>
                     <button onClick={() => { if (window.confirm(`¿Eliminar la versión "${v.nombre}"? Esta acción no se puede deshacer.`)) { onEliminarVersion(alumno.id, v.id); if (viendoVersion === v.id) setViendoVersion(null); } }} style={{ background: "none", border: "none", color: "#E85D5D", fontSize: 14, cursor: "pointer", padding: "0 2px", flexShrink: 0 }}>✕</button>
                   </div>
                   {pasandoVersion === v.id && (
                     <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #322E3D" }}>
-                      <div className="font-body" style={{ color: "#8B8698", fontSize: 10, marginBottom: 6 }}>¿A quién le pasás "{v.nombre}"? (le reemplaza el plan actual a esa persona)</div>
+                      <div className="font-body" style={{ color: "#8B8698", fontSize: 10, marginBottom: 6 }}>¿A quién le pasás "{v.nombre}"? (le reemplaza el plan actual; el que tenía queda en sus versiones guardadas y sus RM no se tocan)</div>
                       {alumnos.filter((a) => a.id !== alumno.id).length === 0 && <div className="font-body" style={{ color: "#8B8698", fontSize: 11 }}>No hay otros/as alumnos/as todavía.</div>}
                       {alumnos.filter((a) => a.id !== alumno.id).map((a) => (
                         <button key={a.id} onClick={() => { onCopiarVersionAOtro(v.plan, a.id); setPasandoVersion(null); }} className="font-body" style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, padding: 8, cursor: "pointer", textAlign: "left", marginBottom: 4 }}>
@@ -5385,18 +5483,47 @@ function EscenaLargada({ largaron }) {
   );
 }
 
-// Ranking de Largada: mejor tiempo de reacción de cada uno. El "equipo" de un alumno/a es su
-// subgrupo del plantel si tiene uno; si no, todo el plantel activo.
-function rankingLargada(alumnos, alumno) {
+// Rankings de los juegos (Largada y Relevo): son del mes. Cada mes arranca de 0 y el mejor del mes
+// anterior queda como ganador/a. El "equipo" de un alumno/a es su subgrupo del plantel si tiene uno;
+// si no, todo el plantel activo. En Relevo cuenta lo cerca del toque (sin signo).
+const mesDe = (fecha) => { const d = fecha ? new Date(fecha) : new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
+const mesAnteriorDe = (mes) => { const [y, m] = mes.split("-").map(Number); return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`; };
+const nombreDeMes = (mes) => { const [y, m] = mes.split("-").map(Number); return new Date(y, m - 1, 15).toLocaleDateString("es-AR", { month: "long" }); };
+function mejorDelMes(a, juego, mes) {
+  const lista = juego === "relevo" ? a.relevos : a.reacciones;
+  const vals = (lista || []).filter((r) => r && typeof r.ms === "number" && mesDe(r.f) === mes).map((r) => (juego === "relevo" ? Math.abs(r.ms) : r.ms));
+  const g = a.mejoresMes && a.mejoresMes[`${juego}:${mes}`];
+  if (typeof g === "number") vals.push(g);
+  return vals.length ? Math.min(...vals) : null;
+}
+function rankingJuego(alumnos, alumno, juego, mes = mesDe()) {
   const equipo = (alumnos || []).filter((a) => a.activo !== false && (!alumno?.plantelGrupoId || a.plantelGrupoId === alumno.plantelGrupoId));
   return equipo
-    .map((a) => { const rs = (a.reacciones || []).map((r) => r.ms).filter((x) => typeof x === "number"); return rs.length ? { id: a.id, nombre: a.nombre, mejor: Math.min(...rs), intentos: rs.length } : null; })
+    .map((a) => { const mejor = mejorDelMes(a, juego, mes); return mejor === null ? null : { id: a.id, nombre: a.nombre, mejor }; })
     .filter(Boolean)
     .sort((x, y) => x.mejor - y.mejor);
 }
+const rankingLargada = (alumnos, alumno) => rankingJuego(alumnos, alumno, "largada");
+// Ganador/a del mes pasado (null si nadie jugó).
+function ganadorMesPasado(alumnos, alumno, juego) {
+  const mes = mesAnteriorDe(mesDe());
+  const r = rankingJuego(alumnos, alumno, juego, mes)[0];
+  return r ? { ...r, mes } : null;
+}
+// Al guardar un intento: la lista (últimos 30) y la mejor marca del mes.
+function guardarIntentoJuego(a, juego, ms) {
+  const campo = juego === "relevo" ? "relevos" : "reacciones";
+  const mes = mesDe(), clave = `${juego}:${mes}`, v = juego === "relevo" ? Math.abs(ms) : ms;
+  const prev = a.mejoresMes && a.mejoresMes[clave];
+  return {
+    [campo]: [...(a[campo] || []), { f: new Date().toISOString(), ms }].slice(-30),
+    mejoresMes: { ...(a.mejoresMes || {}), [clave]: typeof prev === "number" ? Math.min(prev, v) : v },
+  };
+}
 function nombreCorto(n) { const p = String(n || "").trim().split(/\s+/); return p.length > 1 ? `${p[0]} ${p[p.length - 1][0]}.` : p[0] || "—"; }
-function RankingLargada({ ranking, yoId, max = 5, titulo = "🏆 RANKING DEL EQUIPO" }) {
-  if (!ranking || ranking.length === 0) return null;
+function RankingLargada({ ranking, yoId, max = 5, titulo = `🏆 RANKING DE ${nombreDeMes(mesDe()).toUpperCase()}`, ganador = null }) {
+  if ((!ranking || ranking.length === 0) && !ganador) return null;
+  ranking = ranking || [];
   const pos = ranking.findIndex((r) => r.id === yoId);
   const filas = ranking.slice(0, max);
   const medalla = (i) => (i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}`);
@@ -5412,15 +5539,18 @@ function RankingLargada({ ranking, yoId, max = 5, titulo = "🏆 RANKING DEL EQU
   };
   return (
     <div style={{ width: "100%", maxWidth: yoId ? 320 : "none", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 12, padding: 10, boxSizing: "border-box" }}>
+      {ganador && <div className="font-body" style={{ fontSize: 11.5, color: "#FFC94A", fontWeight: 700, padding: "6px 8px", marginBottom: 6, borderRadius: 8, background: "rgba(255,201,74,0.10)", textAlign: "left" }}>👑 Ganó {nombreDeMes(ganador.mes)}: {ganador.id === yoId ? "¡Vos!" : nombreCorto(ganador.nombre)} · {ganador.mejor} ms</div>}
       {titulo && <div className="font-body" style={{ fontSize: 10, color: "#FF6B35", fontWeight: 700, marginBottom: 4, textAlign: "left", letterSpacing: "0.04em" }}>{titulo}</div>}
+      {ranking.length === 0 && <div className="font-body" style={{ color: "#8B8698", fontSize: 10.5, padding: "4px 8px", textAlign: "left" }}>Este mes todavía nadie jugó: el ranking arrancó de 0.</div>}
       {filas.map(fila)}
       {pos >= max && (<><div className="font-body" style={{ color: "#6B6678", fontSize: 10, textAlign: "center" }}>⋯</div>{fila(ranking[pos], pos)}</>)}
-      {yoId && pos === -1 && <div className="font-body" style={{ color: "#8B8698", fontSize: 10.5, padding: "4px 8px", textAlign: "left" }}>Hacé tu primera largada para entrar al ranking.</div>}
+      {yoId && pos === -1 && ranking.length > 0 && <div className="font-body" style={{ color: "#8B8698", fontSize: 10.5, padding: "4px 8px", textAlign: "left" }}>Jugá este mes para entrar al ranking.</div>}
+      <div className="font-body" style={{ color: "#6B6678", fontSize: 9.5, padding: "4px 8px 0", textAlign: "left" }}>El ranking vuelve a 0 el 1.º de cada mes.</div>
     </div>
   );
 }
 
-function JuegoLargada({ reacciones, onGuardar, onClose, ranking, yoId }) {
+function JuegoLargada({ reacciones, onGuardar, onClose, ranking, yoId, ganador }) {
   const [fase, setFase] = useState("listo"); // listo → marcas → ya → resultado | falsa
   const faseRef = useRef("listo");
   const [ms, setMs] = useState(null);
@@ -5468,7 +5598,8 @@ function JuegoLargada({ reacciones, onGuardar, onClose, ranking, yoId }) {
       limpiar();
       const r = Math.round(dt);
       setMs(r);
-      if (r < 100) { cambiarFase("falsa"); return; } // menos de 100 ms = anticipación, igual que en natación
+      // Todo toque después del pitido cuenta (antes se descartaba lo de menos de 100 ms, como en atletismo,
+      // y los tiempos muy rápidos no se guardaban). Salida en falso es solo tocar antes del pitido.
       setEsRecord(mejor === null || r < mejor);
       setIntentos((p) => [...p, r].slice(-5));
       onGuardar(r);
@@ -5492,8 +5623,7 @@ function JuegoLargada({ reacciones, onGuardar, onClose, ranking, yoId }) {
         <div className="font-body" style={{ color: "#8B8698", fontSize: 14, lineHeight: 1.5, maxWidth: 300, margin: "16px 0 18px" }}>Tocá <b style={{ color: "#F4F1EA" }}>Empezar</b> y esperá. Cuando suene el pitido y los nadadores se tiren al agua, tocá lo más rápido que puedas. Si tocás antes, es salida en falso. Subí el volumen.</div>
         {mejor !== null && <div className="font-display" style={{ fontSize: 15, color: "#FFC94A", marginBottom: 14 }}>🏆 Tu mejor tiempo: {mejor} ms</div>}
         <button onClick={empezar} className="font-display" style={btn("#FF6B35", "#121017")}>EMPEZAR</button>
-        {ranking && ranking.length > 0 && <div style={{ marginTop: 18, width: "100%", display: "flex", justifyContent: "center" }}><RankingLargada ranking={ranking} yoId={yoId} /></div>}
-        <div className="font-body" style={{ color: "#6B6678", fontSize: 10, marginTop: 16, maxWidth: 280 }}>Menos de 100 ms cuenta como anticipación, igual que en una largada de natación.</div>
+        {(ranking?.length > 0 || ganador) && <div style={{ marginTop: 18, width: "100%", display: "flex", justifyContent: "center" }}><RankingLargada ranking={ranking} yoId={yoId} ganador={ganador} /></div>}
       </>)}
       {(fase === "marcas" || fase === "ya") && (<>
         <div className="font-display" style={{ fontSize: fase === "ya" ? 64 : 36, fontWeight: 700, lineHeight: 1, color: fase === "ya" ? "#0B2A2E" : "#FFC94A", minHeight: 64, display: "flex", alignItems: "center" }}>{fase === "ya" ? "¡YA!" : "A SUS MARCAS…"}</div>
@@ -5522,8 +5652,137 @@ function JuegoLargada({ reacciones, onGuardar, onClose, ranking, yoId }) {
   ), document.body);
 }
 
-function AthleteInicio({ alumno, goEntrenar, onCheckin, onUpdateFoto, onMarcarAvisoVisto, onGuardarReaccion, rankingReaccion }) {
+// ---------- Relevo: juego de anticipación (activación neuromuscular) ----------
+// Como en una posta: el compañero llega nadando a la pared y hay que salir justo cuando toca. No hay
+// pitido: se calcula a ojo cuándo va a tocar (cada vez llega a otra velocidad y frena o acelera distinto).
+// Se mide cuánto después del toque saliste. Antes del toque es descalificación (el reglamento tolera
+// −0,03 s por el sistema de cronometraje electrónico).
+const TOLERANCIA_RELEVO = 30;
+function EscenaRelevo({ x, brazada, salio, toco }) {
+  // x: 0 = lejos, 1 = la mano en la pared
+  const pared = 268, xi = 18 + (pared - 30 - 18) * x;
+  const brazoA = Math.sin(brazada) * 9, brazoB = -brazoA;
+  return (
+    <svg viewBox="0 0 300 120" style={{ width: "100%", maxWidth: 420, display: "block", borderRadius: 16, background: "#0E3B4F", border: "1px solid #322E3D" }} aria-hidden="true">
+      <rect x="0" y="0" width="300" height="12" fill="#14121B" />
+      <rect x="0" y="108" width="300" height="12" fill="#14121B" />
+      {[12, 108].map((y) => <line key={y} x1="0" y1={y} x2={pared} y2={y} stroke="#FFC94A" strokeWidth="3" strokeDasharray="6 4" />)}
+      <line x1="0" y1="60" x2={pared - 22} y2="60" stroke="#123F55" strokeWidth="6" />
+      <rect x={pared - 22} y="52" width="4" height="16" fill="#123F55" />
+      <rect x={pared} y="0" width="32" height="120" fill={toco ? "#33D6A6" : "#2A2733"} style={{ transition: "fill 0.15s" }} />
+      <rect x={pared + 6} y="38" width="22" height="44" rx="3" fill="#4A4558" />
+      {/* el que sale, en el partidor (de arriba); al salir se tira por encima */}
+      <g style={{ transform: `translateX(${salio ? -70 : 0}px)`, transition: "transform 0.35s ease-out" }}>
+        <ellipse cx={pared + 17} cy="60" rx="10" ry="7" fill="#E9B48F" opacity={salio ? 0.9 : 1} />
+        <circle cx={pared + (salio ? 4 : 9)} cy="60" r="5.5" fill="#FF6B35" />
+      </g>
+      {/* el que llega nadando crol */}
+      <g>
+        <ellipse cx={xi - 8} cy="60" rx="15" ry="6.5" fill="#E9B48F" />
+        <path d={`M${xi - 4} ${54} L${xi + 10 + brazoA} ${44}`} stroke="#E9B48F" strokeWidth="4" strokeLinecap="round" />
+        <path d={`M${xi - 4} ${66} L${xi + 10 + brazoB} ${76}`} stroke="#E9B48F" strokeWidth="4" strokeLinecap="round" />
+        <circle cx={xi + 9} cy="60" r="5.5" fill="#7DD6C0" />
+        {x < 1 && <path d={`M${xi - 26} 56 q-6 4 0 8`} stroke="#9FD6E8" strokeWidth="2" fill="none" opacity="0.7" />}
+      </g>
+    </svg>
+  );
+}
+
+function JuegoRelevo({ relevos, onGuardar, onClose, ranking, yoId, ganador }) {
+  const [fase, setFase] = useState("listo"); // listo → nadando → resultado | dq
+  const faseRef = useRef("listo");
+  const [ms, setMs] = useState(null);
+  const [intentos, setIntentos] = useState([]);
+  const [esRecord, setEsRecord] = useState(false);
+  const [pos, setPos] = useState({ x: 0, b: 0, toco: false });
+  const [salio, setSalio] = useState(false);
+  const raf = useRef(null), carrera = useRef(null);
+  const todos = (relevos || []).map((r) => Math.abs(r.ms));
+  const mejor = todos.length ? Math.min(...todos) : null;
+  const cambiarFase = (f) => { faseRef.current = f; setFase(f); };
+  const limpiar = () => cancelAnimationFrame(raf.current);
+  useEffect(() => () => limpiar(), []);
+
+  const empezar = () => {
+    limpiar(); setMs(null); setEsRecord(false); setSalio(false);
+    // cada llegada distinta: entre 2,2 y 3,8 s, frenando o acelerando un poco al final
+    const T = 2200 + Math.random() * 1600, k = -0.3 + Math.random() * 0.7;
+    const t0 = performance.now() + 500;
+    carrera.current = { t0, T, toque: t0 + T };
+    cambiarFase("nadando");
+    const tick = () => {
+      const now = performance.now(), u = Math.max(0, Math.min(1, (now - t0) / T));
+      const x = (1 - k) * u + k * (1 - (1 - u) * (1 - u));
+      setPos({ x, b: (now - t0) / 140, toco: u >= 1 });
+      if (now > t0 + T + 1500 && faseRef.current === "nadando") { terminar(Math.round(now - (t0 + T))); return; }
+      raf.current = requestAnimationFrame(tick);
+    };
+    raf.current = requestAnimationFrame(tick);
+  };
+  const terminar = (dt) => {
+    limpiar();
+    setMs(dt);
+    if (dt < -TOLERANCIA_RELEVO) { cambiarFase("dq"); return; }
+    setSalio(true);
+    setEsRecord(mejor === null || Math.abs(dt) < mejor);
+    setIntentos((p) => [...p, dt].slice(-5));
+    onGuardar(dt);
+    cambiarFase("resultado");
+  };
+  const toque = () => {
+    if (faseRef.current !== "nadando" || !carrera.current) return;
+    if (navigator.vibrate) navigator.vibrate(30);
+    terminar(Math.round(performance.now() - carrera.current.toque));
+  };
+  const nivel = (r) => { const a = Math.abs(r); return a <= 30 ? "¡Relevo perfecto!" : a <= 100 ? "Muy bueno" : a <= 200 ? "Bien" : "Tarde: anticipá más el toque"; };
+  const btn = (bg, color) => ({ background: bg, color, border: "none", borderRadius: 14, fontWeight: 700, fontSize: 16, padding: "14px 28px", cursor: "pointer", minWidth: 200 });
+  const fmt = (r) => `${r > 0 ? "+" : ""}${r} ms`;
+
+  return createPortal((
+    <div onPointerDown={toque} style={{ position: "fixed", inset: 0, zIndex: 700, background: fase === "dq" ? "#E85D5D" : "#121017", color: fase === "dq" ? "#0B2A2E" : "#F4F1EA", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: 24, touchAction: "manipulation", userSelect: "none", WebkitUserSelect: "none", overflowY: "auto" }}>
+      {fase !== "nadando" && (
+        <button onClick={() => { limpiar(); onClose(); }} className="font-body" style={{ position: "absolute", top: "calc(14px + env(safe-area-inset-top, 0px))", right: 16, background: "rgba(255,255,255,0.12)", border: "none", borderRadius: 999, color: "inherit", width: 36, height: 36, fontSize: 16, cursor: "pointer" }}>✕</button>
+      )}
+      {fase === "listo" && (<>
+        <div style={{ fontSize: 54 }}>🔄</div>
+        <div className="font-display" style={{ fontSize: 32, fontWeight: 700, marginTop: 6 }}>RELEVO</div>
+        <div className="font-body" style={{ color: "#7DD6C0", fontSize: 13, fontWeight: 700, marginTop: 2 }}>Anticipación · activación neuromuscular</div>
+        <div className="font-body" style={{ color: "#8B8698", fontSize: 14, lineHeight: 1.5, maxWidth: 310, margin: "16px 0 18px" }}>Tu compañero llega nadando a la pared. Tocá la pantalla para salir <b style={{ color: "#F4F1EA" }}>justo cuando toca</b>. No hay pitido: tenés que calcularlo. Si salís antes, te descalifican.</div>
+        {mejor !== null && <div className="font-display" style={{ fontSize: 15, color: "#FFC94A", marginBottom: 14 }}>🏆 Tu mejor relevo: {mejor} ms del toque</div>}
+        <button onClick={(e) => { e.stopPropagation(); empezar(); }} className="font-display" style={btn("#FF6B35", "#121017")}>EMPEZAR</button>
+        {(ranking?.length > 0 || ganador) && <div style={{ marginTop: 18, width: "100%", display: "flex", justifyContent: "center" }}><RankingLargada ranking={ranking} yoId={yoId} ganador={ganador} /></div>}
+      </>)}
+      {fase === "nadando" && (<>
+        <div className="font-display" style={{ fontSize: 30, fontWeight: 700, color: pos.toco ? "#33D6A6" : "#FFC94A", minHeight: 40 }}>{pos.toco ? "¡TOCÓ!" : "PREPARATE…"}</div>
+        <div style={{ width: "100%", maxWidth: 420, margin: "14px 0" }}><EscenaRelevo x={pos.x} brazada={pos.b} salio={salio} toco={pos.toco} /></div>
+        <div className="font-body" style={{ color: "#8B8698", fontSize: 14 }}>Tocá en cualquier parte de la pantalla para salir.</div>
+      </>)}
+      {fase === "resultado" && (<>
+        <div style={{ width: "100%", maxWidth: 420, marginBottom: 14 }}><EscenaRelevo x={1} brazada={0} salio toco /></div>
+        {esRecord && <div className="font-display" style={{ color: "#FFC94A", fontSize: 18, marginBottom: 6 }}>🏆 ¡TU MEJOR RELEVO!</div>}
+        <div className="font-display" style={{ fontSize: 64, fontWeight: 700, color: "#7DD6C0", lineHeight: 1 }}>{fmt(ms)}</div>
+        <div className="font-body" style={{ color: "#8B8698", fontSize: 12, marginTop: 4 }}>{ms >= 0 ? "después del toque" : "antes del toque (dentro de la tolerancia de 0,03 s)"}</div>
+        <div className="font-display" style={{ fontSize: 22, marginTop: 8 }}>{nivel(ms)}</div>
+        {intentos.length > 1 && <div className="font-body" style={{ color: "#8B8698", fontSize: 12, marginTop: 14 }}>Esta sesión: {intentos.map(fmt).join(" · ")}</div>}
+        {ranking && ranking.length > 0 && <div style={{ marginTop: 16, width: "100%", display: "flex", justifyContent: "center" }}><RankingLargada ranking={ranking} yoId={yoId} max={3} /></div>}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 18 }}>
+          <button onClick={(e) => { e.stopPropagation(); empezar(); }} className="font-display" style={btn("#FF6B35", "#121017")}>OTRA VEZ</button>
+          <button onClick={() => { limpiar(); onClose(); }} className="font-body" style={btn("#26232F", "#F4F1EA")}>Terminar</button>
+        </div>
+      </>)}
+      {fase === "dq" && (<>
+        <div className="font-display" style={{ fontSize: 38, fontWeight: 700 }}>¡DESCALIFICADO!</div>
+        <div className="font-body" style={{ fontSize: 14, marginTop: 10, maxWidth: 280, lineHeight: 1.45 }}>Saliste {Math.abs(ms)} ms antes de que tu compañero tocara la pared. Esperá el toque.</div>
+        <button onClick={(e) => { e.stopPropagation(); empezar(); }} className="font-display" style={{ ...btn("#121017", "#F4F1EA"), marginTop: 26 }}>OTRA VEZ</button>
+      </>)}
+    </div>
+  ), document.body);
+}
+
+function AthleteInicio({ alumno, goEntrenar, onCheckin, onUpdateFoto, onMarcarAvisoVisto, onGuardarReaccion, rankingReaccion, ganadorReaccion, onGuardarRelevo, rankingRelevo, ganadorRelevo }) {
   const [juego, setJuego] = useState(false);
+  const [relevo, setRelevo] = useState(false);
+  const [menuJuegos, setMenuJuegos] = useState(false);
   const [vivo, setVivo] = useState(false);
   const primerDia = alumno.plan.dias[0];
   const total = flatEjercicios(primerDia).length;
@@ -5581,24 +5840,50 @@ function AthleteInicio({ alumno, goEntrenar, onCheckin, onUpdateFoto, onMarcarAv
           <StatMini label="Objetivo" value={alumno.plan.meta.objetivo?.split(" ")[0] || "—"} />
         </div>
 
-        {onGuardarReaccion && (
-          <button onClick={() => setJuego(true)} className="font-body" style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, background: "linear-gradient(135deg, rgba(255,107,53,0.14), rgba(125,214,192,0.10))", border: "1px solid #FF6B35", borderRadius: 14, padding: "12px 16px", marginBottom: 14, cursor: "pointer", textAlign: "left" }}>
-            <span style={{ fontSize: 28 }}>⚡</span>
+        {/* Juegos de activación: una sola tarjeta; adentro se elige Largada o Relevo */}
+        {(onGuardarReaccion || onGuardarRelevo) && (
+          <button onClick={() => setMenuJuegos(true)} className="font-body" style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, background: "linear-gradient(135deg, rgba(255,107,53,0.14), rgba(125,214,192,0.10))", border: "1px solid #FF6B35", borderRadius: 14, padding: "12px 16px", marginBottom: 14, cursor: "pointer", textAlign: "left" }}>
+            <span style={{ fontSize: 28 }}>🎮</span>
             <span style={{ flex: 1 }}>
-              <span className="font-display" style={{ display: "block", color: "#F4F1EA", fontSize: 16, fontWeight: 700 }}>LARGADA · activación</span>
-              <span style={{ display: "block", color: "#8B8698", fontSize: 11, marginTop: 2 }}>Probá tu reacción con sonido y cronómetro{(alumno.reacciones || []).length ? ` · mejor ${Math.min(...alumno.reacciones.map((r) => r.ms))} ms` : ""}</span>
+              <span className="font-display" style={{ display: "block", color: "#F4F1EA", fontSize: 16, fontWeight: 700 }}>JUEGOS DE ACTIVACIÓN</span>
+              <span style={{ display: "block", color: "#8B8698", fontSize: 11, marginTop: 2 }}>Largada (reacción) y Relevo (anticipación) · ranking del mes</span>
             </span>
             <span style={{ color: "#FF6B35", fontSize: 18 }}>▶</span>
           </button>
         )}
-        {juego && <JuegoLargada reacciones={alumno.reacciones} onGuardar={onGuardarReaccion} onClose={() => setJuego(false)} ranking={rankingReaccion} yoId={alumno.id} />}
+        {menuJuegos && createPortal((
+          <div onClick={() => setMenuJuegos(false)} style={{ position: "fixed", inset: 0, zIndex: 690, background: "rgba(10,9,14,0.88)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+            <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 380, background: "#121017", border: "1px solid #322E3D", borderRadius: 18, padding: 18, boxSizing: "border-box" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                <span className="font-display" style={{ color: "#F4F1EA", fontSize: 20, fontWeight: 700 }}>🎮 Juegos de activación</span>
+                <button onClick={() => setMenuJuegos(false)} className="font-body" style={{ background: "#26232F", border: "none", borderRadius: 999, color: "#F4F1EA", width: 32, height: 32, fontSize: 14, cursor: "pointer" }}>✕</button>
+              </div>
+              {[
+                onGuardarReaccion && { id: "largada", icono: "⚡", titulo: "LARGADA", sub: "Reacción: salí con el pitido", color: "#FF6B35", mejor: (alumno.reacciones || []).length ? Math.min(...alumno.reacciones.map((r) => r.ms)) : null, ganador: ganadorReaccion, abrir: () => setJuego(true) },
+                onGuardarRelevo && { id: "relevo", icono: "🔄", titulo: "RELEVO", sub: "Anticipación: salí justo cuando toca la pared", color: "#7DD6C0", mejor: (alumno.relevos || []).length ? Math.min(...alumno.relevos.map((r) => Math.abs(r.ms))) : null, ganador: ganadorRelevo, abrir: () => setRelevo(true) },
+              ].filter(Boolean).map((j) => (
+                <button key={j.id} onClick={() => { setMenuJuegos(false); j.abrir(); }} className="font-body" style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, background: "#1C1A24", border: `1px solid ${j.color}`, borderRadius: 14, padding: "14px 16px", marginBottom: 10, cursor: "pointer", textAlign: "left" }}>
+                  <span style={{ fontSize: 30 }}>{j.icono}</span>
+                  <span style={{ flex: 1 }}>
+                    <span className="font-display" style={{ display: "block", color: "#F4F1EA", fontSize: 17, fontWeight: 700 }}>{j.titulo}</span>
+                    <span style={{ display: "block", color: "#8B8698", fontSize: 11, marginTop: 2 }}>{j.sub}{j.mejor !== null ? ` · tu mejor ${j.mejor} ms` : ""}</span>
+                    {j.ganador && <span style={{ display: "block", color: "#FFC94A", fontSize: 10.5, fontWeight: 700, marginTop: 2 }}>👑 Ganó {nombreDeMes(j.ganador.mes)}: {j.ganador.id === alumno.id ? "¡vos!" : nombreCorto(j.ganador.nombre)}</span>}
+                  </span>
+                  <span style={{ color: j.color, fontSize: 18 }}>▶</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ), document.body)}
+        {juego && <JuegoLargada reacciones={alumno.reacciones} onGuardar={onGuardarReaccion} onClose={() => setJuego(false)} ranking={rankingReaccion} yoId={alumno.id} ganador={ganadorReaccion} />}
+        {relevo && <JuegoRelevo relevos={alumno.relevos} onGuardar={onGuardarRelevo} onClose={() => setRelevo(false)} ranking={rankingRelevo} yoId={alumno.id} ganador={ganadorRelevo} />}
 
         {/* La pantalla del deportista de Biomecánica Gym: el/la entrenador/a filma y acá se ve cada repetición */}
         <button onClick={() => setVivo(true)} className="font-body" style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 14, padding: "12px 16px", marginBottom: 14, cursor: "pointer", textAlign: "left" }}>
           <span style={{ fontSize: 28 }}>📡</span>
           <span style={{ flex: 1 }}>
-            <span className="font-display" style={{ display: "block", color: "#F4F1EA", fontSize: 16, fontWeight: 700 }}>VER MI SERIE EN VIVO</span>
-            <span style={{ display: "block", color: "#8B8698", fontSize: 11, marginTop: 2 }}>Poné el código que te muestra tu entrenador/a y mirá la velocidad de cada repetición</span>
+            <span className="font-display" style={{ display: "block", color: "#F4F1EA", fontSize: 16, fontWeight: 700 }}>BIOMECÁNICA EN VIVO</span>
+            <span style={{ display: "block", color: "#8B8698", fontSize: 11, marginTop: 2 }}>Velocidad de barra de cada repetición, en tiempo real · con el código de tu entrenador/a</span>
           </span>
           <span style={{ color: "#FF6B35", fontSize: 18 }}>▶</span>
         </button>
@@ -5741,6 +6026,10 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
   const activeEsBusqueda = activeVideo.includes("youtube.com/results");
   const pesosSug = pesosSugeridos(rmPesos, activePE.nombre, rmDeSemana(activePE, semana));
   const pesosAprox = pesosSug ? null : pesosAproxPorRIR(rmPesos, activePE.nombre, rmDeSemana(activePE, semana), objetivo);
+  // si hoy le midieron la velocidad de barra en este ejercicio, la carga sale del RM de hoy
+  const rmHoy = activePE.tipo === "tabata" ? null : buscarRMBase(rmsDelDiaBio(alumno), activePE.nombre);
+  const pctsHoy = extraerPorcentajes(rmDeSemana(activePE, semana));
+  const pesosHoy = rmHoy && pctsHoy.length ? pctsHoy.map((pct) => Math.round(((rmHoy * pct) / 100) * 2) / 2) : null;
 
   return (
     <div>
@@ -5886,6 +6175,15 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
                   <div style={{ background: "rgba(125,214,192,0.12)", border: "1px solid #7DD6C0", borderRadius: 12, padding: "10px 14px" }}>
                     <div className="font-body" style={{ color: "#7DD6C0", fontSize: 10, fontWeight: 700 }}>{pesosSug.length > 1 ? "PESOS A USAR" : "PESO A USAR"} ({rmDeSemana(activePE, semana)})</div>
                     <div className="font-display" style={{ color: "#F4F1EA", fontSize: 20, fontWeight: 700 }}>{pesosSug.map((p) => `${p}kg`).join(" / ")}</div>
+                  </div>
+                )}
+                {rmHoy && (
+                  <div style={{ background: "rgba(255,107,53,0.10)", border: "1px solid #FF6B35", borderRadius: 12, padding: "10px 14px" }}>
+                    <div className="font-body" style={{ color: "#FF6B35", fontSize: 10, fontWeight: 700 }}>⚡ HOY, SEGÚN TU VELOCIDAD DE BARRA</div>
+                    {pesosHoy
+                      ? <div className="font-display" style={{ color: "#F4F1EA", fontSize: 20, fontWeight: 700 }}>{pesosHoy.map((p) => `${p}kg`).join(" / ")} <span className="font-body" style={{ color: "#B9B4C4", fontSize: 11, fontWeight: 600 }}>({pctsHoy.map((x) => `${x}%`).join(" / ")})</span></div>
+                      : null}
+                    <div className="font-body" style={{ color: "#B9B4C4", fontSize: 10, marginTop: 3, lineHeight: 1.35 }}>Tu RM de hoy es de unos {rmHoy} kg, medido con la velocidad de la barra en tus series de hoy.{pesosHoy ? " Estos pesos ya tienen en cuenta cómo estás hoy." : ""}</div>
                   </div>
                 )}
                 <div style={{ display: "flex", gap: 8 }}>
@@ -6144,7 +6442,8 @@ function estiloDesdeTexto(t) {
 // Lee un texto pegado y devuelve las marcas que encuentra, una por línea.
 function leerMarcasPegadas(texto) {
   const out = [];
-  String(texto || "").split(/\n+/).forEach((linea) => {
+  String(texto || "").split(/\n+/).forEach((completa) => {
+    const linea = completa.split(" — ")[0];
     const dist = linea.match(/\b(50|100|200|400|800|1500)\s*(m|mts|metros)?\b/i);
     const tiempo = linea.match(/\b(\d{1,2}[:'.]\d{2}[.,:]\d{1,2}|\d{2}[.,]\d{2})\b/);
     const estilo = estiloDesdeTexto(linea.replace(dist ? dist[0] : "", " "));
@@ -6157,7 +6456,8 @@ function leerMarcasPegadas(texto) {
     if (fi) fecha = fi[0];
     else if (f) fecha = `${f[3].length === 2 ? "20" + f[3] : f[3]}-${f[2].padStart(2, "0")}-${f[1].padStart(2, "0")}`;
     const pileta = /\b25\s*m\b|pileta corta|\bsc\b|scm/i.test(linea) ? "25" : /\b50\s*m\b.*pileta|pileta larga|\blc\b|lcm/i.test(linea) ? "50" : "";
-    out.push({ id: uid(), distancia: parseInt(dist[1]), estilo, segundos: seg, fecha, pileta, torneo: "", origen: "pegado" });
+    const torneo = (completa.split(" — ")[1] || "").trim();
+    out.push({ id: uid(), distancia: parseInt(dist[1]), estilo, segundos: seg, fecha, pileta, torneo, origen: "pegado" });
   });
   return out;
 }
@@ -6226,41 +6526,12 @@ async function traerTiemposSwimRecords(fichas) {
   return out;
 }
 
-// ---------- Tiempos del exterior (SwimRankings) ----------
-// SwimRankings junta resultados de torneos de todo el mundo. Se lee a través de /api/exterior
-// (el navegador no puede leerlo directo). Se vincula a mano: entre nadadores de todos los países
-// no hay forma segura de adivinar solo quién es quién.
+// Lectura de páginas de afuera (calendario de CADDA) a través de /api/exterior, porque el
+// navegador no puede leerlas directo.
 async function exteriorGet(params) {
   const r = await fetch(`/api/exterior?${params}`);
   if (!r.ok) throw new Error("No se pudo conectar (" + r.status + ").");
   return r.json();
-}
-const buscarEnExterior = async (texto) => (await exteriorGet(`buscar=${encodeURIComponent(texto)}`)).nadadores || [];
-async function traerTiemposExterior(ids) {
-  const out = [];
-  for (const id of ids) {
-    const d = await exteriorGet(`atleta=${id}`);
-    (d.tiempos || []).forEach((t) => out.push({ ...t, origen: "exterior" }));
-  }
-  return out;
-}
-// "https://www.swimrankings.net/index.php?page=athleteDetail&athleteId=5123456" → "5123456"
-function idDeLinkSwimRankings(txt) {
-  const t = String(txt || "").trim();
-  return (t.match(/athleteId=(\d+)/i) || t.match(/^(\d{4,12})$/) || [])[1] || null;
-}
-// Busca sola la ficha de SwimRankings de un alumno/a que ya está en SwimRecords. Solo vincula si
-// hay una única ficha argentina con el mismo nombre y apellido y el mismo año de nacimiento.
-async function encontrarFichaExterior(alumno) {
-  const v = alumno.swimrecords || {};
-  const anio = String(v.anio || "");
-  const nombre = alumno.nombre || v.nombre || "";
-  if (!anio || !nombre) return null;
-  const candidatos = (await buscarEnExterior(nombre)).filter((r) =>
-    parecidoConFicha(nombre, r.nombre) === 3 && String(r.anio || "") === anio && (!r.pais || /^arg/i.test(r.pais)));
-  if (candidatos.length !== 1) return null;
-  const r = candidatos[0];
-  return { ids: [String(r.id)], nombre: r.nombre, pais: r.pais || "", club: r.club || "", anio: r.anio || "", automatico: true };
 }
 // La misma carrera cargada dos veces (de SwimRecords, del exterior o a mano): misma prueba,
 // mismo tiempo y fecha parecida.
@@ -6448,118 +6719,6 @@ function BloqueSwimRecords({ alumno, onChange, puedeVincular }) {
   );
 }
 
-// Vínculo con la ficha de SwimRankings (torneos del exterior): se busca una vez y después los
-// tiempos nuevos se suman solos, igual que los de SwimRecords.
-function BloqueExterior({ alumno, onChange, puedeVincular }) {
-  const sr = React.useContext(SwimRecordsCtx);
-  const v = alumno.exterior || {};
-  const vinculado = Array.isArray(v.ids) && v.ids.length > 0;
-  const [buscando, setBuscando] = useState(false);
-  const [texto, setTexto] = useState(alumno.nombre || "");
-  const [link, setLink] = useState("");
-  const [resultados, setResultados] = useState(null);
-  const [cargando, setCargando] = useState(false);
-  const [error, setError] = useState(null);
-  const [info, setInfo] = useState(null);
-  if (!sr?.sincronizarExterior) return null;
-  const buscar = async () => {
-    setCargando(true); setError(null); setResultados(null);
-    try { setResultados(await buscarEnExterior(texto)); } catch (e) { setError("No se pudo conectar con SwimRankings. Probá de nuevo en un rato."); }
-    setCargando(false);
-  };
-  const vincular = async (r) => {
-    setCargando(true); setError(null);
-    try {
-      const res = await sr.sincronizarExterior(alumno.id, { ids: [String(r.id)], nombre: r.nombre || alumno.nombre, pais: r.pais || "", club: r.club || "", anio: r.anio || "" });
-      setInfo(res ? `✓ Vinculado. Se ${res.nuevas === 1 ? "cargó 1 tiempo" : `cargaron ${res.nuevas} tiempos`} del exterior${res.nuevas ? "" : " (los que ya estaban no se repiten)"}.` : "✓ Vinculado.");
-      setBuscando(false); setResultados(null); setLink("");
-    } catch (e) { setError("No se pudieron traer los tiempos. Probá de nuevo en un rato."); }
-    setCargando(false);
-  };
-  const vincularLink = () => {
-    const id = idDeLinkSwimRankings(link);
-    if (!id) { setError("Ese link no parece de una ficha de SwimRankings (tiene que tener athleteId=...)."); return; }
-    vincular({ id, nombre: "" });
-  };
-  const actualizar = async () => {
-    setCargando(true); setError(null);
-    try {
-      const res = await sr.sincronizarExterior(alumno.id);
-      setInfo(res && res.nuevas ? `✓ ${res.nuevas} ${res.nuevas === 1 ? "tiempo nuevo" : "tiempos nuevos"}.` : "✓ Ya estaba todo al día.");
-    } catch (e) { setError("No se pudo conectar con SwimRankings. Probá de nuevo en un rato."); }
-    setCargando(false);
-  };
-  const mejoras = (v.mejoras || []).filter((m) => !m.visto);
-  const caja = { background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: 9, marginTop: 6 };
-  const inp = { background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", padding: "7px 8px", fontSize: 11, boxSizing: "border-box" };
-  if (!vinculado && !puedeVincular) return null;
-  return (
-    <div style={{ marginTop: 4 }}>
-      {mejoras.length > 0 && (
-        <div style={{ background: "rgba(51,214,166,0.1)", border: "1px solid #33D6A6", borderRadius: 8, padding: "8px 10px", marginBottom: 6 }}>
-          <div style={{ display: "flex", alignItems: "center" }}>
-            <div className="font-body" style={{ flex: 1, color: "#33D6A6", fontSize: 10, fontWeight: 700 }}>🎉 {mejoras.length === 1 ? "NUEVA MEJOR MARCA" : "NUEVAS MEJORES MARCAS"}</div>
-            <button onClick={() => onChange({ exterior: { ...v, mejoras: (v.mejoras || []).map((m) => ({ ...m, visto: true })) } })} style={{ background: "none", border: "none", color: "#8B8698", cursor: "pointer" }}>✕</button>
-          </div>
-          {mejoras.map((m) => (
-            <div key={m.id} className="font-body" style={{ color: "#F4F1EA", fontSize: 11, marginTop: 3 }}>
-              <b>{m.prueba}</b>: {fmtTiempo(m.de)} → <b style={{ color: "#33D6A6" }}>{fmtTiempo(m.a)}</b> <span style={{ color: "#33D6A6", fontSize: 9, fontWeight: 700 }}>(−{(m.de - m.a).toFixed(2)} s)</span>{m.torneo ? <span style={{ color: "#8B8698", fontSize: 9 }}> · {m.torneo}</span> : null}
-            </div>
-          ))}
-        </div>
-      )}
-      {(info || error) && (
-        <div className="font-body" style={{ display: "flex", gap: 8, alignItems: "center", background: error ? "rgba(232,93,93,0.1)" : "rgba(125,214,192,0.08)", border: `1px solid ${error ? "#E85D5D" : "#7DD6C0"}`, borderRadius: 8, padding: "7px 9px", marginBottom: 6, color: "#F4F1EA", fontSize: 10.5 }}>
-          <span style={{ flex: 1 }}>{error || info}</span>
-          <button onClick={() => { setInfo(null); setError(null); }} style={{ background: "none", border: "none", color: "#8B8698", cursor: "pointer" }}>✕</button>
-        </div>
-      )}
-      {vinculado ? (
-        <div style={{ ...caja, display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="font-body" style={{ color: "#F4F1EA", fontSize: 11, fontWeight: 700 }}>🌎 Exterior (SwimRankings): {v.nombre || alumno.nombre}</div>
-            <div className="font-body" style={{ color: "#8B8698", fontSize: 9.5, marginTop: 2 }}>
-              {[v.pais, v.club, v.anio].filter(Boolean).join(" · ")}{v.ultimaSync ? `${v.pais || v.club || v.anio ? " · " : ""}actualizado ${haceCuanto(v.ultimaSync)}` : ""}
-            </div>
-            <div className="font-body" style={{ color: "#6B6678", fontSize: 9, marginTop: 2 }}>{v.automatico ? "Vinculado solo por nombre y año. " : ""}Sus tiempos de afuera se suman a los mismos de siempre: la mejor marca es la mejor de todas.</div>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <button disabled={cargando} onClick={actualizar} className="font-body" style={{ background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#7DD6C0", fontWeight: 700, fontSize: 10, padding: "5px 9px", cursor: "pointer", whiteSpace: "nowrap" }}>{cargando ? "…" : "↻ Actualizar"}</button>
-            {puedeVincular && <button onClick={() => { if (window.confirm("¿Desvincular de SwimRankings? Los tiempos ya cargados quedan.")) onChange({ exterior: { noVincular: true } }); }} className="font-body" style={{ background: "none", border: "none", color: "#8B8698", fontSize: 9.5, cursor: "pointer" }}>{v.automatico ? "No es este/a" : "Desvincular"}</button>}
-          </div>
-        </div>
-      ) : buscando ? (
-        <div style={caja}>
-          <div className="font-body" style={{ color: "#8B8698", fontSize: 9.5, marginBottom: 6 }}>Buscá al nadador/a en SwimRankings, que junta torneos de todo el mundo.</div>
-          <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
-            <input value={texto} onChange={(e) => setTexto(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") buscar(); }} placeholder="Nombre y apellido" className="font-body" style={{ ...inp, flex: 1, minWidth: 0 }} />
-            <button disabled={cargando} onClick={buscar} className="font-body" style={{ background: "#7DD6C0", border: "none", borderRadius: 6, color: "#0B2A2E", fontWeight: 700, fontSize: 11, padding: "0 12px", cursor: "pointer" }}>{cargando ? "…" : "Buscar"}</button>
-          </div>
-          {resultados && resultados.length === 0 && <div className="font-body" style={{ color: "#6B6678", fontSize: 10.5, marginBottom: 6 }}>No apareció nadie con ese nombre. Probá solo con el apellido, o pegá el link de su ficha acá abajo.</div>}
-          {(resultados || []).map((r) => (
-            <button key={r.id} disabled={cargando} onClick={() => vincular(r)} className="font-body" style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, padding: "8px 9px", marginBottom: 5, cursor: "pointer", textAlign: "left" }}>
-              <span style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ display: "block", color: "#F4F1EA", fontSize: 11, fontWeight: 700 }}>{r.nombre}</span>
-                <span style={{ display: "block", color: "#8B8698", fontSize: 9.5 }}>{[r.pais, r.club, r.anio].filter(Boolean).join(" · ")}</span>
-              </span>
-              <span style={{ color: "#7DD6C0", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}>Es este/a ›</span>
-            </button>
-          ))}
-          <div className="font-body" style={{ color: "#6B6678", fontSize: 9, margin: "4px 0" }}>
-            ¿No aparece? Buscalo en <a href="https://www.swimrankings.net/index.php?page=athleteSelect&nationId=0&selectPage=SEARCH" target="_blank" rel="noopener noreferrer" style={{ color: "#7DD6C0" }}>swimrankings.net</a>, copiá el link de su ficha y pegalo acá:
-          </div>
-          <div style={{ display: "flex", gap: 6, marginBottom: 4 }}>
-            <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://www.swimrankings.net/...athleteId=..." className="font-body" style={{ ...inp, flex: 1, minWidth: 0 }} />
-            <button disabled={cargando || !link.trim()} onClick={vincularLink} className="font-body" style={{ background: "#26232F", border: "1px solid #7DD6C0", borderRadius: 6, color: "#7DD6C0", fontWeight: 700, fontSize: 10.5, padding: "0 10px", cursor: "pointer" }}>Vincular</button>
-          </div>
-          <button onClick={() => { setBuscando(false); setResultados(null); }} className="font-body" style={{ width: "100%", background: "none", border: "none", color: "#8B8698", fontSize: 10, padding: 4, cursor: "pointer" }}>Cancelar</button>
-        </div>
-      ) : (
-        <button onClick={() => { setBuscando(true); setTexto(alumno.nombre || ""); }} className="font-body" style={{ width: "100%", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, color: "#F4F1EA", fontWeight: 700, fontSize: 11, padding: 9, cursor: "pointer", marginTop: 6 }}>🌎 Sumar sus tiempos del exterior</button>
-      )}
-    </div>
-  );
-}
 
 // Parciales de una carrera (vienen acumulados: "28.86", "1:00.45", ...) → tramos con su tiempo.
 function tramosDeParciales(m) {
@@ -6717,6 +6876,8 @@ function MarcasNatacion({ alumno, onChange, onSincronizar, puedeVincular = true 
   const [msg, setMsg] = useState(null);
   const [nueva, setNueva] = useState({ distancia: 100, estilo: "Libre", tiempo: "", fecha: todayISO(), pileta: "50", torneo: "" });
   const [abierta, setAbierta] = useState(null);
+  // la lista de tiempos arranca cerrada (con muchas carreras se hace muy larga) y se acuerda
+  const [verTiempos, setVerTiempos] = useState(() => { try { return window.localStorage.getItem("tb_ver_tiempos") === "1"; } catch { return false; } });
   const pruebas = {};
   // cada prueba por separado según la pileta (los tiempos de 25 m y de 50 m no se comparan)
   marcas.forEach((m) => { const k = `${m.distancia} ${m.estilo}${m.pileta ? ` · pileta ${m.pileta}` : ""}`; (pruebas[k] = pruebas[k] || []).push(m); });
@@ -6747,7 +6908,7 @@ function MarcasNatacion({ alumno, onChange, onSincronizar, puedeVincular = true 
   const btnSec = { flex: 1, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, color: "#8B8698", fontWeight: 700, fontSize: 10.5, padding: 8, cursor: "pointer" };
   return (
     <div style={{ marginBottom: 16 }}>
-      <div style={{ marginBottom: 8 }}><BloqueSwimRecords alumno={alumno} onChange={onChange} onSincronizar={onSincronizar} puedeVincular={puedeVincular} /><BloqueExterior alumno={alumno} onChange={onChange} puedeVincular={puedeVincular} /></div>
+      <div style={{ marginBottom: 8 }}><BloqueSwimRecords alumno={alumno} onChange={onChange} onSincronizar={onSincronizar} puedeVincular={puedeVincular} /></div>
       {msg && (
         <div className="font-body" style={{ display: "flex", gap: 8, alignItems: "center", background: msg.error ? "rgba(232,93,93,0.1)" : "rgba(51,214,166,0.1)", border: `1px solid ${msg.error ? "#E85D5D" : "#33D6A6"}`, borderRadius: 8, padding: "7px 9px", marginBottom: 8, color: "#F4F1EA", fontSize: 10.5 }}>
           <span style={{ flex: 1 }}>{msg.t}</span>
@@ -6755,7 +6916,14 @@ function MarcasNatacion({ alumno, onChange, onSincronizar, puedeVincular = true 
         </div>
       )}
       {lista.length === 0 && <div className="font-body" style={{ color: "#6B6678", fontSize: 10.5, marginBottom: 8 }}>Todavía no hay marcas cargadas.</div>}
-      {lista.map((p) => {
+      {lista.length > 0 && (
+        <button onClick={() => { const v = !verTiempos; setVerTiempos(v); try { window.localStorage.setItem("tb_ver_tiempos", v ? "1" : "0"); } catch {} }} className="font-body" style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, padding: "9px 10px", marginBottom: 6, cursor: "pointer", textAlign: "left" }}>
+          <span style={{ flex: 1, color: "#F4F1EA", fontSize: 12, fontWeight: 700 }}>⏱ Tiempos</span>
+          <span style={{ color: "#8B8698", fontSize: 10.5 }}>{lista.length} {lista.length === 1 ? "prueba" : "pruebas"} · {marcas.length} {marcas.length === 1 ? "carrera" : "carreras"}</span>
+          <span style={{ color: "#8B8698", fontSize: 10 }}>{verTiempos ? "▲" : "▼"}</span>
+        </button>
+      )}
+      {verTiempos && lista.map((p) => {
         const mejoro = p.anterior && p.ultima.segundos < p.anterior.segundos;
         return (
           <div key={p.k} style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, marginBottom: 6, overflow: "hidden" }}>
@@ -6971,7 +7139,6 @@ function AthleteProgreso({ alumno, onGuardarHistorialRM, onCerrarAvisosRM, onUpd
         {onUpdateMarcas && (
           <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 14, padding: 14, marginBottom: 14 }}>
             <div className="font-body" style={{ fontSize: 11, color: "#8B8698", fontWeight: 600, marginBottom: 4 }}>🏊 MIS MARCAS DE NATACIÓN</div>
-            <div className="font-body" style={{ fontSize: 9, color: "#6B6678", marginBottom: 10 }}>Tus tiempos de los torneos (de SwimRecords y, si nadaste afuera, de SwimRankings) se cargan solos. También podés sumar otros a mano.</div>
             <MarcasNatacion alumno={alumno} onChange={onUpdateMarcas} puedeVincular={false} />
           </div>
         )}
@@ -7371,11 +7538,11 @@ function SerieEnVivo({ onClose }) {
     <div style={{ position: "fixed", inset: 0, zIndex: 10000, background: "#121017", display: "flex", flexDirection: "column" }}>
       {!completa && (
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(14px + env(safe-area-inset-top, 0px)) 20px 10px", borderBottom: "1px solid #26232F" }}>
-          <div className="font-display" style={{ flex: 1, color: "#F4F1EA", fontSize: 20, fontWeight: 700 }}>MI SERIE EN VIVO</div>
+          <div className="font-display" style={{ flex: 1, color: "#F4F1EA", fontSize: 20, fontWeight: 700 }}>BIOMECÁNICA EN VIVO</div>
           <button onClick={onClose} aria-label="Cerrar" style={{ width: 38, height: 38, borderRadius: 19, border: "1px solid #322E3D", background: "#1C1A24", color: "#F4F1EA", fontSize: 18, cursor: "pointer" }}>✕</button>
         </div>
       )}
-      <iframe ref={frameRef} src="/biomecanica/index.html?vivo=1" title="Mi serie en vivo" allow="camera; autoplay; fullscreen" style={{ flex: 1, width: 1, minWidth: "100%", maxWidth: "100%", border: "none", background: "#121017", display: "block" }} />
+      <iframe ref={frameRef} src="/biomecanica/index.html?vivo=1" title="Biomecánica en vivo" allow="camera; autoplay; fullscreen" style={{ flex: 1, width: 1, minWidth: "100%", maxWidth: "100%", border: "none", background: "#121017", display: "block" }} />
     </div>
   ), document.body);
 }
@@ -7941,8 +8108,14 @@ function sanearAlumno(a) {
       avisoCoach: typeof a.avisoCoach === "string" ? a.avisoCoach : "",
       // Última vez que el/la alumno/a abrió la app (la ve el coach en el Dashboard).
       ultimaConexion: typeof a.ultimaConexion === "string" ? a.ultimaConexion : null,
+      // Primera vez que abrió la app ese día (la última se pisa cada vez que vuelve a abrirla).
+      primeraConexionDia: typeof a.primeraConexionDia === "string" ? a.primeraConexionDia : null,
       // Tiempos de reacción del juego "Largada" (últimos 30): { f: fecha ISO, ms }.
       reacciones: Array.isArray(a.reacciones) ? a.reacciones.filter((r) => r && typeof r.ms === "number") : [],
+      // Juego "Relevo" (últimos 30): { f, ms } = cuánto después del toque salió (negativo = antes).
+      relevos: Array.isArray(a.relevos) ? a.relevos.filter((r) => r && typeof r.ms === "number") : [],
+      // Mejor marca de cada mes en los juegos ("largada:2026-10": 185), para el ranking del mes y los ganadores.
+      mejoresMes: a.mejoresMes && typeof a.mejoresMes === "object" ? a.mejoresMes : {},
       // Qué texto del aviso ya vio el/la alumno/a (y cuándo): si el coach cambia el texto, vuelve a aparecer.
       avisoVistoTexto: typeof a.avisoVistoTexto === "string" ? a.avisoVistoTexto : "",
       avisoVistoFecha: typeof a.avisoVistoFecha === "string" ? a.avisoVistoFecha : null,
@@ -7951,7 +8124,6 @@ function sanearAlumno(a) {
       avisosRM: Array.isArray(a.avisosRM) ? a.avisosRM.filter((x) => x && x.id) : [],
       marcasNatacion: Array.isArray(a.marcasNatacion) ? a.marcasNatacion.filter((x) => x && x.id) : [],
       swimrecords: a.swimrecords && typeof a.swimrecords === "object" ? a.swimrecords : null,
-      exterior: a.exterior && typeof a.exterior === "object" ? a.exterior : null,
       cuota: a.cuota && typeof a.cuota === "object" ? { ...a.cuota, pagos: Array.isArray(a.cuota.pagos) ? a.cuota.pagos : [] } : null,
     };
   } catch {
@@ -8402,7 +8574,12 @@ export default function GymPlannerCoachApp() {
       const ahora = Date.now();
       if (!forzar && ahora - ultimaConexionRef.current < 10 * 60 * 1000) return;
       ultimaConexionRef.current = ahora;
-      setAlumnos((prev) => prev.map((a) => (a.id === id ? { ...a, ultimaConexion: new Date(ahora).toISOString() } : a)));
+      const iso = new Date(ahora).toISOString();
+      setAlumnos((prev) => prev.map((a) => {
+        if (a.id !== id) return a;
+        const mismoDia = a.primeraConexionDia && new Date(a.primeraConexionDia).toDateString() === new Date(ahora).toDateString();
+        return { ...a, ultimaConexion: iso, primeraConexionDia: mismoDia ? a.primeraConexionDia : iso };
+      }));
     };
     registrar(true);
     const alVolver = () => { if (document.visibilityState === "visible") registrar(false); };
@@ -8459,21 +8636,21 @@ export default function GymPlannerCoachApp() {
   const asignarPlantilla = (alumnoId, templateId) => {
     const tpl = templates.find((t) => t.id === templateId);
     guardarParaDeshacer(alumnoId, `Asignaste la plantilla "${tpl?.nombre || ""}" a ${alumnos.find((a) => a.id === alumnoId)?.nombre || "un/a alumno/a"}`);
-    setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...a, plan: clonarPlan(tpl.plan) } : a)));
+    setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...conPlanAnteriorGuardado(a, `antes de la plantilla ${tpl.nombre || ""}`.trim()), plan: planParaOtraPersona(tpl.plan, a.plan) } : a)));
   };
   const copiarPlan = (origenId, destinoId) => {
     const origen = alumnos.find((a) => a.id === origenId);
     if (!origen) return;
     const destino = alumnos.find((a) => a.id === destinoId);
     guardarParaDeshacer(destinoId, `Copiaste el plan de ${origen.nombre} a ${destino?.nombre || "un/a alumno/a"}`);
-    setAlumnos((prev) => prev.map((a) => (a.id === destinoId ? { ...a, plan: clonarPlan(origen.plan) } : a)));
+    setAlumnos((prev) => prev.map((a) => (a.id === destinoId ? { ...conPlanAnteriorGuardado(a, `antes del plan de ${origen.nombre}`), plan: planParaOtraPersona(origen.plan, a.plan) } : a)));
   };
   // Igual que copiarPlan, pero para pasarle a otro/a alumno/a una VERSIÓN GUARDADA puntual
   // (no el plan actual en uso) — por ejemplo, una rutina vieja que quedó archivada.
   const copiarVersionAOtro = (planOrigen, destinoId) => {
     const destino = alumnos.find((a) => a.id === destinoId);
     guardarParaDeshacer(destinoId, `Pasaste una versión guardada a ${destino?.nombre || "un/a alumno/a"}`);
-    setAlumnos((prev) => prev.map((a) => (a.id === destinoId ? { ...a, plan: clonarPlan(planOrigen) } : a)));
+    setAlumnos((prev) => prev.map((a) => (a.id === destinoId ? { ...conPlanAnteriorGuardado(a, "antes de una versión pasada"), plan: planParaOtraPersona(planOrigen, a.plan) } : a)));
   };
   // Copia SOLO la entrada en calor de un/a alumno/a a otro/a, sin tocar el resto de su plan
   // (días, bloques, ejercicios, RM). Reemplaza la entrada en calor que ya tenía el/la destino/a.
@@ -8571,10 +8748,9 @@ export default function GymPlannerCoachApp() {
   alumnosRef.current = alumnos;
   const srEnCursoRef = useRef(new Set());
   const srIntentadosRef = useRef(new Set());
-  const extIntentadosRef = useRef(new Set());
   // Trae los tiempos de SwimRecords del alumno/a y suma los nuevos. Si alguno es mejor que su marca
   // anterior en la misma prueba y pileta, queda anotado y se avisa (al coach y al alumno/a).
-  // Trae los tiempos de una fuente (campo "swimrecords" o "exterior" del alumno/a) y suma los nuevos.
+  // Trae los tiempos de una fuente (campo "swimrecords" del alumno/a) y suma los nuevos.
   const sincronizarTiempos = async (alumnoId, campo, traer, vinculoNuevo) => {
     const clave = `${campo}:${alumnoId}`;
     if (srEnCursoRef.current.has(clave)) return null;
@@ -8588,8 +8764,7 @@ export default function GymPlannerCoachApp() {
         const ocultas = new Set(vin.ocultas || []);
         const marcas = a.marcasNatacion || [];
         const ya = new Set(marcas.map((m) => m.id));
-        // si la misma carrera ya está cargada desde otro lado (ej. un torneo argentino que también
-        // figura en SwimRankings), no se repite
+        // si la misma carrera ya está cargada desde otro lado (ej. a mano), no se repite
         const nuevas = tiempos.filter((t) => !ya.has(t.id) && !ocultas.has(t.id) && !marcas.some((m) => m.origen !== t.origen && mismaCarrera(m, t)));
         const mejoras = [];
         // en la primera carga no se avisa nada (son tiempos viejos); después, cada marca que baja
@@ -8624,7 +8799,6 @@ export default function GymPlannerCoachApp() {
     }
   };
   const sincronizarSwimRecords = (alumnoId, vinculoNuevo) => sincronizarTiempos(alumnoId, "swimrecords", traerTiemposSwimRecords, vinculoNuevo);
-  const sincronizarExterior = (alumnoId, vinculoNuevo) => sincronizarTiempos(alumnoId, "exterior", traerTiemposExterior, vinculoNuevo);
   // Solo, al abrir la app: actualiza los tiempos de los ya vinculados (cada 6 h como mucho) y, si
   // entra el coach, busca la ficha de los que todavía no están vinculados (una vez por sesión).
   useEffect(() => {
@@ -8648,20 +8822,6 @@ export default function GymPlannerCoachApp() {
         } catch {
           // sin conexión con SwimRecords: se reintenta la próxima vez que se abra la app
         }
-        // tiempos del exterior: si ya está vinculado se actualiza; si no, el coach lo busca solo
-        // (una vez por sesión) a partir de su ficha de SwimRecords
-        const a1 = alumnosRef.current.find((x) => x.id === a.id) || a;
-        const ve = a1.exterior;
-        try {
-          if (cancelado) return;
-          if (ve?.ids?.length) {
-            if (!ve.ultimaSync || Date.now() - new Date(ve.ultimaSync).getTime() > 12 * 60 * 60 * 1000) await sincronizarExterior(a.id);
-          } else if (session.role === "coach" && !ve?.noVincular && a1.swimrecords?.ids?.length && !extIntentadosRef.current.has(a.id)) {
-            extIntentadosRef.current.add(a.id);
-            const vin = await encontrarFichaExterior(a1);
-            if (vin && !cancelado) await sincronizarExterior(a.id, vin);
-          }
-        } catch { /* se reintenta la próxima vez */ }
       }
     })();
     return () => { cancelado = true; };
@@ -8669,14 +8829,14 @@ export default function GymPlannerCoachApp() {
   }, [remotoListo, session?.role, session?.athleteId, alumnos.length, clubSwimRecords]);
   // Suma un torneo a las Competencias de todos los nadadores vinculados con SwimRecords.
   const agregarCompetenciaEquipo = (t) => setAlumnos((prev) => prev.map((a) => {
-    if (!(a.swimrecords?.ids?.length || a.exterior?.ids?.length) || a.activo === false) return a;
+    if (!a.swimrecords?.ids?.length || a.activo === false) return a;
     if (session?.role === "coach" && !(a.coachIds === null || a.coachIds.includes(session.coachId))) return a;
     const comps = a.competencias || [];
     if (comps.some((c) => c.id === `sr-${t.id}` || (normalizarTexto(c.nombre) === normalizarTexto(t.name) && c.fecha === t.start_date))) return a;
     return { ...a, competencias: [...comps, { id: `sr-${t.id}`, nombre: t.name, fecha: t.start_date }] };
   }));
   const accionesCtx = { updateAlumno: (id, patch) => setAlumnos((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a))) };
-  const swimRecordsCtx = { sincronizar: sincronizarSwimRecords, sincronizarExterior, club: clubSwimRecords, setClub: setClubSwimRecords, agregarCompetencia: agregarCompetenciaEquipo };
+  const swimRecordsCtx = { sincronizar: sincronizarSwimRecords, club: clubSwimRecords, setClub: setClubSwimRecords, agregarCompetencia: agregarCompetenciaEquipo };
 
   const finalizarEntrenamiento = (alumnoId) => {
     setAlumnos((prev) => prev.map((a) => (a.id === alumnoId ? { ...a, sesionesCompletadas: (a.sesionesCompletadas || 0) + 1, historialSesiones: [...(a.historialSesiones || []), todayISO()], wellness: { ...a.wellness, encuestaPendiente: true } } : a)));
@@ -8688,7 +8848,7 @@ export default function GymPlannerCoachApp() {
     const password = Math.random().toString().slice(2, 6);
     // Si el coach eligió "usar el plan de..." al crearla, arranca con una copia de ese plan en vez
     // de vacío — así no hay que crearla primero y recién después ir a buscarla para copiarle algo.
-    const planInicial = d.planBase ? clonarPlan(d.planBase) : mkPlanVacio();
+    const planInicial = d.planBase ? planParaOtraPersona(d.planBase, null) : mkPlanVacio();
     // Pasa por sanearAlumno para que tenga TODOS los campos que espera el resto de la app (rutinas
     // extra, meses archivados, etc.) — así una alumna recién creada nunca le falta algo que rompa
     // la pantalla, ni ahora ni si se agregan más campos en el futuro.
@@ -8779,12 +8939,12 @@ export default function GymPlannerCoachApp() {
   } else if (athlete.wellness.encuestaPendiente && tab !== "entrenar") {
     body = (
       <div style={{ position: "relative", minHeight: "100%" }}>
-        <AthleteInicio alumno={athlete} rankingReaccion={rankingLargada(alumnos, athlete)} goEntrenar={() => setTab("entrenar")} onCheckin={registrarCheckin} onUpdateFoto={(dataUrl) => updateAlumno(athlete.id, { fotoPerfil: dataUrl })} onMarcarAvisoVisto={() => updateAlumno(athlete.id, { avisoVistoTexto: athlete.avisoCoach, avisoVistoFecha: new Date().toISOString() })} onGuardarReaccion={(ms) => updateAlumno(athlete.id, { reacciones: [...(athlete.reacciones || []), { f: new Date().toISOString(), ms }].slice(-30) })} />
+        <AthleteInicio alumno={athlete} rankingReaccion={rankingLargada(alumnos, athlete)} ganadorReaccion={ganadorMesPasado(alumnos, athlete, "largada")} rankingRelevo={rankingJuego(alumnos, athlete, "relevo")} ganadorRelevo={ganadorMesPasado(alumnos, athlete, "relevo")} goEntrenar={() => setTab("entrenar")} onCheckin={registrarCheckin} onUpdateFoto={(dataUrl) => updateAlumno(athlete.id, { fotoPerfil: dataUrl })} onMarcarAvisoVisto={() => updateAlumno(athlete.id, { avisoVistoTexto: athlete.avisoCoach, avisoVistoFecha: new Date().toISOString() })} onGuardarReaccion={(ms) => updateAlumno(athlete.id, guardarIntentoJuego(athlete, "largada", ms))} onGuardarRelevo={(ms) => updateAlumno(athlete.id, guardarIntentoJuego(athlete, "relevo", ms))} />
         <EncuestaSemanalModal onClose={() => updateAlumno(athlete.id, { wellness: { ...athlete.wellness, encuestaPendiente: false } })} onSubmit={(data) => enviarEncuestaSemanal(athlete.id, data)} />
       </div>
     );
   } else {
-    if (tab === "inicio") body = <AthleteInicio alumno={athlete} rankingReaccion={rankingLargada(alumnos, athlete)} goEntrenar={() => setTab("entrenar")} onCheckin={registrarCheckin} onUpdateFoto={(dataUrl) => updateAlumno(athlete.id, { fotoPerfil: dataUrl })} onMarcarAvisoVisto={() => updateAlumno(athlete.id, { avisoVistoTexto: athlete.avisoCoach, avisoVistoFecha: new Date().toISOString() })} onGuardarReaccion={(ms) => updateAlumno(athlete.id, { reacciones: [...(athlete.reacciones || []), { f: new Date().toISOString(), ms }].slice(-30) })} />;
+    if (tab === "inicio") body = <AthleteInicio alumno={athlete} rankingReaccion={rankingLargada(alumnos, athlete)} ganadorReaccion={ganadorMesPasado(alumnos, athlete, "largada")} rankingRelevo={rankingJuego(alumnos, athlete, "relevo")} ganadorRelevo={ganadorMesPasado(alumnos, athlete, "relevo")} goEntrenar={() => setTab("entrenar")} onCheckin={registrarCheckin} onUpdateFoto={(dataUrl) => updateAlumno(athlete.id, { fotoPerfil: dataUrl })} onMarcarAvisoVisto={() => updateAlumno(athlete.id, { avisoVistoTexto: athlete.avisoCoach, avisoVistoFecha: new Date().toISOString() })} onGuardarReaccion={(ms) => updateAlumno(athlete.id, guardarIntentoJuego(athlete, "largada", ms))} onGuardarRelevo={(ms) => updateAlumno(athlete.id, guardarIntentoJuego(athlete, "relevo", ms))} />;
     else if (tab === "entrenar") body = <AthleteEntrenar alumno={athlete} onCerrarAvisosRM={() => marcarAvisosRMVistos(athlete.id, "athlete")} onFinalizar={(id) => { finalizarEntrenamiento(id); setTab("inicio"); }} onUpdateNota={(exId, exNombre, texto, claveNota) => updateNota(athlete.id, exId, exNombre, texto, claveNota)} rolesPersonalizados={rolesPersonalizados} />;
     else if (tab === "progreso") body = <AthleteProgreso alumno={athlete} onGuardarHistorialRM={(ejercicio, valor) => agregarHistorialRM(athlete.id, ejercicio, valor, "athlete")} onCerrarAvisosRM={() => marcarAvisosRMVistos(athlete.id, "athlete")} onUpdateMarcas={(patch) => updateAlumno(athlete.id, patch)} />;
     else if (tab === "nutricion") body = <CalculadoraScreen alumno={athlete} />;

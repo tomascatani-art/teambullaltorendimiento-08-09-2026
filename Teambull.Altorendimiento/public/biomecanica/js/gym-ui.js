@@ -9,13 +9,14 @@ import { fpsHint, fpsVerdict, GUIDE, halfFrameMs, jumpErrCm } from './fpsguide.j
 import { unlock, beep } from './beep.js';
 import { detectJump } from './jumpauto.js';
 import { filmGuide } from './filmguide.js';
-import { EXERCISES, ZONES, PRACTICE, DEFICIT_LIMIT, zoneOf, practiceOf, seriesDeficit, effectiveSet, PLATE_MM, barScale, barPath, analyzeBar, barSaved, jumpHeight, dropJump, fvProfile, loadVelocity } from './gym.js';
+import { EXERCISES, ZONES, PRACTICE, DEFICIT_LIMIT, zoneOf, practiceOf, seriesDeficit, effectiveSet, PLATE_MM, CORTES, corteSerie, barScale, barPath, analyzeBar, barSaved, jumpHeight, dropJump, fvProfile, loadVelocity } from './gym.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const f = (v, d = 2) => (Number.isFinite(v) ? v.toLocaleString('es-AR', { minimumFractionDigits: d, maximumFractionDigits: d }) : '–');
 const num = (s) => { const v = parseFloat(String(s ?? '').replace(',', '.')); return Number.isFinite(v) ? v : NaN; };
 const today = () => new Date().toISOString().slice(0, 10);
+const corteId = () => $('gy-corte')?.value || 'def';
 
 export const JUMPS = {
   cmj: { label: 'Con contramovimiento (CMJ)' },
@@ -26,7 +27,7 @@ export const JUMPS = {
 };
 
 let H = null, ready = false;
-const S = { mode: 'bar', sound: true, live: null, file: null, url: null, times: null, frameDur: 1 / 30, W: 0, Hh: 0, tool: null, scale: null, scalePts: [], pts: [], res: null, abort: null, jumps: [], marks: {}, hint: '', auto: null, lupa: false, lupaPt: null, zoom: 1, zv: null, zm: null, disco: null, recorte: null, comprimido: '', evId: null, date: '', keepVid: false };
+const S = { mode: 'bar', sound: true, live: null, file: null, url: null, times: null, frameDur: 1 / 30, W: 0, Hh: 0, tool: null, scale: null, scalePts: [], pts: [], res: null, abort: null, jumps: [], marks: {}, hint: '', auto: null, lupa: false, lupaPt: null, zoom: 1, zv: null, zm: null, disco: null, recorte: null, comprimido: '', evId: null, date: '', keepVid: false, sesion: [] };
 const video = () => $('gy-video'), overlay = () => $('gy-overlay');
 // Deshacer: copia de lo marcado antes de cada cambio (disco, punto seguido, correcciones, saltos)
 const hist = [];
@@ -74,6 +75,13 @@ export function initGym(helpers) {
   const groups = [...new Set(Object.values(EXERCISES).map(e => e.group))];
   $('gy-ex').innerHTML = groups.map(g => `<optgroup label="${esc(g)}">${Object.entries(EXERCISES).filter(([, e]) => e.group === g).map(([k, e]) => `<option value="${k}">${esc(e.label)}</option>`).join('')}</optgroup>`).join('');
   $('gy-ex').onchange = () => { if (S.mode === 'bar' && S.res) panel(); };
+  // corte de la serie elegido (queda guardado en este dispositivo)
+  const corte = $('gy-corte');
+  if (corte) {
+    corte.innerHTML = CORTES.map(c => `<option value="${c.id}">${esc(c.label)}</option>`).join('');
+    try { const g = localStorage.getItem('tb_gym_corte'); if (CORTES.some(c => c.id === g)) corte.value = g; } catch {}
+    corte.onchange = () => { try { localStorage.setItem('tb_gym_corte', corte.value); } catch {} if (S.mode === 'bar' && S.res) panel(); sendState(true); };
+  }
   $('gy-jtype').innerHTML = Object.entries(JUMPS).map(([k, j]) => `<option value="${k}">${esc(j.label)}</option>`).join('');
   document.querySelectorAll('[data-gymode]').forEach(b => b.onclick = () => setMode(b.dataset.gymode));
   $('gy-file').onchange = $('gy-rec').onchange = async (e) => { const file = e.target.files[0]; e.target.value = ''; if (file) await load(file); };
@@ -241,7 +249,7 @@ function calidadVideo() {
 
 // ✕ del video: lo cierra y vuelve a la elección de video (si hay marcas sin guardar, pregunta antes).
 function cerrarVideo() {
-  const sinGuardar = !S.evId && (S.pts.length > 1 || S.jumps.length || Object.keys(S.marks).length);
+  const sinGuardar = (!S.evId && (S.pts.length > 1 || S.jumps.length || Object.keys(S.marks).length)) || S.sesion.length;
   if (sinGuardar && !confirm('¿Cerrar este video? Las marcas que no guardaste se pierden.')) return;
   stopLive();
   const v = video();
@@ -573,9 +581,10 @@ async function fijarCuadros(stream) {
 const fpsCamara = () => S.live?.stream?.getVideoTracks()[0]?.getSettings?.().frameRate;
 
 // ---------- en vivo: la cámara de este dispositivo, con las velocidades hacia la pantalla del deportista ----------
-async function startLive() {
+// seguir: la serie anterior de la misma sesión (mismo código, misma pantalla del deportista y misma escala)
+async function startLive(seguir = null) {
   if (!navigator.mediaDevices?.getUserMedia) { H?.notify?.('Este navegador no deja usar la cámara. Probá con Chrome o Safari actualizado.'); return; }
-  stopLive();
+  if (!seguir) stopLive();
   unlock();
   let stream;
   try {
@@ -590,9 +599,11 @@ async function startLive() {
   if (!v.videoWidth) await new Promise(r => v.addEventListener('loadedmetadata', r, { once: true }));
   H?.notify?.('');
   $('gy-show').hidden = true;
-  S.live = { stream, code: newCode(), link: null, kind: '', T0: null, times: [], peer: null, done: false };
-  S.file = { name: 'en vivo' }; S.times = null; S.W = v.videoWidth; S.Hh = v.videoHeight;
-  S.scale = null; S.scalePts = []; S.pts = []; S.res = null; S.tool = 'scale'; S.hint = ''; hist.length = 0;
+  S.live = { stream, code: seguir?.code || newCode(), link: seguir?.link || null, kind: seguir?.kind || '', quiereVideo: !!seguir?.quiereVideo, T0: null, times: [], peer: null, done: false };
+  S.live.rec = grabarVivo(stream, S.live);
+  S.file = { name: 'en vivo' }; S.times = null; S.grabado = null; S.W = v.videoWidth; S.Hh = v.videoHeight;
+  S.scale = null; S.scalePts = []; S.pts = []; S.res = null; S.tool = 'scale'; S.hint = ''; hist.length = 0; S.evId = null;
+  if (seguir?.scale) { S.scale = seguir.scale; S.scalePts = seguir.scalePts; S.tool = 'center'; S.hint = `Serie ${S.sesion.length + 1}: con la barra quieta, tocá el centro del disco.`; }
   $('gy-stage').style.aspectRatio = `${S.W} / ${S.Hh}`; $('gy-stage').style.setProperty('--ar', S.W / S.Hh);
   $('gy-work').hidden = false;
   panel();
@@ -602,6 +613,7 @@ async function startLive() {
   const tick = () => { if (S.live && !S.live.done) { const k = S.pts.length + '|' + S.tool + '|' + (S.disco ? S.disco.x + ',' + S.disco.y + ',' + S.disco.r : '') + '|' + S.scalePts.length; if (k !== ult) { ult = k; draw(); } requestAnimationFrame(tick); } };
   requestAnimationFrame(tick);
   const L = S.live;
+  if (seguir?.link) { sendState(true); if (L.quiereVideo) startPeer(); return; }
   try { L.link = await openLink(L.code, onLinkMsg); L.kind = L.link.kind; } catch (err) { L.kind = 'error'; S.hint = err.message; }
   if (S.live === L) panel();
 }
@@ -618,7 +630,7 @@ function onLinkMsg(m) {
   const L = S.live;
   if (!L || !m || typeof m !== 'object') return;
   if (m.type === 'hello') sendState(true);
-  else if (m.type === 'want-video') startPeer();
+  else if (m.type === 'want-video') { L.quiereVideo = true; startPeer(); }
   else if (m.type === 'answer' && L.peer && typeof m.sdp === 'string') L.peer.setRemoteDescription({ type: 'answer', sdp: m.sdp }).catch(() => {});
   else if (m.type === 'ice' && L.peer && m.c) L.peer.addIceCandidate(m.c).catch(() => {});
 }
@@ -640,11 +652,11 @@ function sendState(force = false) {
   const L = S.live;
   if (!L?.link) return;
   const reps = (S.res?.reps || []).map(r => ({ n: r.n, mv: +r.mv.toFixed(3), se: +r.se.toFixed(3) }));
-  const key = reps.map(r => r.mv).join(',') + (L.done ? '|fin' : '');
+  const key = reps.map(r => r.mv).join(',') + (L.done ? '|fin' : '') + '|' + corteId();
   if (!force && key === L.sentKey) return;
   L.sentKey = key;
-  const d = seriesDeficit(reps);
-  L.link.send({ type: 'state', reps, deficit: d ? +d.v.toFixed(2) : null, ex: $('gy-ex').value, load: num($('gy-load').value) || null, done: L.done, tracking: !!S.abort });
+  const d = seriesDeficit(reps), c = corteSerie(reps, corteId());
+  L.link.send({ type: 'state', reps, deficit: d ? +d.v.toFixed(2) : null, stop: !!c?.stop, corte: c?.corto || '', serie: S.sesion.length + 1, ex: $('gy-ex').value, load: num($('gy-load').value) || null, done: L.done, tracking: !!S.abort });
 }
 
 // Siguiente cuadro de la cámara, con su hora (s). requestVideoFrameCallback da la hora de captura.
@@ -711,10 +723,102 @@ function liveUpdate(force = false) {
     // demora entre el final real de la subida y el aviso (para las pruebas y para saber cuánto tarda)
     const lastRep = S.res.reps[now - 1];
     if (S.live.T0 != null) (S.live.lags ||= []).push(performance.now() / 1000 - (S.live.T0 + lastRep.t1));
-    if (S.sound) { const d = seriesDeficit(S.res.reps); beep(d?.stop ? 'stop' : 'rep'); }
+    if (S.sound) beep(corteSerie(S.res.reps, corteId())?.stop ? 'stop' : 'rep');
   }
   sendState();
   if ((S.res.reps || []).length !== before || force) panel();
+}
+
+// En vivo también se graba el video (MediaRecorder), así al terminar la serie se puede revisar cuadro por
+// cuadro con el recorrido encima, en vez de quedar la pantalla en negro.
+function grabarVivo(stream, L) {
+  if (typeof MediaRecorder === 'undefined') return null;
+  const tipo = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find(t => MediaRecorder.isTypeSupported?.(t)) || '';
+  try {
+    const r = new MediaRecorder(stream, { ...(tipo ? { mimeType: tipo } : {}), videoBitsPerSecond: 8e6 });
+    const partes = [];
+    r.ondataavailable = (e) => { if (e.data?.size) partes.push(e.data); };
+    r.onstart = () => { L.recT0 = performance.now() / 1000; };
+    r.start(1000);
+    return { r, partes, tipo: r.mimeType || tipo || 'video/webm' };
+  } catch { return null; }
+}
+function cortarGrabacion(L) {
+  const rec = L.rec;
+  if (!rec || rec.r.state === 'inactive') return Promise.resolve();
+  return new Promise((ok) => { rec.r.onstop = ok; try { rec.r.stop(); } catch { ok(); } setTimeout(ok, 3000); });
+}
+// Carga lo grabado en el reproductor: los puntos seguidos se pasan a la hora del video grabado.
+async function verGrabacion(L) {
+  if (S.live !== L || !L.rec?.partes.length) return;
+  const tipo = L.rec.tipo.split(';')[0], ext = /mp4/.test(tipo) ? 'mp4' : 'webm';
+  const file = new File(L.rec.partes, `serie-en-vivo-${today()}.${ext}`, { type: tipo });
+  const v = video(), url = URL.createObjectURL(file);
+  const ok = await new Promise((res) => { v.onloadeddata = () => res(true); v.onerror = () => res(false); v.src = url; v.load(); });
+  if (!ok || S.live !== L) { URL.revokeObjectURL(url); if (S.live === L) v.removeAttribute('src'); return; }
+  // los WebM grabados no traen la duración: se la obtiene yendo al final
+  if (!Number.isFinite(v.duration)) {
+    await new Promise((res) => { v.addEventListener('durationchange', res, { once: true }); v.currentTime = 1e7; setTimeout(res, 2000); });
+    v.currentTime = 0;
+  }
+  const timing = await readFrameTimes(file).catch(() => null);
+  if (S.live !== L) { URL.revokeObjectURL(url); return; }
+  const off = L.T0 != null && L.recT0 != null ? L.T0 - L.recT0 : 0;
+  S.pts = S.pts.map(p => ({ ...p, t: p.t + off }));
+  if (timing?.times?.length) { S.times = timing.times.filter(t => t < v.duration); S.frameDur = timing.frameDur; }
+  else S.times = null;
+  S.url = url; S.file = file; S.grabado = file; hist.length = 0;
+  // la serie ya terminó: desde acá es un video común (el enlace con la pantalla del deportista queda abierto)
+  S.liveFin = L; S.live = null;
+  compute(); panel();
+  await seekFrame(S.pts.length ? frameAt(S.pts[0].t) : 0);
+}
+// Guardar el video grabado en el celular (compartir en iPhone, descargar en el resto).
+async function guardarGrabacion() {
+  const file = S.grabado;
+  if (!file) return;
+  try { if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file] }); return; } } catch (e) { if (e?.name === 'AbortError') return; }
+  const a = Object.assign(document.createElement('a'), { href: S.url, download: file.name });
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+// ---------- varias series seguidas en vivo ----------
+// La serie terminada queda en la sesión (con su ejercicio y su carga) y la siguiente arranca con la misma
+// cámara, el mismo código para la pantalla del deportista y la misma medida del disco.
+function serieActual() {
+  const ex = $('gy-ex').value, load = num($('gy-load').value);
+  const meta = { fileName: S.file?.name || 'en vivo', fps: +(1 / S.frameDur).toFixed(2), width: S.W, height: S.Hh };
+  const data = barSaved(S.res, { exercise: ex, load: Number.isFinite(load) ? load : null, meta, scale: { p1: S.scalePts[0], p2: S.scalePts[1], D: S.scale.D }, corte: corteId() });
+  return { ex, load: Number.isFinite(load) ? load : null, data };
+}
+const serieValida = () => S.mode === 'bar' && S.scale && S.res && !S.res.error && S.res.reps?.length > 0;
+const finVivo = () => S.liveFin || (S.live?.done ? S.live : null);
+async function siguienteSerie() {
+  const L = finVivo();
+  if (!L) return;
+  if (serieValida() && !S.evId) S.sesion.push(serieActual());
+  const seguir = { code: L.code, link: L.link, kind: L.kind, quiereVideo: L.quiereVideo, scale: S.scale, scalePts: S.scalePts };
+  L.link = null; // el enlace pasa a la serie nueva (no se cierra)
+  S.liveFin = null; S.live = null;
+  const v = video(); v.pause(); v.removeAttribute('src');
+  if (S.url) { URL.revokeObjectURL(S.url); S.url = null; }
+  S.grabado = null;
+  await startLive(seguir);
+}
+// Series ya hechas en esta sesión (y el RM del día si hay dos cargas o más del mismo ejercicio).
+function sesionHtml() {
+  if (!S.sesion.length) return '';
+  const filas = [...S.sesion, ...(serieValida() && !S.evId ? [{ ...serieActual(), actual: true }] : [])];
+  let rm = '';
+  const variosEj = new Set(filas.map(x => x.ex)).size > 1;
+  const ex = filas[filas.length - 1].ex, v1 = EXERCISES[ex]?.v1rm, mismas = filas.filter(x => x.ex === ex && Number.isFinite(x.load));
+  if (v1 && new Set(mismas.map(x => x.load)).size >= 2) {
+    const r = loadVelocity(mismas.map(x => ({ load: x.load, v: x.data.best.mv }))).loadAt?.(v1);
+    if (r?.load > 0) rm = `<p class="fine ok-line">RM del día en ${esc(EXERCISES[ex].label.toLowerCase())}, con estas series: <b class="mono">${f(r.load, 1)} kg</b>. Al guardar, el plan del alumno/a en Team Bull usa este RM para los pesos con % de hoy.</p>`;
+  }
+  return `<div class="gy-sesion"><span class="fine-label">Series de esta sesión</span>
+    <div class="table-wrap"><table class="data sheet"><tr><th>Serie</th>${variosEj ? '<th>Ejercicio</th>' : ''}<th>Carga</th><th>Reps</th><th>Mejor vel.</th><th>Corte</th></tr>
+    ${filas.map((x, i) => { const c = corteSerie(x.data.reps, x.data.corte); return `<tr${x.actual ? ' class="hl"' : ''}><th scope="row">${i + 1}${x.actual ? ' <small>(esta)</small>' : ''}</th>${variosEj ? `<td>${esc(EXERCISES[x.ex]?.label || '')}</td>` : ''}<td class="mono">${x.load != null ? f(x.load, 1) + ' kg' : '–'}</td><td class="mono">${x.data.reps.length}</td><td class="mono">${f(x.data.best.mv)}</td><td>${c ? (c.stop ? '⚠ ' : '') + esc(c.corto.replace(/ \(corte .*\)$/, '')) : '–'}</td></tr>`; }).join('')}</table></div>${rm}</div>`;
 }
 
 function endLive() {
@@ -722,6 +826,7 @@ function endLive() {
   if (!L || L.done) return;
   L.done = true;
   S.abort?.abort();
+  const grabacion = cortarGrabacion(L);
   L.stream.getTracks().forEach(tr => tr.stop());
   L.peer?.close(); L.peer = null;
   video().srcObject = null; $('gy-player')?.classList.remove('gy-en-vivo');
@@ -731,14 +836,17 @@ function endLive() {
   S.hint = S.pts.length ? `Serie terminada: ${S.pts.length} cuadros seguidos a ${f(1 / S.frameDur, 0)} cuadros por segundo.` : '';
   sendState(true);
   panel(); draw();
+  grabacion.then(() => verGrabacion(L)).catch(() => {});
   // de vuelta en la página: directo a los resultados y a guardar
   setTimeout(() => $('gy-panel')?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 400);
 }
 
 function stopLive() {
+  if (S.liveFin) { S.liveFin.link?.close(); S.liveFin = null; }
+  S.grabado = null; S.sesion = [];
   const L = S.live;
   if (!L) return;
-  if (!L.done) { L.done = true; S.abort?.abort(); L.stream.getTracks().forEach(tr => tr.stop()); L.peer?.close(); }
+  if (!L.done) { L.done = true; S.abort?.abort(); try { L.rec?.r.stop(); } catch {} L.stream.getTracks().forEach(tr => tr.stop()); L.peer?.close(); }
   L.link?.close();
   S.live = null;
   video().srcObject = null; $('gy-player')?.classList.remove('gy-en-vivo');
@@ -775,6 +883,7 @@ function renderTools() {
     }
     if ((S.zoom || 1) > 1 && !S.live) h += b('gy-zoom-off', `🔍 ${fmtZoom()} · Quitar zoom`, { on: true });
     if (S.live && !done) h += b('gy-live-sound', S.sound ? 'Sonido ✓' : 'Sin sonido', { on: S.sound }) + b('gy-live-end', 'Terminar la serie', { primary: true });
+    if (finVivo() && !tracking) h += b('gy-otra-serie', 'Siguiente serie ▶', { primary: true });
     tip = S.tool === 'disco' ? 'Arrastrá el círculo hasta el disco y agrandalo o achicalo con dos dedos (o desde el punto del borde) hasta que coincida con el borde del disco.'
       : S.tool === 'center' ? 'Tocá el centro del disco.'
       : S.tool === 'fix' ? 'Arrastrá el punto naranja al centro del disco (o tocá donde va). Pasá de cuadro con ◀ ▶ y corregí los que haga falta.'
@@ -823,12 +932,14 @@ function barPanel() {
       <div class="kpi"><span class="fine-label">Pérdida de velocidad</span><b class="mono">${r.vl ? `${f(r.vl.v, 1)} <small>%</small>` : '–'}</b><small>${r.vl ? `±${f(1.96 * r.vl.se, 1)} · rep ${r.vl.from} a ${r.vl.to}` : 'hace falta más de una'}</small></div>
       ${deficitKpi(seriesDeficit(r.reps))}
     </div>
-    ${zoneHtml(r.reps, $('gy-ex').value)}
+    ${zoneHtml(r.reps, $('gy-ex').value, corteId())}
     ${velChart(r)}
     <div class="table-wrap"><table class="data sheet"><tr><th>Rep</th><th>Vel. media <small>(m/s)</small></th><th>Pico <small>(m/s)</small></th><th>Recorrido <small>(cm)</small></th><th>Subida <small>(s)</small></th><th>Bajada <small>(s)</small></th><th>Desvío horiz. <small>(cm)</small></th><th>Calidad</th></tr>
     ${r.reps.map(x => `<tr><th scope="row"><button class="linkish" type="button" data-gyrep="${x.n}">${x.n}</button></th><td class="mono">${f(x.mv)}<span class="ci">±${f(1.96 * x.se)}</span></td><td class="mono">${f(x.pv)}</td><td class="mono">${f(100 * x.rom, 0)}</td><td class="mono">${f(x.dur)}</td><td class="mono">${x.ecc != null ? f(x.ecc) : '–'}</td><td class="mono">${f(100 * x.dx, 1)}</td><td>${esc(zoneName(x.mv))}</td></tr>`).join('')}</table></div>
     <p class="fine">Velocidad media: lo que sube la barra dividido por lo que dura la subida (de velocidad cero a velocidad cero). Pérdida de velocidad: de la repetición más rápida a la última. El número chico con ± (más o menos) es el margen de error: el valor real está entre el número menos ese margen y el número más ese margen. Sale del ruido del seguimiento medido en este video (${f(1000 * r.sigmaX, 1)} mm), escala (±${f(100 * r.scaleRel, 1)} %) y hasta un cuadro en cada punta de la subida. Vale solo si la cámara estuvo quieta y perpendicular al recorrido: si el disco se acerca o se aleja de la cámara, la escala cambia.${r.cut ? ' La última subida quedó cortada por el final del video y no se cuenta.' : ''}</p>
-    ${saveRow('Guardar la serie en la ficha', `${esc(ex)}${Number.isFinite(load) ? ` · ${f(load, 1)} kg` : ' · sin carga anotada'}`)}`;
+    ${finVivo() ? '<p class="fine">¿Otra serie? Cambiá la carga arriba si hace falta y tocá <b>Siguiente serie ▶</b>: sigue la misma cámara, el mismo código y la misma medida del disco. Al final guardás todas juntas.</p>' : ''}
+    ${sesionHtml()}
+    ${saveRow(S.sesion.length ? `Guardar las ${S.sesion.length + (S.evId ? 0 : 1)} series en la ficha` : 'Guardar la serie en la ficha', S.sesion.length ? '' : `${esc(ex)}${Number.isFinite(load) ? ` · ${f(load, 1)} kg` : ' · sin carga anotada'}`)}`;
   }
   return h;
 }
@@ -864,7 +975,7 @@ function deficitKpi(d) {
   return `<div class="kpi"><span class="fine-label">Déficit de la serie</span><b class="mono">${d ? `${f(d.v, 2)} <small>%</small>` : '–'}</b><small>${d ? `±${f(1.96 * d.se, 1)} · 1.ª ${f(d.first)} / media ${f(d.mean)}` : 'hace falta más de una'}</small></div>`;
 }
 // Qué calidad trabaja la serie según la velocidad media de sus repeticiones.
-export function zoneHtml(reps, exKey) {
+export function zoneHtml(reps, exKey, corte = 'def') {
   const { v, se } = setMean(reps);
   const z = zoneOf(v, se), p = practiceOf(v, se), d = seriesDeficit(reps), ex = EXERCISES[exKey] || EXERCISES.other;
   if (!z) return '';
@@ -874,7 +985,8 @@ export function zoneHtml(reps, exKey) {
   if (z.near) h += `<p class="fine">Con el margen de la medición también podría ser ${esc(z.near.label)}.</p>`;
   if (zr) h += `<p>${esc(zr.pct)} de un día normal · ${esc(zr.reps)} repeticiones por serie · ${esc(zr.sets)} series · ${esc(zr.total)} repeticiones en total.</p>`;
   if (p?.zone) h += `<p>En la práctica: <b>${esc(p.zone.label)}</b> (${rng(p.zone)} m/s) · ${esc(p.zone.reps)} repeticiones por serie · ${esc(p.zone.sets)} series · ${esc(p.zone.total)} en total.</p>`;
-  if (d?.stop) h += `<p class="notice">El déficit de la serie pasó de ${DEFICIT_LIMIT} %: según la tabla, solo una serie más.</p>`;
+  const c = corteSerie(reps, corte);
+  if (c?.stop) h += `<p class="notice">${esc(c.aviso)}</p>`;
   if (ex.table === 'other') h += `<p class="fine">Las velocidades de la tabla salen de la sentadilla. En ${esc(ex.label.toLowerCase())} la misma velocidad corresponde a otro porcentaje del máximo (por ejemplo, el 1RM se alcanza a unos 0,30 m/s en sentadilla completa y a unos 0,15 m/s en press de banca), así que tomalo como orientación o usá el perfil carga-velocidad del deportista.</p>`;
   if (ex.table === 'olympic') h += `<p class="fine">En los levantamientos olímpicos la referencia habitual es la velocidad pico, no la media: la zona de la tabla (velocidad media, hecha con sentadilla) no se aplica directamente.</p>`;
   // tabla en filas de dos renglones (calidad y velocidad; después %, reps y series) para que entre en el celular
@@ -950,7 +1062,8 @@ function saltosTop() {
 // Fila de guardar: fecha (se puede cambiar), video en este celular y, si es una medición ya guardada, reemplazarla.
 function saveRow(txt, extra = '') {
   return `<div class="gy-row gy-save-row"><label>Fecha<input type="date" id="gy-date" value="${esc(S.date || today())}"></label><button class="btn primary" id="gy-save" type="button">${S.evId ? 'Guardar los cambios' : txt}</button>${extra ? `<span class="fine">${extra}</span>` : ''}</div>
-    ${S.file instanceof Blob ? '<p class="fine">Se guardan solo los datos, no el video. Para corregir después, abrí la medición en la ficha y cargá el mismo video del celular.</p>' : ''}
+    ${S.grabado ? '<p class="fine">Se guardan solo los datos, no el video. Si querés el video de la serie, guardalo en el celular: <button class="btn" id="gy-grabado" type="button">⬇ Guardar el video</button></p>'
+    : S.file instanceof Blob ? '<p class="fine">Se guardan solo los datos, no el video. Para corregir después, abrí la medición en la ficha y cargá el mismo video del celular.</p>' : ''}
     ${S.evId ? '<p class="fine">Es una medición guardada: al guardar se reemplaza por esta versión.</p>' : ''}`;
 }
 
@@ -1065,6 +1178,8 @@ function bindPanel() {
   on('gy-jauto-stop', () => S.auto?.abort?.abort());
   document.querySelectorAll('[data-gygo]').forEach(b => b.onclick = () => { const t = S.marks[b.dataset.gygo]; if (t != null) { video().pause(); seekFrame(frameAt(t)); } });
   on('gy-save', save);
+  on('gy-grabado', guardarGrabacion);
+  on('gy-otra-serie', siguienteSerie);
 }
 
 async function save() {
@@ -1076,10 +1191,22 @@ async function save() {
   try {
     const meta = { fileName: S.file.name, fps: +(1 / S.frameDur).toFixed(2), width: S.W, height: S.Hh };
     const date = $('gy-date')?.value || today();
+    // sesión en vivo: cada serie se guarda como una medición (así la ficha arma el perfil carga-velocidad)
+    if (S.mode === 'bar' && S.sesion.length) {
+      const series = [...S.sesion, ...(serieValida() && !S.evId ? [serieActual()] : [])];
+      let rec;
+      for (const x of series) {
+        rec = await store.saveEvaluation({ athleteId: aid, kind: 'gym', date, title: `Gym · ${EXERCISES[x.ex].label}`, event: Number.isFinite(x.load) ? `${f(x.load, 1)} kg` : '', summary: { mv: x.data.best.mv }, data: x.data, videoLocal: null });
+      }
+      S.sesion = []; S.evId = rec?.id || null; S.date = date;
+      panel();
+      H?.notify?.(`Guardé las ${series.length} series en la ficha con fecha ${date.split('-').reverse().join('/')}.`);
+      return;
+    }
     let ev;
     if (S.mode === 'bar') {
       const ex = $('gy-ex').value, load = num($('gy-load').value);
-      const data = barSaved(S.res, { exercise: ex, load: Number.isFinite(load) ? load : null, meta, scale: { p1: S.scalePts[0], p2: S.scalePts[1], D: S.scale.D } });
+      const data = barSaved(S.res, { exercise: ex, load: Number.isFinite(load) ? load : null, meta, scale: { p1: S.scalePts[0], p2: S.scalePts[1], D: S.scale.D }, corte: corteId() });
       ev = { athleteId: aid, kind: 'gym', date, title: `Gym · ${EXERCISES[ex].label}`, event: Number.isFinite(load) ? `${f(load, 1)} kg` : '', summary: { mv: data.best.mv }, data };
     } else {
       const fv = fvProfile(num(S.mass), num(S.hpo), S.jumps.filter(j => j.type === 'loaded').map(j => ({ h: j.h, load: j.load || 0 })));
@@ -1106,7 +1233,7 @@ const day = (d) => (d || '').split('-').reverse().join('/');
 export function gymSummary(d) {
   if (d.type === 'bar') {
     return `<div class="kpis"><div class="kpi"><span class="fine-label">Ejercicio</span><b>${esc(EXERCISES[d.exercise]?.label || '')}</b><small>${d.load != null ? `${f(d.load, 1)} kg` : 'sin carga anotada'}</small></div><div class="kpi"><span class="fine-label">Mejor velocidad media</span><b class="mono">${f(d.best?.mv)} m/s</b><small>±${f(1.96 * (d.best?.se ?? NaN))}</small></div><div class="kpi"><span class="fine-label">Pérdida de velocidad</span><b class="mono">${d.vl ? `${f(d.vl.v, 1)} %` : '–'}</b></div>${deficitKpi(seriesDeficit(d.reps || []))}</div>
-      ${zoneHtml(d.reps || [], d.exercise)}
+      ${zoneHtml(d.reps || [], d.exercise, d.corte)}
       <div class="table-wrap"><table class="data sheet"><tr><th>Rep</th><th>Vel. media (m/s)</th><th>Pico (m/s)</th><th>Recorrido (cm)</th><th>Subida (s)</th></tr>${d.reps.map(x => `<tr><th scope="row">${x.n}</th><td class="mono">${f(x.mv)}<span class="ci">±${f(1.96 * x.se)}</span></td><td class="mono">${f(x.pv)}</td><td class="mono">${f(100 * x.rom, 0)}</td><td class="mono">${f(x.dur)}</td></tr>`).join('')}</table></div>
       <p class="fine">Video ${esc(d.meta?.fileName || '')} a ${f(d.meta?.fps, 0)} cuadros/s. Escala con disco de ${f(1000 * (d.scale?.D ?? NaN), 0)} mm.</p>`;
   }

@@ -110,20 +110,23 @@ function render(st) {
   const last = reps[reps.length - 1];
   const big = $('gy-show-big'), zone = $('gy-show-zone'), rep = $('gy-show-rep'), list = $('gy-show-list');
   const ex = EXERCISES[st?.ex]?.label || '';
-  rep.textContent = last ? `Rep ${last.n}${ex ? ' · ' + ex : ''}${Number.isFinite(st.load) ? ` · ${f(st.load, 1)} kg` : ''}` : st ? (st.done ? 'Serie terminada' : 'Esperando la primera repetición…') : 'Escribí el código que muestra el celular';
+  rep.textContent = last ? `${st.serie > 1 ? `Serie ${st.serie} · ` : ''}Rep ${last.n}${ex ? ' · ' + ex : ''}${Number.isFinite(st.load) ? ` · ${f(st.load, 1)} kg` : ''}` : st ? (st.done ? 'Serie terminada' : 'Esperando la primera repetición…') : 'Escribí el código que muestra el celular';
   big.innerHTML = last ? `${f(last.mv)}<small> m/s</small>` : '–';
   const z = last ? zoneOf(last.mv) : null;
   zone.textContent = z ? (z.zone ? z.zone.label : z.out === 'below' ? 'Debajo de la tabla' : 'Arriba de la tabla') : '';
   $('gy-show-stage').dataset.zone = z?.zone?.id || '';
   const d = st?.deficit;
-  list.textContent = reps.length > 1 ? reps.slice(0, -1).map(r => f(r.mv)).join('  ·  ') + (Number.isFinite(d) ? `   ·   déficit ${f(d)} %` : '') : '';
-  $('gy-show-stage').classList.toggle('stop', Number.isFinite(d) && d < DEFICIT_LIMIT);
+  // corte elegido en el celular que filma (las versiones anteriores mandaban solo el déficit)
+  const stop = typeof st?.stop === 'boolean' ? st.stop : Number.isFinite(d) && d < DEFICIT_LIMIT;
+  const corte = typeof st?.corte === 'string' ? st.corte : Number.isFinite(d) ? `déficit ${f(d)} %` : '';
+  list.textContent = reps.length > 1 ? reps.slice(0, -1).map(r => f(r.mv)).join('  ·  ') + (corte ? `   ·   ${corte}` : '') : '';
+  $('gy-show-stage').classList.toggle('stop', stop);
   // destello al llegar una repetición nueva
   const key = last ? `${last.n}:${last.mv}` : '';
   if (key && key !== X.last) {
     big.classList.remove('flash'); void big.offsetWidth; big.classList.add('flash');
     // pitido solo cuando llega una repetición nueva (no al corregirse una anterior)
-    if ($('gy-sound')?.checked && last.n > X.lastN && !st.done) beep(Number.isFinite(d) && d < DEFICIT_LIMIT ? 'stop' : 'rep');
+    if ($('gy-sound')?.checked && last.n > X.lastN && !st.done) beep(stop ? 'stop' : 'rep');
   }
   X.lastN = last ? last.n : 0;
   X.last = key;

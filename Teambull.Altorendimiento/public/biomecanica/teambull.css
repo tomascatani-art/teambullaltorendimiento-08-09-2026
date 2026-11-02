@@ -399,3 +399,6 @@ html.solo-vivo main, html.solo-vivo.in-teambull main { padding-top: 12px; }
 .gy-vivo-rep small { font: 600 11px var(--sans); color: #ddd; }
 .gy-vivo-hint { width: 100%; background: rgba(18,16,23,.78); border-radius: 10px; padding: 6px 10px; color: #fff; font: 600 12px var(--sans); }
 .gy-vivo-code.bajo { border-color: var(--warn, #FFC94A); color: var(--warn, #FFC94A); }
+/* series de la sesión en vivo */
+.gy-sesion { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 10px 0; min-width: 0; max-width: 100%; }
+.gy-sesion tr.hl th, .gy-sesion tr.hl td { color: var(--accent); }
