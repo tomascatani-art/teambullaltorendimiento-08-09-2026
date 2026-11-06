@@ -5993,7 +5993,7 @@ function formatObjetivo(obj) {
 
 // Versión compacta para la lista del día: series y reps en blanco y, al lado o abajo, el % con su
 // peso en verde (ej. «4 series × 2-2-1» y «2 al 80% · 80 kg   2 al 85% · 85 kg   1 al 95% · 95 kg»).
-function LineaSerie({ obj, pres, sug, apx }) {
+function LineaSerie({ obj, pres, sug, apx, linea }) {
   if (!obj || obj === "—") return null;
   const m = String(obj).match(/^\s*(\d+)\s*[x×]\s*(.+)$/i);
   const repsL = m ? m[2].split("/").map((x) => x.trim()).filter(Boolean) : [];
@@ -6002,16 +6002,16 @@ function LineaSerie({ obj, pres, sug, apx }) {
   const kg = (p) => `${String(p).replace(".", ",")} kg`;
   let partes = [];
   if (pres) {
-    if (sug && sug.length > 1 && pcts.length === sug.length) partes = pcts.map((pc, k) => `${repsL.length === pcts.length ? `${repsL[k]} al ` : ""}${String(pc).replace(".", ",")}% · ${kg(sug[k])}`);
-    else if (sug && sug.length) partes = [`${pres} · ${sug.map(kg).join(" / ")}`];
-    else if (apx && apx.length) partes = [`${pres} · ≈ ${apx.map(kg).join(" / ")}`];
+    const reps = (r) => `${r} ${r === "1" ? "rep" : "reps"}`;
+    if (sug && sug.length > 1 && pcts.length === sug.length) partes = pcts.map((pc, k) => `${repsL.length === pcts.length ? `${reps(repsL[k])} - ` : ""}${String(pc).replace(".", ",")}% ${kg(sug[k])}`);
+    else if (sug && sug.length) partes = [`${pres} ${sug.map(kg).join(" / ")}`];
+    else if (apx && apx.length) partes = [`${pres} ≈ ${apx.map(kg).join(" / ")}`];
     else partes = [pres];
   }
   return (
     <div className="font-body" style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", columnGap: 14, rowGap: 2, marginTop: 3, fontSize: 13.5, fontWeight: 800, lineHeight: 1.35 }}>
-      <span style={{ color: "#F4F1EA" }}>{izq}</span>
-      {partes.length > 1 && <span style={{ flexBasis: "100%", height: 0 }} />}
-      {partes.map((t, k) => <span key={k} style={{ color: "#7DD6C0", whiteSpace: "nowrap" }}>{t}</span>)}
+      <span style={{ color: "#F4F1EA", flexBasis: "100%" }}>{izq}</span>
+      {partes.length > 0 && <span style={{ color: "#7DD6C0", display: "flex", flexWrap: "wrap", alignItems: "baseline", rowGap: 2 }}>{partes.map((t, k) => <React.Fragment key={k}>{k > 0 && <span style={{ color: "#6B6678", margin: "0 6px" }}>/</span>}<span style={{ whiteSpace: "nowrap" }}>{t}</span></React.Fragment>)}</span>}
     </div>
   );
 }
@@ -6219,7 +6219,7 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
                     <div onClick={() => setActiveId(pe.id)} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 12px", borderRadius: 10, cursor: "pointer", border: activeId === pe.id ? "1px solid #FF6B35" : `1px solid ${rolPE ? rolPE.color : "#322E3D"}`, background: activeId === pe.id ? "rgba(255,107,53,0.12)" : (rolPE ? `${rolPE.color}38` : "#1C1A24"), boxSizing: "border-box" }}>
                       <span style={{ fontSize: 16, flexShrink: 0 }}>{pe.emoji}</span>
                       <div style={{ minWidth: 0, flex: 1 }}>
-                        <button onClick={(e) => { e.stopPropagation(); if (activeId === pe.id && pe.video) { openVideo(videoFila); } else { setActiveId(pe.id); } }} className="font-body" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left", display: "block", color: done ? "#33D6A6" : "#FF8A5C", fontWeight: 700, fontSize: 14 }}>
+                        <button onClick={(e) => { e.stopPropagation(); if (activeId === pe.id && pe.video) { openVideo(videoFila); } else { setActiveId(pe.id); } }} className="font-body" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left", display: "block", color: done ? "#33D6A6" : "#F4F1EA", fontWeight: 700, fontSize: 14 }}>
                           {done ? "✓ " : ""}{pe.nombre}
                         </button>
                         {(() => {
