@@ -402,3 +402,26 @@ html.solo-vivo main, html.solo-vivo.in-teambull main { padding-top: 12px; }
 /* series de la sesión en vivo */
 .gy-sesion { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 10px 0; min-width: 0; max-width: 100%; }
 .gy-sesion tr.hl th, .gy-sesion tr.hl td { color: var(--accent); }
+/* Guardar en la ficha: botón grande fijo abajo en Técnica y Competencia */
+.guardar-fijo { position: sticky; bottom: 0; z-index: 20; margin: 14px -4px 0; padding: 10px 4px calc(10px + env(safe-area-inset-bottom, 0px)); background: linear-gradient(rgba(18,16,23,0), #121017 30%); display: flex; flex-direction: column; gap: 8px; }
+.guardar-fijo .btn { min-height: 52px; font-size: 16px; font-weight: 700; border-radius: 14px; }
+.guardar-fijo .btn.guardado, .gy-save-grande.guardado { background: #33D6A6; border-color: #33D6A6; color: #0B2A2E; }
+.guardar-fijo .notice { margin: 0; }
+.gy-save-grande { min-height: 50px; font-size: 15px; font-weight: 700; flex: 1 1 auto; }
+.elegir-alumno { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.elegir-alumno .btn { min-height: 42px; }
+.gy-elegir { margin: 6px 0 10px; }
+.ev-video-local { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
+/* Controles del video: foto del momento y ocultar todo */
+.vb-fila { display: flex; align-items: center; gap: 6px; }
+.vb-fila .vb-seek { flex: 1 1 auto; min-width: 0; }
+.vb-foto, .vb-ocultar { flex: none; height: 30px; padding: 0 9px; border-radius: 9px; border: 1px solid rgba(255,255,255,.3); background: rgba(18,16,23,.78); color: #fff; font: 700 12px var(--sans); cursor: pointer; touch-action: manipulation; }
+.vb-foto { font-size: 15px; padding: 0 7px; }
+.vb-mostrar { display: none; position: absolute; z-index: 6; right: 8px; bottom: 8px; height: 30px; padding: 0 10px; border-radius: 999px; border: 1px solid rgba(255,255,255,.25); background: rgba(18,16,23,.55); color: rgba(255,255,255,.9); font: 700 11px var(--sans); cursor: pointer; }
+.player.vb-oculto .vb-mostrar { display: block; }
+.player.vb-oculto .vb, .player.vb-oculto .vb-cerrar, .player.vb-oculto .vb-zoomoff, .player.vb-oculto .gy-ov, .player.vb-oculto .ov-chips, .player.vb-oculto .hud, .player.vb-oculto #rc-qt { display: none !important; }
+/* el contenedor de la página no deja usar «sticky»: la barra de guardar queda fija abajo mientras se ve el análisis */
+body[data-view="results"] #view-results .guardar-fijo, body[data-view="race"] #view-race .guardar-fijo { position: fixed; left: 0; right: 0; bottom: 0; margin: 0; padding: 18px 12px calc(10px + env(safe-area-inset-bottom, 0px)); }
+body[data-view="results"] #view-results, body[data-view="race"] #view-race { padding-bottom: 96px; }
+.guardar-fijo .btn { min-height: 48px; }
+html.vb-full-on .guardar-fijo { display: none !important; }

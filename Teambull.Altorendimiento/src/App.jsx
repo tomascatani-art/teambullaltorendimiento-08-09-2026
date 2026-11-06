@@ -991,6 +991,18 @@ const delMesActual = (items) => {
 const fechaLegible = (iso) => { try { return new Date(iso + "T00:00:00").toLocaleDateString("es-AR", { day: "numeric", month: "short" }); } catch { return iso; } };
 const mostrarFecha = (f) => (/^\d{4}-\d{2}-\d{2}$/.test(f) ? fechaLegible(f) : f);
 
+// Kilos que corresponden al % (o al RIR) de una semana, con el RM de la persona: igual que lo que
+// el alumno/a ve en «Peso a usar» dentro de la app. Sin RM cargado para ese ejercicio, no muestra nada.
+function kgDeSemana(plan, fila, i, alumno) {
+  const r = rmDeSemana(fila, i);
+  if (!r) return "";
+  const rmList = rmConHistorial((plan && plan.rm) || [], alumno);
+  const exactos = pesosSugeridos(rmList, fila.nombre, r);
+  if (exactos && exactos.length) return exactos.map((p) => `${String(p).replace(".", ",")} kg`).join(" / ");
+  const aprox = pesosAproxPorRIR(rmList, fila.nombre, r, fila.semanas && fila.semanas[i]);
+  return aprox && aprox.length ? `≈ ${aprox.map((p) => `${String(p).replace(".", ",")} kg`).join(" / ")}` : "";
+}
+
 function generarTextoPlan(alumno) {
   const p = alumno.plan;
   let t = `🐂 TEAM BULL — Plan de ${alumno.nombre}\n`;
@@ -1015,7 +1027,7 @@ function generarTextoPlan(alumno) {
         if (f.tipo === "tabata") {
           t += `  • ${f.nombre} — Tabata ${f.tabata.trabajo}s/${f.tabata.descanso}s x${f.tabata.rounds}\n`;
         } else {
-          const sems = f.semanas.map((s, i) => { const r = rmDeSemana(f, i); return `${s || ""}${r ? ` (${r})` : ""}`; }).filter((s) => s.trim()).join(" / ");
+          const sems = f.semanas.map((s, i) => { const r = rmDeSemana(f, i); const kg = kgDeSemana(p, f, i, alumno); return `${s || ""}${r ? ` (${r}${kg ? ` = ${kg}` : ""})` : ""}`; }).filter((s) => s.trim()).join(" / ");
           t += `  • ${f.nombre}${f.nota ? ` (${f.nota})` : ""}${sems ? ` — ${sems}` : ""}\n`;
         }
       });
@@ -1039,6 +1051,7 @@ const ESTILO_PDF = `
   td,th{border:1px solid #322E3D;padding:6px 8px;text-align:left;color:#F4F1EA}
   th{background:#26232F;color:#8B8698;font-weight:600;font-size:10px;text-transform:uppercase}
   td small{color:#7DD6C0;display:block;margin-top:2px}
+  td small.kg{color:#FF6B35;font-weight:700}
   .meta{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 4px}
   .meta span{background:#1C1A24;border:1px solid #322E3D;border-radius:999px;padding:5px 12px;font-size:11px;color:#8B8698}
   .meta b{color:#F4F1EA}
@@ -1055,7 +1068,7 @@ const nombreConVideoHTML = (nombre, video) =>
 
 function generarHTMLPlan(alumno) {
   const p = alumno.plan;
-  const filaHTML = (f) => `<tr><td>${nombreConVideoHTML(f.nombre, f.video)}${f.nota ? `<div class="nota">${f.nota}</div>` : ""}</td>${f.tipo === "tabata" ? `<td colspan="99">Tabata: ${f.tabata.trabajo}s trabajo / ${f.tabata.descanso}s descanso × ${f.tabata.rounds} rounds</td>` : f.semanas.map((s, i) => { const r = rmDeSemana(f, i); return `<td>${s || "—"}${r ? `<small>${r}</small>` : ""}</td>`; }).join("")}</tr>`;
+  const filaHTML = (f) => `<tr><td>${nombreConVideoHTML(f.nombre, f.video)}${f.nota ? `<div class="nota">${f.nota}</div>` : ""}</td>${f.tipo === "tabata" ? `<td colspan="99">Tabata: ${f.tabata.trabajo}s trabajo / ${f.tabata.descanso}s descanso × ${f.tabata.rounds} rounds</td>` : f.semanas.map((s, i) => { const r = rmDeSemana(f, i); const kg = kgDeSemana(p, f, i, alumno); return `<td>${s || "—"}${r ? `<small>${r}</small>` : ""}${kg ? `<small class="kg">${kg}</small>` : ""}</td>`; }).join("")}</tr>`;
   const diaHTML = (d) => `<h3>${d.nombre}${d.diaSemana ? ` — ${d.diaSemana}` : ""}</h3>` + d.bloques.map((b) => `<h4>${b.nombre}</h4><table><tr><th>Ejercicio</th>${b.ejercicios[0] && b.ejercicios[0].tipo !== "tabata" ? b.ejercicios[0].semanas.map((_, i) => `<th>Sem.${i + 1}</th>`).join("") : "<th>Detalle</th>"}</tr>${b.ejercicios.map(filaHTML).join("")}</table>`).join("");
   return sinEmojis(`<html><head><meta charset="utf-8"><title>Plan — ${alumno.nombre}</title><style>${ESTILO_PDF}</style></head><body>
     <button class="btn-imprimir" onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button>
@@ -2022,6 +2035,17 @@ function extraerPorcentajes(texto) {
 // serie progresiva) Y hay un RM base cargado para ese mismo ejercicio en la tabla de RM del plan,
 // calcula el peso (o los pesos) a usar — redondeado a la media unidad más cercana, que es lo
 // práctico para cargar discos/mancuernas. Devuelve un array (uno o varios pesos) o null.
+// RM para calcular pesos: primero los del plan y, para los ejercicios que el plan no tiene (o tiene
+// vacíos), el último valor del historial de RM de la persona. Así, si un ejercicio vuelve meses
+// después, el % ya muestra los kilos sin tener que volver a cargar el RM.
+function rmConHistorial(rmList, alumno) {
+  const hist = (alumno && alumno.historialRM) || {};
+  const extra = Object.entries(hist)
+    .map(([ejercicio, vals]) => ({ id: "hist-" + ejercicio, ejercicio, valor: Array.isArray(vals) && vals.length ? String(vals[vals.length - 1]) : "" }))
+    .filter((r) => r.valor);
+  return [...(rmList || []), ...extra];
+}
+
 function pesosSugeridos(rmList, nombreEjercicio, textoRM) {
   const pcts = extraerPorcentajes(textoRM);
   const base = buscarRMBase(rmList, nombreEjercicio);
@@ -4495,7 +4519,11 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
                 <button onClick={() => {
                   if (!nombreNuevaPlanificacion.trim()) return;
                   onGuardarVersion(alumno.id, nombreNuevaPlanificacion.trim());
-                  cambiarPlanConHistorial(mkPlanVacio());
+                  // el plan nuevo arranca vacío pero conserva los RM y la composición corporal de la persona
+                  const nuevo = mkPlanVacio();
+                  nuevo.rm = (alumno.plan?.rm || []).filter((r) => r.ejercicio).map((r) => ({ ...r, id: uid() }));
+                  nuevo.meta = { ...nuevo.meta, masaAdiposa: alumno.plan?.meta?.masaAdiposa || "", masaMuscular: alumno.plan?.meta?.masaMuscular || "" };
+                  cambiarPlanConHistorial(nuevo);
                   setNombreNuevaPlanificacion("");
                   setEmpezandoNueva(false);
                 }} className="font-body" style={{ background: "#FFC94A", border: "none", borderRadius: 8, color: "#3A2A00", fontWeight: 700, padding: "0 14px", cursor: "pointer" }}>Guardar y empezar</button>
@@ -5963,12 +5991,99 @@ function formatObjetivo(obj) {
   return `Serie ${series} · Repeticiones ${reps}`;
 }
 
+// Versión compacta para la lista del día: series y reps en blanco y, al lado o abajo, el % con su
+// peso en verde (ej. «4 series × 2-2-1» y «2 al 80% · 80 kg   2 al 85% · 85 kg   1 al 95% · 95 kg»).
+function LineaSerie({ obj, pres, sug, apx }) {
+  if (!obj || obj === "—") return null;
+  const m = String(obj).match(/^\s*(\d+)\s*[x×]\s*(.+)$/i);
+  const repsL = m ? m[2].split("/").map((x) => x.trim()).filter(Boolean) : [];
+  const izq = m ? `${m[1]} ${m[1] === "1" ? "serie" : "series"} × ${repsL.join("-")}` : String(obj);
+  const pcts = extraerPorcentajes(pres);
+  const kg = (p) => `${String(p).replace(".", ",")} kg`;
+  let partes = [];
+  if (pres) {
+    if (sug && sug.length > 1 && pcts.length === sug.length) partes = pcts.map((pc, k) => `${repsL.length === pcts.length ? `${repsL[k]} al ` : ""}${String(pc).replace(".", ",")}% · ${kg(sug[k])}`);
+    else if (sug && sug.length) partes = [`${pres} · ${sug.map(kg).join(" / ")}`];
+    else if (apx && apx.length) partes = [`${pres} · ≈ ${apx.map(kg).join(" / ")}`];
+    else partes = [pres];
+  }
+  return (
+    <div className="font-body" style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", columnGap: 14, rowGap: 2, marginTop: 3, fontSize: 13.5, fontWeight: 800, lineHeight: 1.35 }}>
+      <span style={{ color: "#F4F1EA" }}>{izq}</span>
+      {partes.length > 1 && <span style={{ flexBasis: "100%", height: 0 }} />}
+      {partes.map((t, k) => <span key={k} style={{ color: "#7DD6C0", whiteSpace: "nowrap" }}>{t}</span>)}
+    </div>
+  );
+}
+
+// Tablita de la serie: columnas Series · Reps · % · Kg, una fila por tramo (ej. 2 reps al 80%,
+// 2 al 85% y 1 al 95%). Sin % solo muestra series y reps.
+function TablaSerie({ obj, pres, sug, apx, grande }) {
+  if (!obj || obj === "—") return null;
+  const m = String(obj).match(/^\s*(\d+)\s*[x×]\s*(.+)$/i);
+  if (!m && !pres) return <div className="font-body" style={{ color: "#F4F1EA", fontSize: grande ? 19 : 14, fontWeight: 800, marginTop: 4 }}>{obj}</div>;
+  const series = m ? m[1] : "";
+  const repsL = m ? m[2].split("/").map((x) => x.trim()).filter(Boolean) : [String(obj)];
+  const pcts = extraerPorcentajes(pres);
+  const kgs = sug && sug.length ? sug.map((p) => `${String(p).replace(".", ",")} kg`) : apx && apx.length ? apx.map((p) => `≈ ${String(p).replace(".", ",")} kg`) : [];
+  const conPct = !!pres;
+  let filas;
+  if (conPct && pcts.length > 1 && repsL.length === pcts.length) filas = repsL.map((r, k) => [r, `${String(pcts[k]).replace(".", ",")}%`, kgs.length === pcts.length ? kgs[k] : (k === 0 ? kgs.join(" / ") : "")]);
+  else if (conPct && pcts.length > 1 && kgs.length === pcts.length) filas = pcts.map((pc, k) => [k === 0 ? repsL.join("-") : "", `${String(pc).replace(".", ",")}%`, kgs[k]]);
+  else filas = [[repsL.join("-"), conPct ? pres : "", kgs.join(" / ")]];
+  const cols = conPct ? "minmax(44px,0.7fr) 1fr 1fr 1.3fr" : "minmax(44px,0.7fr) 3.3fr";
+  const fs = grande ? 19 : 15, hs = grande ? 10 : 9;
+  const cab = { color: "#6B6678", fontSize: hs, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", paddingBottom: 3, paddingRight: 8, borderBottom: "1px solid #26232F" };
+  const celda = (c, k) => ({ fontSize: fs, fontWeight: 800, color: c, padding: "4px 8px 4px 0", borderTop: k ? "1px solid #1F1C27" : "none", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" });
+  return (
+    <div className="font-body" style={{ display: "grid", gridTemplateColumns: cols, alignItems: "baseline", background: "#151319", border: "1px solid #26232F", borderRadius: 10, padding: grande ? "10px 14px" : "7px 10px", marginTop: 6 }}>
+      <span style={cab}>Series</span><span style={cab}>Reps</span>{conPct && <><span style={cab}>{/rir/i.test(pres) && !pcts.length ? "RIR" : "%"}</span><span style={cab}>Peso</span></>}
+      {filas.map(([r, pc, kg], k) => (
+        <React.Fragment key={k}>
+          <span style={{ ...celda("#F4F1EA", k), borderTop: "none" }}>{k === 0 ? series : ""}</span>
+          <span style={celda("#F4F1EA", k)}>{r}</span>
+          {conPct && <><span style={celda("#7DD6C0", k)}>{pc}</span><span style={celda("#7DD6C0", k)}>{kg || "—"}</span></>}
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
+// Series y repeticiones como etiqueta (violeta), para que se vean tanto como el % y el peso.
+function ChipSeries({ obj }) {
+  if (!obj || obj === "—") return null;
+  const m = String(obj).match(/^(\d+)\s*[x×]\s*(.+)$/i);
+  const txt = m ? `${m[1]} ${m[1] === "1" ? "serie" : "series"} × ${m[2].trim().split("/").join(" - ")} ${m[2].trim() === "1" ? "rep" : "reps"}` : obj;
+  return <span className="font-body" style={{ display: "inline-flex", alignItems: "center", padding: "3px 2px", fontSize: 13, fontWeight: 800, lineHeight: 1.25, color: "#F4F1EA" }}>{txt}</span>;
+}
+// % (o RIR) y kilos. Con varios % (ej. 80% 85% 95%) muestra una etiqueta por cada uno con su peso.
+function ChipsPctKg({ pres, sug, apx, obj }) {
+  const pcts = extraerPorcentajes(pres);
+  const mo = String(obj || "").match(/^\s*\d+\s*[x×]\s*(.+)$/i);
+  const reps = mo ? mo[1].split("/").map((x) => x.trim()) : [];
+  const chip = { display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 999, padding: "3px 10px", fontSize: 12.5, fontWeight: 700, lineHeight: 1.25, whiteSpace: "nowrap" };
+  const fmt = (p) => `${String(p).replace(".", ",")} kg`;
+  if (sug && sug.length > 1 && pcts.length === sug.length) {
+    return pcts.map((pc, k) => (
+      <span key={k} style={{ ...chip, background: "rgba(125,214,192,0.10)", border: "1px solid rgba(125,214,192,0.45)" }}>
+        {reps.length === pcts.length && <span style={{ color: "#F4F1EA" }}>{reps[k]} {reps[k] === "1" ? "rep" : "reps"}</span>}
+        <span style={{ color: "#7DD6C0" }}>{String(pc).replace(".", ",")}% → {fmt(sug[k])}</span>
+      </span>
+    ));
+  }
+  return (
+    <>
+      <span style={{ ...chip, background: "rgba(125,214,192,0.12)", border: "1px solid rgba(125,214,192,0.5)", color: "#7DD6C0" }}>{pres}{sug && sug.length ? ` → ${sug.map(fmt).join(" / ")}` : ""}{apx ? ` → ≈ ${apx.map(fmt).join(" / ")}` : ""}</span>
+    </>
+  );
+}
+
 function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizados, onCerrarAvisosRM }) {
   // Si hay rutinas extra (además de la principal), la alumna puede elegir cuál está viendo/usando.
   const [rutinaActivaId, setRutinaActivaId] = useState(null); // null = la principal
   const planActivo = rutinaActivaId ? (alumno.planesSecundarios || []).find((p) => p.id === rutinaActivaId)?.plan || alumno.plan : alumno.plan;
   // RM para calcular los kilos: los de la rutina que está usando y, si ahí falta alguno, los del plan principal.
-  const rmPesos = [...(planActivo.rm || []), ...(planActivo !== alumno.plan ? alumno.plan?.rm || [] : [])];
+  const rmPesos = rmConHistorial([...(planActivo.rm || []), ...(planActivo !== alumno.plan ? alumno.plan?.rm || [] : [])], alumno);
   const dias = planActivo.dias;
   const [diaIdx, setDiaIdx] = useState(0);
   const ejercicios = flatEjercicios(dias[diaIdx]);
@@ -6104,13 +6219,18 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
                     <div onClick={() => setActiveId(pe.id)} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 12px", borderRadius: 10, cursor: "pointer", border: activeId === pe.id ? "1px solid #FF6B35" : `1px solid ${rolPE ? rolPE.color : "#322E3D"}`, background: activeId === pe.id ? "rgba(255,107,53,0.12)" : (rolPE ? `${rolPE.color}38` : "#1C1A24"), boxSizing: "border-box" }}>
                       <span style={{ fontSize: 16, flexShrink: 0 }}>{pe.emoji}</span>
                       <div style={{ minWidth: 0, flex: 1 }}>
-                        <button onClick={(e) => { e.stopPropagation(); if (activeId === pe.id && pe.video) { openVideo(videoFila); } else { setActiveId(pe.id); } }} className="font-body" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left", display: "block", color: done ? "#33D6A6" : "#F4F1EA", fontWeight: 600, fontSize: 13 }}>
+                        <button onClick={(e) => { e.stopPropagation(); if (activeId === pe.id && pe.video) { openVideo(videoFila); } else { setActiveId(pe.id); } }} className="font-body" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left", display: "block", color: done ? "#33D6A6" : "#FF8A5C", fontWeight: 700, fontSize: 14 }}>
                           {done ? "✓ " : ""}{pe.nombre}
                         </button>
-                        <div className="font-body" style={{ color: "#8B8698", fontSize: 11, marginTop: 2 }}>
-                          {formatObjetivo(obj)}{rmDeSemana(pe, semana) && ` · ${rmDeSemana(pe, semana)}`}
-                          {(() => { const sug = pesosSugeridos(rmPesos, pe.nombre, rmDeSemana(pe, semana)); if (sug && sug.length) return <span style={{ color: "#7DD6C0", fontWeight: 700 }}> · {sug.map((p) => `${p}kg`).join("/")}</span>; const apx = pe.tipo === "tabata" ? null : pesosAproxPorRIR(rmPesos, pe.nombre, rmDeSemana(pe, semana), obj); return apx ? <span style={{ color: "#FFC94A", fontWeight: 700 }}> · ≈{apx.map((p) => `${p}kg`).join("/")} aprox.</span> : null; })()}
-                        </div>
+                        {(() => {
+                          // series y repeticiones, y el % (o RIR) que puso el coach con los kilos al lado
+                          const pres = pe.tipo === "tabata" ? "" : rmDeSemana(pe, semana);
+                          const sug = pres ? pesosSugeridos(rmPesos, pe.nombre, pres) : null;
+                          const apx = !pres || (sug && sug.length) ? null : pesosAproxPorRIR(rmPesos, pe.nombre, pres, obj);
+                          return (
+                            pe.tipo === "tabata" ? <div className="font-body" style={{ color: "#8B8698", fontSize: 11, marginTop: 2 }}>{formatObjetivo(obj)}</div> : <LineaSerie obj={obj} pres={pres} sug={sug} apx={apx} />
+                          );
+                        })()}
                         {pe.nota && pe.nota.trim() && (
                           <div className="font-body" style={{ color: "#FFC94A", fontSize: 10.5, fontWeight: 600, marginTop: 3, lineHeight: 1.35 }}>📝 {pe.nota}</div>
                         )}
@@ -6160,10 +6280,18 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
           ) : (
             <>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 4 }}>
+                {activePE.tipo !== "tabata" && /^\s*\d+\s*[x×]/i.test(String(objetivo || "")) ? (
+                  <div>
+                    <div className="font-body" style={{ color: "#8B8698", fontSize: 10 }}>{maxSemanas > 1 ? `Objetivo — semana ${semana + 1}` : "Objetivo"}</div>
+                    <TablaSerie obj={objetivo} pres={rmDeSemana(activePE, semana)} sug={pesosSug} apx={pesosAprox} grande />
+                    {pesosSug && pesosSug.length > 0 && <div className="font-body" style={{ color: "#8B8698", fontSize: 10, marginTop: 4 }}>Peso calculado con tu RM de {String(buscarRMBase(rmPesos, activePE.nombre)).replace(".", ",")} kg</div>}
+                  </div>
+                ) : (
                 <div style={{ background: "#151319", border: "1px solid #26232F", borderRadius: 12, padding: "10px 14px" }}>
                   <div className="font-body" style={{ color: "#8B8698", fontSize: 10 }}>{maxSemanas > 1 ? `Objetivo — semana ${semana + 1}` : "Objetivo"}</div>
-                  <div className="font-display" style={{ color: "#F4F1EA", fontSize: 18, fontWeight: 700 }}>{formatObjetivo(objetivo)}</div>
+                  <div className="font-display" style={{ color: "#F4F1EA", fontSize: 19, fontWeight: 700 }}>{formatObjetivo(objetivo)}</div>
                 </div>
+                )}
                 {pesosAprox && (
                   <div style={{ background: "rgba(255,201,74,0.10)", border: "1px dashed #FFC94A", borderRadius: 12, padding: "10px 14px" }}>
                     <div className="font-body" style={{ color: "#FFC94A", fontSize: 10, fontWeight: 700 }}>PESO APROXIMADO ({rmDeSemana(activePE, semana)})</div>
@@ -6171,10 +6299,26 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
                     <div className="font-body" style={{ color: "#B9B4C4", fontSize: 10, marginTop: 3, lineHeight: 1.35 }}>Es una guía calculada con tu RM. Elegí el peso según cómo te sientas hoy: con RIR {String(rmDeSemana(activePE, semana)).match(/rir\s*(\d+(?:[.,]\d+)?)/i)?.[1]} te tienen que quedar unas {String(rmDeSemana(activePE, semana)).match(/rir\s*(\d+(?:[.,]\d+)?)/i)?.[1]} repeticiones en reserva. Si te cuesta más o menos, ajustalo.</div>
                   </div>
                 )}
-                {pesosSug && pesosSug.length > 0 && (
+                {pesosSug && pesosSug.length > 0 && !(activePE.tipo !== "tabata" && /^\s*\d+\s*[x×]/i.test(String(objetivo || ""))) && (
                   <div style={{ background: "rgba(125,214,192,0.12)", border: "1px solid #7DD6C0", borderRadius: 12, padding: "10px 14px" }}>
-                    <div className="font-body" style={{ color: "#7DD6C0", fontSize: 10, fontWeight: 700 }}>{pesosSug.length > 1 ? "PESOS A USAR" : "PESO A USAR"} ({rmDeSemana(activePE, semana)})</div>
-                    <div className="font-display" style={{ color: "#F4F1EA", fontSize: 20, fontWeight: 700 }}>{pesosSug.map((p) => `${p}kg`).join(" / ")}</div>
+                    <div className="font-body" style={{ color: "#7DD6C0", fontSize: 10, fontWeight: 700 }}>{pesosSug.length > 1 ? "PORCENTAJE Y PESOS A USAR" : "PORCENTAJE Y PESO A USAR"}</div>
+                    {(() => {
+                      const pcts = extraerPorcentajes(rmDeSemana(activePE, semana));
+                      const filas = pesosSug.length > 1 && pcts.length === pesosSug.length ? pcts.map((pc, k) => [`${String(pc).replace(".", ",")}%`, pesosSug[k]]) : [[rmDeSemana(activePE, semana), pesosSug.map((p) => String(p).replace(".", ",")).join(" / ")]];
+                      // si las repeticiones son tantas como los % (ej. 2/2/1 con 80% 85% 95%), cada fila dice cuántas reps van con ese peso
+                      const mo = String(objetivo || "").match(/^\s*\d+\s*[x×]\s*(.+)$/i);
+                      const repsF = mo ? mo[1].split("/").map((x) => x.trim()) : [];
+                      const conReps = filas.length > 1 && repsF.length === filas.length;
+                      return filas.map(([pc, kg], k) => (
+                        <div key={k} style={{ display: "flex", alignItems: "baseline", flexWrap: "wrap", gap: "2px 12px", marginTop: 2 }}>
+                          {conReps && <span className="font-display" style={{ color: "#F4F1EA", fontSize: 17, fontWeight: 700, minWidth: 64 }}>{repsF[k]} {repsF[k] === "1" ? "rep" : "reps"}</span>}
+                          <span className="font-display" style={{ color: "#7DD6C0", fontSize: filas.length > 1 ? 21 : 24, fontWeight: 700, minWidth: filas.length > 1 ? 62 : 0 }}>{pc}</span>
+                          <span className="font-body" style={{ color: "#7DD6C0", fontSize: 16 }}>→</span>
+                          <span className="font-display" style={{ color: "#7DD6C0", fontSize: filas.length > 1 ? 21 : 24, fontWeight: 700 }}>{String(kg).replace(".", ",")} kg</span>
+                        </div>
+                      ));
+                    })()}
+                    <div className="font-body" style={{ color: "#8B8698", fontSize: 10, marginTop: 2 }}>Calculado con tu RM de {String(buscarRMBase(rmPesos, activePE.nombre)).replace(".", ",")} kg</div>
                   </div>
                 )}
                 {rmHoy && (

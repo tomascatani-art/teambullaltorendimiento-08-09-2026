@@ -57,6 +57,8 @@ function show(view) {
   if (view !== 'gym' && document.body.dataset.view === 'gym') import('./gym-ui.js').then(m => m.leaveGym());
   const nav = NAV_OF[view] || '';
   if (view === 'mine') view = 'athlete'; // la ficha propia del nadador usa la misma pantalla
+  // análisis nuevo: el botón de guardar vuelve a estar listo
+  if (view === 'upload' || view === 'progress') document.querySelectorAll('[data-guardar-msg]').forEach(b => { b.textContent = '✅ Guardar en la ficha del alumno'; b.classList.remove('guardado'); const m = $(b.dataset.guardarMsg); if (m) m.hidden = true; });
   for (const v of ['auth', 'upload', 'progress', 'results', 'race', 'athletes', 'athlete', 'records', 'live', 'gym']) $('view-' + v).hidden = v !== view;
   // el video de la pantalla que se deja queda en pausa (no sigue corriendo de fondo)
   document.querySelectorAll('video').forEach(vd => { if (!vd.paused && !$('view-' + view).contains(vd)) vd.pause(); });
@@ -249,20 +251,42 @@ async function saveToAthlete(athleteId, name, rec, msgId, file) {
   };
   try {
     let id = athleteId;
+    if (id && !(await store.getAthlete(id))) id = null;
     if (!id) {
       const list = await store.listAthletes();
-      const found = list.find(a => a.name.trim().toLowerCase() === (name || '').trim().toLowerCase());
+      // busca el nombre sin importar tildes, mayúsculas ni si se escribió solo el nombre o el apellido
+      const nn = (t) => (t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+      const q = nn(name === 'Sin nombre' ? '' : name);
+      let found = q && list.find(a => nn(a.name) === q);
+      if (!found && q) { const c = list.filter(a => nn(a.name).split(' ').some(w => w.startsWith(q)) || q.split(' ').every(w => nn(a.name).includes(w))); if (c.length === 1) found = c[0]; }
       if (found) id = found.id;
-      else if (name && name !== 'Sin nombre') id = (await store.saveAthlete({ name })).id;
-      else { show('Elegí un alumno o escribí el nombre del nadador antes de guardar.'); return null; }
+      else if (q && !store.teambull) id = (await store.saveAthlete({ name })).id;
+      else {
+        // no se sabe de quién es: se elige de la lista y se guarda en ese mismo toque
+        const el = $(msgId);
+        el.innerHTML = '';
+        el.append(list.length ? (q ? `No encontré a «${name}». ¿De quién es? Tocá el nombre y se guarda:` : '¿De quién es? Tocá el nombre y se guarda:') : 'Primero cargá el alumno en Team Bull (pestaña Alumnos/as).');
+        const box = document.createElement('div'); box.className = 'elegir-alumno';
+        for (const a of list) {
+          const b = document.createElement('button'); b.type = 'button'; b.className = 'btn'; b.textContent = a.name;
+          b.onclick = () => saveToAthlete(a.id, a.name, rec, msgId, file);
+          box.append(b);
+        }
+        el.append(box); el.hidden = false; el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        return null;
+      }
     }
+    // el video queda guardado en este celular junto con el análisis (a la nube de Team Bull van los números)
+    if (store.backend !== 'cloud' && file instanceof Blob) rec.videoLocal = file;
     if (rec.sourceKey) {
       const prev = (await store.listEvaluations(id)).find(e => e.sourceKey === rec.sourceKey);
       if (prev) rec.id = prev.id; // vuelve a guardar sobre la misma evaluación
     }
     const saved = await store.saveEvaluation({ ...rec, athleteId: id });
     const a = await store.getAthlete(id);
-    show(`Guardado en la ficha de ${a.name}.`, id, saved);
+    show(`✓ Guardado en la ficha de ${a.name}${rec.videoLocal ? ', con el video' : ''}.`, id, saved);
+    $(msgId)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    document.dispatchEvent(new CustomEvent('bio-guardado', { detail: { msgId, nombre: a.name, saved } }));
     return saved;
   } catch (err) { show('No se pudo guardar: ' + err.message); return null; }
 }
@@ -1737,8 +1761,17 @@ function saveTech() {
     sourceKey: `tech:${m.fileName}:${m.analyzedAt}`,
     summary: { cycleRate: r.metrics.find(x => x.id === 'cycleRate')?.value ?? null },
     data: { meta: m, metrics: r.metrics, observations: r.observations, perCycle: r.perCycle, quality, drawings: state.drawings, series: packSeries(r), flight: flightSaved(state.flight), phases: phasesSaved(), faults: faultsSaved(state.faults || [], state.faultDecisions || {}), velocity: velocitySaved(state.velRes, state.vel?.scale || null), cam2: state.cam2meta || null, angleChecks: state.angleChecks, pointEdits: state.pointEdits, foundSearch: !!state.found, moments: momentRows(r, state.moments).map(({ frame, label, t, angles }) => ({ frame, label, t, angles: Object.fromEntries(Object.entries(angles).filter(([, a]) => a).map(([k, a]) => [k, +a.v.toFixed(1)])) })) },
-  }, 'export-msg', state.file).then(saved => { if (saved) { state.savedEval = saved; state.result.meta.athleteId = saved.athleteId; cmpOptions(); } return saved; });
+  }, 'tech-guardar-msg', state.file).then(saved => { if (saved) techGuardado(saved); return saved; });
 }
+function techGuardado(saved) { state.savedEval = saved; state.result.meta.athleteId = saved.athleteId; cmpOptions(); }
+document.addEventListener('bio-guardado', (e) => {
+  const { msgId, nombre, saved } = e.detail;
+  if (msgId === 'tech-guardar-msg' && saved && state.result) techGuardado(saved);
+  const b = document.querySelector(`[data-guardar-msg="${msgId}"]`);
+  if (b) { b.textContent = `✓ Guardado en ${nombre}`; b.classList.add('guardado'); }
+  const m = $(msgId); if (m) setTimeout(() => { if (m.textContent.startsWith('✓')) m.hidden = true; }, 6000);
+});
+$('tech-guardar').onclick = () => saveTech();
 
 const newAnalysisFor = (a) => { show('upload'); refreshSelect(a.id).then(() => { $('f-athlete').value = a.id; $('f-name').value = a.name; }); };
 initAthletes({

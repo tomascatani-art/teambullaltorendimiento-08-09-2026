@@ -442,7 +442,7 @@ async function openEval(id, evs) {
   const box = $('ap-detail');
   box.hidden = false;
   let h = `<div class="detail-head"><div><div class="eyebrow">${kindOf(e)[2]} · ${esc(e.date || '')}</div><h2 class="detail-title">${esc(e.title)}${e.event ? ` · ${esc(e.event)}` : ''}</h2></div>
-    <div class="head-actions">${e.kind === 'race' ? '<button class="btn primary" id="ev-pdf"><svg width="16" height="16"><use href="#i-download"/></svg>PDF</button>' : ''}${e.videoPath ? `<button class="btn ghost" id="ev-video">${e.kind === 'race' ? 'Abrir con el video' : 'Volver a analizar el video'}</button>` : ''}${readOnly() ? '' : '<button class="btn ghost danger" id="ev-del">Borrar evaluación</button>'}</div></div>`;
+    <div class="head-actions">${e.kind === 'race' ? '<button class="btn primary" id="ev-pdf"><svg width="16" height="16"><use href="#i-download"/></svg>PDF</button>' : ''}${e.videoPath || (e.videoLocal && e.kind !== 'gym') ? `<button class="btn ghost" id="ev-video">${e.kind === 'race' ? 'Abrir con el video' : 'Volver a analizar el video'}</button>` : ''}${readOnly() ? '' : '<button class="btn ghost danger" id="ev-del">Borrar evaluación</button>'}</div></div>`;
   if (store.backend === 'cloud' && current.email && !readOnly()) h += `<label class="check share-chk"><input type="checkbox" id="ev-share"${e.shared === false ? '' : ' checked'}> Visible para ${esc(current.name)} en su ficha</label>`;
   if (e.kind === 'race') {
     const res = raceRes(e);
@@ -495,7 +495,22 @@ async function openEval(id, evs) {
     h += techSummary(e.data);
     box.innerHTML = h;
   }
-  if (e.videoPath) $('ev-video').onclick = async () => {
+  // video guardado en este celular: se puede mirar acá mismo y reabrir el análisis con él
+  if (e.videoLocal instanceof Blob) {
+    const vb = document.createElement('div'); vb.className = 'ev-video-local';
+    vb.innerHTML = '<button class="btn" type="button">▶ Ver el video</button><span class="fine">Guardado en este celular.</span>';
+    vb.querySelector('button').onclick = () => {
+      const v = document.createElement('video'); v.controls = true; v.playsInline = true; v.src = URL.createObjectURL(e.videoLocal);
+      v.style.cssText = 'width:100%;max-height:70vh;border-radius:12px;background:#000;margin-top:8px';
+      vb.replaceChildren(v); v.play().catch(() => {});
+    };
+    box.querySelector('.detail-head')?.after(vb);
+  }
+  if (!e.videoPath && e.videoLocal instanceof Blob && $('ev-video')) $('ev-video').onclick = async () => {
+    const file = e.videoLocal instanceof File ? e.videoLocal : new File([e.videoLocal], e.data?.cfg?.fileName || e.data?.meta?.fileName || 'video.mp4', { type: e.videoLocal.type || 'video/mp4' });
+    try { await H.openWithVideo(current, e, file); } catch (err) { msg('ap-msg', 'No se pudo abrir el video: ' + err.message); }
+  };
+  else if (e.videoPath) $('ev-video').onclick = async () => {
     const b = $('ev-video'); b.disabled = true; const l = b.textContent; b.textContent = 'Descargando el video…';
     try { const file = await store.videoFile(e.videoPath, e.data?.cfg?.fileName || e.data?.meta?.fileName); await H.openWithVideo(current, e, file); }
     catch (err) { msg('ap-msg', 'No se pudo abrir el video: ' + err.message); }

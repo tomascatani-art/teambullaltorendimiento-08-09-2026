@@ -53,7 +53,7 @@ function montar({ player, video, prev, next, play, back10, fwd10, speed, dentro,
   const bar = document.createElement('div');
   bar.className = 'vb';
   bar.innerHTML = `<div class="vb-jog" role="slider" aria-label="Deslizá para pasar cuadro por cuadro"><span class="vb-jog-txt">◀ deslizá cuadro por cuadro ▶</span></div>
-    <div class="vb-fila"><input type="range" class="vb-seek" min="0" max="1000" step="1" value="0" aria-label="Mover el video"><button type="button" class="vb-min" aria-label="Achicar los controles" title="Achicar o agrandar los controles">▾</button></div>
+    <div class="vb-fila"><input type="range" class="vb-seek" min="0" max="1000" step="1" value="0" aria-label="Mover el video"><button type="button" class="vb-foto" aria-label="Guardar foto de este momento" title="Guardar una foto de este momento del video, con las marcas">📷</button><button type="button" class="vb-ocultar" aria-label="Ocultar los controles" title="Ocultar todos los controles para ver el video limpio">Ocultar</button><button type="button" class="vb-min" aria-label="Achicar los controles" title="Achicar o agrandar los controles">▾</button></div>
     <div class="vb-btns">
       ${back10 ? '<button type="button" class="vb-btn vb-txt" data-vb="b10" aria-label="Retroceder 10 cuadros">−10</button>' : ''}
       <button type="button" class="vb-btn" data-vb="prev" aria-label="Cuadro anterior">${ICON.prev}<span>1</span></button>
@@ -138,6 +138,16 @@ function montar({ player, video, prev, next, play, back10, fwd10, speed, dentro,
     try { localStorage.setItem('vb-mini', on ? '1' : '0'); } catch {}
   });
 
+  // Ocultar del todo: desaparecen la barra y los botones de encima del video (queda el video limpio,
+  // con sus marcas); un botoncito chico en la esquina los vuelve a mostrar.
+  const mostrar = document.createElement('button');
+  mostrar.type = 'button'; mostrar.className = 'vb-mostrar'; mostrar.textContent = '⚙ Controles';
+  ['pointerdown', 'touchstart'].forEach(ev => mostrar.addEventListener(ev, (e) => e.stopPropagation()));
+  mostrar.addEventListener('click', (e) => { e.stopPropagation(); pl.classList.remove('vb-oculto'); });
+  pl.appendChild(mostrar);
+  bar.querySelector('.vb-ocultar').addEventListener('click', (e) => { e.stopPropagation(); if (!v.paused) clic(play)(); pl.classList.add('vb-oculto'); });
+  bar.querySelector('.vb-foto').addEventListener('click', (e) => { e.stopPropagation(); if (!v.paused) clic(play)(); guardarFoto(pl, v, e.currentTarget); });
+
   // Ruedita: deslizando el dedo sobre la franja pasa de a un cuadro (unos 14 px por cuadro),
   // hacia la derecha adelante y hacia la izquierda atrás. Usa los botones de cuadro de cada pantalla.
   const jog = bar.querySelector('.vb-jog');
@@ -181,6 +191,39 @@ function montar({ player, video, prev, next, play, back10, fwd10, speed, dentro,
   ['timeupdate', 'seeked', 'loadedmetadata', 'play', 'pause', 'emptied'].forEach(ev => v.addEventListener(ev, sync));
   pl.addEventListener('vb-rango', () => { bar.classList.toggle('vb-recortado', !!pl.__rango); sync(); });
   sync();
+}
+
+// Foto del momento: el cuadro del video con las marcas dibujadas encima (los dibujos, ángulos y
+// trayectorias), a la resolución del video. En el celular abre «Compartir» para guardarla en Fotos o
+// mandarla; si no se puede, se descarga.
+async function guardarFoto(pl, v, btn) {
+  if (!v.videoWidth) return;
+  const stage = v.closest('.stage') || pl;
+  const vr = v.getBoundingClientRect();
+  // parte del elemento <video> que ocupa la imagen (object-fit: contain deja franjas)
+  const ar = v.videoWidth / v.videoHeight;
+  let cw = vr.width, ch = vr.height;
+  if (cw / ch > ar) cw = ch * ar; else ch = cw / ar;
+  const cx = vr.left + (vr.width - cw) / 2, cy = vr.top + (vr.height - ch) / 2;
+  const k = v.videoWidth / cw;
+  const c = document.createElement('canvas');
+  c.width = v.videoWidth; c.height = v.videoHeight;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(v, 0, 0, c.width, c.height);
+  for (const cv of stage.querySelectorAll('canvas')) {
+    if (!cv.width || getComputedStyle(cv).display === 'none') continue;
+    const r = cv.getBoundingClientRect();
+    try { ctx.drawImage(cv, (r.left - cx) * k, (r.top - cy) * k, r.width * k, r.height * k); } catch {}
+  }
+  const t = v.currentTime || 0;
+  const nombre = `foto_${new Date().toISOString().slice(0, 10)}_${t.toFixed(2).replace('.', ',')}s.png`;
+  const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+  if (!blob) return;
+  const file = new File([blob], nombre, { type: 'image/png' });
+  const ok = () => { if (!btn) return; const o = btn.textContent; btn.textContent = '✓'; setTimeout(() => { btn.textContent = o; }, 1500); };
+  try { if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file] }); ok(); return; } } catch (e) { if (e?.name === 'AbortError') return; }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = nombre; document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000); ok();
 }
 
 // Mover los controles que están sobre el video, para que no tapen lo que hay que tocar:

@@ -1180,8 +1180,10 @@ function raceSave() {
     sourceKey: raceKey(),
     summary: { finalTime: S.res.finalTime },
     data: { cfg: c, events: S.ev, cycles: S.cycles, angles: S.angles, video2: S.v2meta || null, square: S.square || null, path: S.path || null, cal: S.cal || null, drawings: S.drawings, frameDur: S.frameDur },
-  }, 'rc-msg', S.file).then(saved => { if (saved) S.saved = saved; return saved; });
+  }, 'rc-guardar-msg', S.file).then(saved => { if (saved) S.saved = saved; return saved; });
 }
+document.addEventListener('bio-guardado', (e) => { if (e.detail.msgId === 'rc-guardar-msg' && e.detail.saved) S.saved = e.detail.saved; });
+$('rc-guardar').onclick = () => raceSave();
 $('rc-save').onclick = () => S.helpers.download(new Blob([JSON.stringify(exportJSON(), null, 1)], { type: 'application/json' }), `${base()}.json`, 'rc-msg');
 $('rc-load').onchange = async (e) => {
   const file = e.target.files[0];

@@ -27,7 +27,7 @@ export const JUMPS = {
 };
 
 let H = null, ready = false;
-const S = { mode: 'bar', sound: true, live: null, file: null, url: null, times: null, frameDur: 1 / 30, W: 0, Hh: 0, tool: null, scale: null, scalePts: [], pts: [], res: null, abort: null, jumps: [], marks: {}, hint: '', auto: null, lupa: false, lupaPt: null, zoom: 1, zv: null, zm: null, disco: null, recorte: null, comprimido: '', evId: null, date: '', keepVid: false, sesion: [] };
+const S = { mode: 'bar', sound: true, live: null, file: null, url: null, times: null, frameDur: 1 / 30, W: 0, Hh: 0, tool: null, scale: null, scalePts: [], pts: [], res: null, abort: null, jumps: [], marks: {}, hint: '', auto: null, lupa: false, lupaPt: null, zoom: 1, zv: null, zm: null, disco: null, recorte: null, comprimido: '', evId: null, date: '', keepVid: true, sesion: [] };
 const video = () => $('gy-video'), overlay = () => $('gy-overlay');
 // Deshacer: copia de lo marcado antes de cada cambio (disco, punto seguido, correcciones, saltos)
 const hist = [];
@@ -789,7 +789,7 @@ function serieActual() {
   const ex = $('gy-ex').value, load = num($('gy-load').value);
   const meta = { fileName: S.file?.name || 'en vivo', fps: +(1 / S.frameDur).toFixed(2), width: S.W, height: S.Hh };
   const data = barSaved(S.res, { exercise: ex, load: Number.isFinite(load) ? load : null, meta, scale: { p1: S.scalePts[0], p2: S.scalePts[1], D: S.scale.D }, corte: corteId() });
-  return { ex, load: Number.isFinite(load) ? load : null, data };
+  return { ex, load: Number.isFinite(load) ? load : null, data, file: S.file instanceof Blob ? S.file : null };
 }
 const serieValida = () => S.mode === 'bar' && S.scale && S.res && !S.res.error && S.res.reps?.length > 0;
 const finVivo = () => S.liveFin || (S.live?.done ? S.live : null);
@@ -1061,9 +1061,8 @@ function saltosTop() {
 
 // Fila de guardar: fecha (se puede cambiar), video en este celular y, si es una medición ya guardada, reemplazarla.
 function saveRow(txt, extra = '') {
-  return `<div class="gy-row gy-save-row"><label>Fecha<input type="date" id="gy-date" value="${esc(S.date || today())}"></label><button class="btn primary" id="gy-save" type="button">${S.evId ? 'Guardar los cambios' : txt}</button>${extra ? `<span class="fine">${extra}</span>` : ''}</div>
-    ${S.grabado ? '<p class="fine">Se guardan solo los datos, no el video. Si querés el video de la serie, guardalo en el celular: <button class="btn" id="gy-grabado" type="button">⬇ Guardar el video</button></p>'
-    : S.file instanceof Blob ? '<p class="fine">Se guardan solo los datos, no el video. Para corregir después, abrí la medición en la ficha y cargá el mismo video del celular.</p>' : ''}
+  return `<div class="gy-row gy-save-row"><label>Fecha<input type="date" id="gy-date" value="${esc(S.date || today())}"></label><button class="btn primary gy-save-grande" id="gy-save" type="button">${S.evId ? '✅ Guardar los cambios' : '✅ ' + txt}</button>${extra ? `<span class="fine">${extra}</span>` : ''}</div>
+    ${S.file instanceof Blob ? `<p class="fine">Al tocar Guardar queda todo en la ficha del alumno, con el video (el video queda en este celular).${S.grabado ? ' Si además lo querés en la galería: <button class="btn" id="gy-grabado" type="button">⬇ Guardar el video en el celu</button>' : ''}</p>` : ''}
     ${S.evId ? '<p class="fine">Es una medición guardada: al guardar se reemplaza por esta versión.</p>' : ''}`;
 }
 
@@ -1184,7 +1183,21 @@ function bindPanel() {
 
 async function save() {
   const aid = $('gy-athlete').value;
-  if (!aid) { H?.notify?.('Elegí el deportista arriba para guardar.'); $('gy-athlete').focus(); return; }
+  if (!aid) {
+    // no hay deportista elegido: se elige acá abajo y se guarda en ese mismo toque
+    const opts = [...$('gy-athlete').options].filter(o => o.value);
+    const row = $('gy-save').closest('.gy-save-row');
+    document.querySelector('.gy-elegir')?.remove();
+    const box = document.createElement('div'); box.className = 'gy-elegir';
+    box.innerHTML = `<p class="fine">${opts.length ? '¿De quién es? Tocá el nombre y se guarda:' : 'Primero cargá el alumno en Team Bull (pestaña Alumnos/as).'}</p><div class="elegir-alumno"></div>`;
+    for (const o of opts) {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'btn'; b.textContent = o.textContent;
+      b.onclick = () => { const sel = $('gy-athlete'); sel.value = o.value; sel.dispatchEvent(new Event('change')); box.remove(); save(); };
+      box.querySelector('.elegir-alumno').append(b);
+    }
+    row.after(box); box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    return;
+  }
   const btn = $('gy-save'), txt = btn.textContent; btn.disabled = true; btn.textContent = 'Guardando…';
   // que el botón muestre «Guardando…» antes de hacer el trabajo
   await new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
@@ -1196,7 +1209,7 @@ async function save() {
       const series = [...S.sesion, ...(serieValida() && !S.evId ? [serieActual()] : [])];
       let rec;
       for (const x of series) {
-        rec = await store.saveEvaluation({ athleteId: aid, kind: 'gym', date, title: `Gym · ${EXERCISES[x.ex].label}`, event: Number.isFinite(x.load) ? `${f(x.load, 1)} kg` : '', summary: { mv: x.data.best.mv }, data: x.data, videoLocal: null });
+        rec = await store.saveEvaluation({ athleteId: aid, kind: 'gym', date, title: `Gym · ${EXERCISES[x.ex].label}`, event: Number.isFinite(x.load) ? `${f(x.load, 1)} kg` : '', summary: { mv: x.data.best.mv }, data: x.data, videoLocal: store.backend !== 'cloud' && S.keepVid ? x.file || null : null });
       }
       S.sesion = []; S.evId = rec?.id || null; S.date = date;
       panel();
