@@ -6444,7 +6444,7 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
                           </span>
                           <button onClick={(e) => { e.stopPropagation(); toggleHecho(pe.id); }} aria-label={done ? "Desmarcar" : "Marcar como hecho"} style={{ width: 18, height: 18, borderRadius: "50%", border: done ? "none" : "1.5px solid #4A4656", background: done ? "#33D6A6" : "transparent", color: "#0B2A2E", fontSize: 11, fontWeight: 900, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, flexShrink: 0 }}>{done ? "✓" : ""}</button>
                         </div>
-                        <button onClick={(e) => { e.stopPropagation(); if (activeId === pe.id && pe.video) { openVideo(videoFila); } else { setActiveId(pe.id); } }} className="font-display" style={{ background: "none", border: "none", padding: 0, marginTop: 4, cursor: "pointer", textAlign: "center", display: "block", width: "100%", color: pe.video ? "#FF6B35" : "#F4F1EA", fontWeight: 600, fontSize: 15, letterSpacing: ".04em", textTransform: "uppercase", overflowWrap: "anywhere", lineHeight: 1.25 }}>
+                        <button onClick={(e) => { e.stopPropagation(); if (activeId === pe.id && pe.video) { openVideo(videoFila); } else { setActiveId(pe.id); } }} className="font-display" style={{ background: "none", border: "none", padding: 0, marginTop: 4, cursor: "pointer", textAlign: "center", display: "block", width: "100%", color: "#F4F1EA", fontWeight: 600, fontSize: 17, letterSpacing: ".02em", overflowWrap: "anywhere", lineHeight: 1.25 }}>
                           {pe.nombre}
                         </button>
                         {(() => {
@@ -6472,9 +6472,9 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
                 };
                 // Los ejercicios unidos como circuito se muestran juntos, en un recuadro aparte del resto.
                 return agruparCircuitos(bloque.ejercicios).map((grupo) => grupo.length < 2 ? renderPE(grupo[0]) : (
-                  <div key={"c" + grupo[0].id} style={{ border: "1px dashed #4A4656", borderRadius: 14, background: "#16141C", padding: "10px 8px 8px", margin: "6px 0" }}>
+                  <div key={"c" + grupo[0].id} style={{ border: "1px solid #AA6EE6", borderRadius: 14, background: "rgba(170,110,230,0.06)", padding: "10px 8px 8px", margin: "6px 0" }}>
                     <div className="font-body" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1, padding: "0 4px 8px", textAlign: "center" }}>
-                      <span style={{ color: "#F4F1EA", fontSize: 11, fontWeight: 800, letterSpacing: 0.5, whiteSpace: "nowrap" }}>🔁 CIRCUITO · {grupo.length} EJERCICIOS</span>
+                      <span style={{ color: "#AA6EE6", fontSize: 11, fontWeight: 800, letterSpacing: 0.5, whiteSpace: "nowrap" }}>🔁 CIRCUITO · {grupo.length} EJERCICIOS</span>
                       <span style={{ color: "#8B8698", fontSize: 9.5 }}>Hacelos seguidos, uno tras otro</span>
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{grupo.map((pe) => renderPE(pe))}</div>
