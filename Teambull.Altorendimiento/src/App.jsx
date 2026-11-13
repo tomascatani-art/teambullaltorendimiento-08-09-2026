@@ -6399,7 +6399,7 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
 
       {planActivo.calentamiento.length > 0 && (
         <div style={{ padding: "0 26px 12px" }}>
-          <div className="font-body" style={{ fontSize: 11, color: "#FF6B35", fontWeight: 700, marginBottom: 6 }}>🔥 ENTRADA EN CALOR</div>
+          <div className="font-body" style={{ fontSize: 12.5, color: "#FF6B35", fontWeight: 800, letterSpacing: 0.8, marginBottom: 10 }}>🔥 ENTRADA EN CALOR</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {planActivo.calentamiento.map((w) => (
               <button key={w.id} onClick={() => w.video && openVideo(w.video)} className="font-body" style={{ display: "flex", flexDirection: "column", width: "100%", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, padding: "9px 12px", cursor: w.video ? "pointer" : "default", textAlign: "left" }}>
@@ -6418,12 +6418,12 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
         {dias[diaIdx].bloques.map((bloque, bIdx) => (
           <div key={bloque.id}>
             {dias[diaIdx].bloques.length > 1 && (
-              <div style={{ margin: bIdx === 0 ? "0 0 10px" : "18px 0 8px" }}>
-                {bIdx > 0 && <div style={{ height: 1, background: "#26232F", marginBottom: 8 }} />}
-                <div className="font-body" style={{ color: "#7DD6C0", fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase", marginLeft: 2 }}>{bloque.nombre}</div>
+              <div style={{ margin: bIdx === 0 ? "14px 0 12px" : "34px 0 12px" }}>
+                {bIdx > 0 && <div style={{ height: 1, background: "#322E3D", marginBottom: 18 }} />}
+                <div className="font-body" style={{ color: "#7DD6C0", fontSize: 12.5, fontWeight: 800, letterSpacing: 0.8, textTransform: "uppercase", marginLeft: 2 }}>{bloque.nombre}</div>
               </div>
             )}
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {(() => {
                 const renderPE = (pe) => {
                 const i = ejercicios.findIndex((e) => e.id === pe.id);
@@ -6435,7 +6435,7 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
                   <div key={pe.id}>
                     {/* Tarjeta neutra: el rol va como etiqueta chiquita arriba (un puntito de color) y el
                         tick de «hecho» arriba a la derecha. Sin fondos de colores. */}
-                    <div onClick={() => setActiveId(pe.id)} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "8px 12px 10px", borderRadius: 12, cursor: "pointer", border: activeId === pe.id ? "1px solid #FF6B35" : done ? "1px solid rgba(51,214,166,0.45)" : "1px solid #322E3D", background: "#1C1A24", boxSizing: "border-box", opacity: done && activeId !== pe.id ? 0.78 : 1 }}>
+                    <div onClick={() => setActiveId(pe.id)} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "8px 12px 10px", borderRadius: 12, cursor: "pointer", border: rolPE ? `${activeId === pe.id ? 2 : 1}px solid ${rolPE.color}${activeId === pe.id ? "" : "99"}` : activeId === pe.id ? "2px solid #FF6B35" : "1px solid #322E3D", boxShadow: activeId === pe.id ? `0 0 0 3px ${(rolPE ? rolPE.color : "#FF6B35")}22` : "none", background: "#1C1A24", boxSizing: "border-box", opacity: done && activeId !== pe.id ? 0.78 : 1 }}>
                       <div style={{ minWidth: 0, flex: 1, textAlign: "center" }}>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", minHeight: 20 }}>
                           <span className="font-body" style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, overflow: "hidden", marginRight: 8, color: "#8B8698", fontSize: 9.5, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase" }}>
