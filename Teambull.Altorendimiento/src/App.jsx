@@ -3796,6 +3796,52 @@ function CampoBuscarAlumno({ valor, onChange, placeholder = "🔍 Buscar alumno/
   );
 }
 
+// «Hoy» en el Dashboard: quién entrenó, quién marcó dolor o molestia (últimos 2 días) y los RM
+// que cargaron los alumnos y todavía no viste. Tocás un nombre y te lleva a su ficha.
+function PanelHoy({ alumnos, goAlumnos }) {
+  const hoy = todayISO();
+  const ayer = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const hoyNombreDia = DIAS_SEMANA[(new Date().getDay() + 6) % 7];
+  const entrenaron = alumnos.filter((a) => (a.historialSesiones || []).includes(hoy));
+  const lesTocaba = alumnos.filter((a) => !entrenaron.includes(a) && (a.plan?.dias || []).some((d) => d.diaSemana === hoyNombreDia));
+  const dolores = alumnos.flatMap((a) => Object.values(a.notasEjercicios || {})
+    .filter((n) => n && (n.fecha === hoy || n.fecha === ayer) && /dolor|molest|lesi/i.test(n.texto || ""))
+    .map((n) => ({ a, ej: n.exNombre, texto: n.texto, fecha: n.fecha })));
+  const rmNuevos = alumnos.flatMap((a) => (a.avisosRM || []).filter((x) => x.por === "athlete" && !x.visto_coach).map((x) => ({ a, x })));
+  const fila = { display: "flex", alignItems: "center", gap: 8, width: "100%", background: "none", border: "none", borderTop: "1px solid #26232F", padding: "8px 0", cursor: "pointer", textAlign: "left" };
+  const titulo = (t, n, color) => <div className="font-body" style={{ display: "flex", justifyContent: "space-between", color: color || "#8B8698", fontSize: 10, fontWeight: 800, letterSpacing: ".06em", marginTop: 12, marginBottom: 2 }}><span>{t}</span><span>{n}</span></div>;
+  const nombre = { color: "#F4F1EA", fontSize: 13, fontWeight: 700 };
+  return (
+    <div style={{ padding: "0 20px 14px" }}>
+      <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 14, padding: "12px 14px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+          <span className="font-display" style={{ color: "#F4F1EA", fontSize: 18, fontWeight: 600, letterSpacing: ".04em" }}>HOY</span>
+          <span className="font-body" style={{ color: "#8B8698", fontSize: 11 }}>{hoyNombreDia} · {entrenaron.length} entrenaron</span>
+        </div>
+        {dolores.length > 0 && <>{titulo("⚠️ DOLOR O MOLESTIA", dolores.length, "#E85D5D")}
+          {dolores.map((d, k) => (
+            <button key={k} onClick={() => goAlumnos(d.a.id)} className="font-body" style={fila}>
+              <span style={{ flex: 1, minWidth: 0 }}><span style={nombre}>{d.a.nombre}</span><span style={{ color: "#8B8698", fontSize: 11 }}> · {d.ej}{d.fecha === ayer ? " · ayer" : ""}</span><div style={{ color: "#C9C4D2", fontSize: 11, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.texto}</div></span>
+              <span style={{ color: "#FF6B35", fontSize: 12, fontWeight: 700 }}>›</span>
+            </button>
+          ))}</>}
+        {rmNuevos.length > 0 && <>{titulo("🏋️ RM NUEVOS PARA CONFIRMAR", rmNuevos.length, "#7DD6C0")}
+          {rmNuevos.map(({ a, x }) => (
+            <button key={x.id} onClick={() => goAlumnos(a.id)} className="font-body" style={fila}>
+              <span style={{ flex: 1, minWidth: 0 }}><span style={nombre}>{a.nombre}</span><span style={{ color: "#8B8698", fontSize: 11 }}> · {x.ejercicio}: {x.de != null ? `${String(x.de).replace(".", ",")} → ` : ""}</span><span style={{ color: "#7DD6C0", fontSize: 12, fontWeight: 800 }}>{String(x.a).replace(".", ",")} kg</span></span>
+              <span style={{ color: "#FF6B35", fontSize: 12, fontWeight: 700 }}>›</span>
+            </button>
+          ))}</>}
+        {titulo("✓ ENTRENARON", entrenaron.length, "#33D6A6")}
+        {entrenaron.length ? <div className="font-body" style={{ display: "flex", flexWrap: "wrap", gap: 6, paddingTop: 4 }}>{entrenaron.map((a) => <button key={a.id} onClick={() => goAlumnos(a.id)} style={{ background: "rgba(51,214,166,0.12)", border: "1px solid rgba(51,214,166,0.4)", borderRadius: 999, color: "#F4F1EA", fontSize: 12, fontWeight: 700, padding: "5px 10px", cursor: "pointer" }}>{a.nombre}</button>)}</div>
+          : <div className="font-body" style={{ color: "#6B6678", fontSize: 11, paddingTop: 4 }}>Todavía nadie finalizó un entrenamiento hoy.</div>}
+        {lesTocaba.length > 0 && <>{titulo(`LES TOCA ${hoyNombreDia.toUpperCase()} Y TODAVÍA NO`, lesTocaba.length)}
+          <div className="font-body" style={{ display: "flex", flexWrap: "wrap", gap: 6, paddingTop: 4 }}>{lesTocaba.map((a) => <button key={a.id} onClick={() => goAlumnos(a.id)} style={{ background: "#26232F", border: "1px solid #322E3D", borderRadius: 999, color: "#C9C4D2", fontSize: 12, fontWeight: 700, padding: "5px 10px", cursor: "pointer" }}>{a.nombre}</button>)}</div></>}
+      </div>
+    </div>
+  );
+}
+
 function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coaches, onAddCoach, onRemoveCoach, mensajeRecordatorio, onUpdateMensajeRecordatorio, notificacionesActivas, onToggleNotificaciones, modoPausa, onToggleModoPausa, diasAvisoPlan, onSetDiasAvisoPlan, coachId, onCambiarPassword, onSetRecoveryPin, onSetTelefono, onReclamarAlumnos, logActividad, grupos, onCrearGrupo, onEliminarGrupo }) {
   const [editando, setEditando] = useState(false);
   const [tipoAlertaAbierto, setTipoAlertaAbierto] = useState(null);
@@ -3864,6 +3910,7 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
           );
         })()}
       </div>
+      <PanelHoy alumnos={alumnosActivos} goAlumnos={goAlumnos} />
       {editando && (
         <div style={{ padding: "0 20px 14px" }}>
           <MiniInput label="Nombre del entrenador (aparece en la ficha)" value={coachNombre} onChange={onUpdateCoach} wide />
@@ -6101,7 +6148,7 @@ function LineaSerie({ obj, pres, sug, apx, linea }) {
 // (ej. 85% de 70 = 59,5 kg → 60 kg).
 function AvisoRedondeo({ rm, pres, pesos }) {
   if (!rm || !pesos) return null;
-  const kg = (x) => String(Math.round(x * 100) / 100).replace(".", ",");
+  const kg = (x) => String(Math.round(x * 10) / 10).replace(".", ",");
   const pcts = extraerPorcentajes(pres);
   const cambios = [...new Map(pcts.map((pc, k) => [pc, { exacto: (rm * pc) / 100, final: pesos[k] }])).values()].filter((c) => c.final != null && Math.abs(c.exacto - c.final) > 0.01);
   if (!cambios.length) return null;
@@ -6193,8 +6240,10 @@ function TablaSerie({ obj, pres, sug, apx, grande }) {
   if (conPct && pcts.length > 1 && repsL.length === pcts.length) filas = repsL.map((r, k) => [r, `${String(pcts[k]).replace(".", ",")}%`, kgs.length === pcts.length ? kgs[k] : (k === 0 ? kgs.join(" / ") : "")]);
   else if (conPct && pcts.length > 1 && kgs.length === pcts.length) filas = pcts.map((pc, k) => [k === 0 ? repsL.join("-") : "", `${String(pc).replace(".", ",")}%`, kgs[k]]);
   else filas = [[repsL.join("-"), conPct ? pres : "", kgs.join(" / ")]];
-  const cols = conPct ? "minmax(44px,0.7fr) 1fr 1fr 1.3fr" : "minmax(44px,0.7fr) 3.3fr";
-  const fs = grande ? 19 : 15, hs = grande ? 10 : 9;
+  const cols = conPct ? "minmax(40px,0.7fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.3fr)" : "minmax(40px,0.7fr) minmax(0,3.3fr)";
+  // Si algún peso o % es largo (ej. «182,5 kg» con «97,5%»), la letra baja un poco para que no se pisen.
+  const largo = filas.some(([, pc, kg]) => String(kg).length > 8 || String(pc).length > 4);
+  const fs = grande ? (largo ? 16 : 19) : (largo ? 14 : 15), hs = grande ? 10 : 9;
   const cab = { color: "#6B6678", fontSize: hs, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", paddingBottom: 3, paddingRight: 8, borderBottom: "1px solid #26232F" };
   const celda = (c, k) => ({ fontSize: fs, fontWeight: 800, color: c, padding: "4px 8px 4px 0", borderTop: k ? "1px solid #1F1C27" : "none", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" });
   return (
@@ -6203,8 +6252,8 @@ function TablaSerie({ obj, pres, sug, apx, grande }) {
       {filas.map(([r, pc, kg], k) => (
         <React.Fragment key={k}>
           <span style={{ ...celda("#F4F1EA", k), borderTop: "none" }}>{k === 0 ? series : ""}</span>
-          <span style={celda("#F4F1EA", k)}>{r}</span>
-          {conPct && <><span style={celda("#7DD6C0", k)}>{pc}</span><span style={celda("#7DD6C0", k)}>{kg || "—"}</span></>}
+          <span style={{ ...celda("#F4F1EA", k), whiteSpace: String(r).length > 8 ? "normal" : "nowrap", overflowWrap: "anywhere" }}>{r}</span>
+          {conPct && <><span style={{ ...celda("#7DD6C0", k), whiteSpace: String(pc).length > 6 ? "normal" : "nowrap", overflowWrap: "anywhere", lineHeight: 1.2 }}>{pc}</span><span style={{ ...celda("#7DD6C0", k), whiteSpace: String(kg).length > 9 ? "normal" : "nowrap", overflowWrap: "anywhere", lineHeight: 1.2 }}>{kg || "—"}</span></>}
         </React.Fragment>
       ))}
     </div>
@@ -6294,6 +6343,12 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
   // la Semana 1 — para no perder ese historial — y no aparecen en las demás semanas.
   const claveNota = (id, sem) => `${id}__s${sem}`;
   const getNota = (id) => notas[claveNota(id, semana)]?.texto || (semana === 0 ? notas[id]?.texto || "" : "");
+  // Ticks de «ya lo hice»: se guardan en este celu por día de entrenamiento y semana, y se
+  // reinician solos al día siguiente.
+  const claveHechos = `tb_hechos_${alumno.id}_${todayISO()}`;
+  const [hechos, setHechos] = useState(() => { try { return JSON.parse(localStorage.getItem(claveHechos) || "{}"); } catch { return {}; } });
+  const claveHecho = (id) => `${diaIdx}_${semana}_${id}`;
+  const toggleHecho = (id) => setHechos((h) => { const n = { ...h, [claveHecho(id)]: !h[claveHecho(id)] }; try { localStorage.setItem(claveHechos, JSON.stringify(n)); } catch {} return n; });
   const tieneNota = (id) => !!(notas[claveNota(id, semana)]?.texto?.trim() || (semana === 0 && notas[id]?.texto?.trim()));
 
   const activePE = ejercicios.find((pe) => pe.id === activeId) || ejercicios[0];
@@ -6372,17 +6427,25 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
               {(() => {
                 const renderPE = (pe) => {
                 const i = ejercicios.findIndex((e) => e.id === pe.id);
-                const done = tieneNota(pe.id);
+                const done = !!hechos[claveHecho(pe.id)];
                 const obj = pe.tipo === "tabata" ? `Tabata ${pe.tabata.trabajo}s/${pe.tabata.descanso}s × ${pe.tabata.rounds}` : (pe.semanas[semana] || pe.semanas[0] || "—");
                 const videoFila = videoDe(pe);
                 const rolPE = [...ROLES_EJERCICIO, ...(rolesPersonalizados || [])].find((r) => r.id === pe.rol);
                 return (
                   <div key={pe.id}>
-                    <div onClick={() => setActiveId(pe.id)} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 12px", borderRadius: 10, cursor: "pointer", border: activeId === pe.id ? "1px solid #FF6B35" : `1px solid ${rolPE ? rolPE.color : "#322E3D"}`, background: activeId === pe.id ? "rgba(255,107,53,0.12)" : (rolPE ? `${rolPE.color}38` : "#1C1A24"), boxSizing: "border-box" }}>
-                      <span style={{ fontSize: 16, flexShrink: 0 }}>{pe.emoji}</span>
+                    {/* Tarjeta neutra: el rol va como etiqueta chiquita arriba (un puntito de color) y el
+                        tick de «hecho» arriba a la derecha. Sin fondos de colores. */}
+                    <div onClick={() => setActiveId(pe.id)} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "8px 12px 10px", borderRadius: 12, cursor: "pointer", border: activeId === pe.id ? "1px solid #FF6B35" : done ? "1px solid rgba(51,214,166,0.45)" : "1px solid #322E3D", background: "#1C1A24", boxSizing: "border-box", opacity: done && activeId !== pe.id ? 0.78 : 1 }}>
                       <div style={{ minWidth: 0, flex: 1, textAlign: "center" }}>
-                        <button onClick={(e) => { e.stopPropagation(); if (activeId === pe.id && pe.video) { openVideo(videoFila); } else { setActiveId(pe.id); } }} className="font-body" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "center", display: "block", width: "100%", color: done ? "#33D6A6" : "#F4F1EA", fontWeight: 700, fontSize: 16.5 }}>
-                          {done ? "✓ " : ""}{pe.nombre}
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", minHeight: 20 }}>
+                          <span className="font-body" style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, overflow: "hidden", marginRight: 8, color: "#8B8698", fontSize: 9.5, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase" }}>
+                            {rolPE && <span style={{ color: rolPE.color, background: `${rolPE.color}26`, border: `1px solid ${rolPE.color}66`, borderRadius: 999, padding: "3px 9px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{rolPE.label}</span>}
+                            {activeId === pe.id && pe.video && <span style={{ color: "#FF6B35", textTransform: "none", letterSpacing: 0 }}>{rolPE ? " · " : ""}▶ tocá el nombre para el video</span>}
+                          </span>
+                          <button onClick={(e) => { e.stopPropagation(); toggleHecho(pe.id); }} aria-label={done ? "Desmarcar" : "Marcar como hecho"} style={{ width: 18, height: 18, borderRadius: "50%", border: done ? "none" : "1.5px solid #4A4656", background: done ? "#33D6A6" : "transparent", color: "#0B2A2E", fontSize: 11, fontWeight: 900, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, flexShrink: 0 }}>{done ? "✓" : ""}</button>
+                        </div>
+                        <button onClick={(e) => { e.stopPropagation(); if (activeId === pe.id && pe.video) { openVideo(videoFila); } else { setActiveId(pe.id); } }} className="font-display" style={{ background: "none", border: "none", padding: 0, marginTop: 4, cursor: "pointer", textAlign: "center", display: "block", width: "100%", color: pe.video ? "#FF6B35" : "#F4F1EA", fontWeight: 600, fontSize: 15, letterSpacing: ".04em", textTransform: "uppercase", overflowWrap: "anywhere", lineHeight: 1.25 }}>
+                          {pe.nombre}
                         </button>
                         {(() => {
                           // series y repeticiones, y el % (o RIR) que puso el coach con los kilos al lado
@@ -6397,8 +6460,6 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
                           <div className="font-body" style={{ color: "#FFC94A", fontSize: 10.5, fontWeight: 600, marginTop: 3, lineHeight: 1.35 }}>📝 {pe.nota}</div>
                         )}
                       </div>
-                      {rolPE && <span className="font-body" style={{ fontSize: 8, fontWeight: 700, color: rolPE.color, background: `${rolPE.color}22`, borderRadius: 999, padding: "3px 7px", flexShrink: 0 }}>{rolPE.label}</span>}
-                      {activeId === pe.id && pe.video && <span className="font-body" style={{ fontSize: 8, color: "#FF6B35", flexShrink: 0 }}>▶ tocá de nuevo</span>}
                     </div>
                     {pe.sinDescansoSiguiente && i < ejercicios.length - 1 && (
                       <div className="font-body" style={{ display: "flex", alignItems: "center", gap: 6, margin: "2px 0 2px 20px", color: "#FFC94A", fontSize: 9, fontWeight: 700 }}>
@@ -6411,9 +6472,9 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
                 };
                 // Los ejercicios unidos como circuito se muestran juntos, en un recuadro aparte del resto.
                 return agruparCircuitos(bloque.ejercicios).map((grupo) => grupo.length < 2 ? renderPE(grupo[0]) : (
-                  <div key={"c" + grupo[0].id} style={{ border: "1px solid #AA6EE6", borderRadius: 14, background: "rgba(170,110,230,0.06)", padding: "10px 8px 8px", margin: "6px 0" }}>
-                    <div className="font-body" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 4px 8px" }}>
-                      <span style={{ color: "#AA6EE6", fontSize: 11, fontWeight: 800, letterSpacing: 0.5 }}>🔁 CIRCUITO · {grupo.length} EJERCICIOS</span>
+                  <div key={"c" + grupo[0].id} style={{ border: "1px dashed #4A4656", borderRadius: 14, background: "#16141C", padding: "10px 8px 8px", margin: "6px 0" }}>
+                    <div className="font-body" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1, padding: "0 4px 8px", textAlign: "center" }}>
+                      <span style={{ color: "#F4F1EA", fontSize: 11, fontWeight: 800, letterSpacing: 0.5, whiteSpace: "nowrap" }}>🔁 CIRCUITO · {grupo.length} EJERCICIOS</span>
                       <span style={{ color: "#8B8698", fontSize: 9.5 }}>Hacelos seguidos, uno tras otro</span>
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{grupo.map((pe) => renderPE(pe))}</div>
