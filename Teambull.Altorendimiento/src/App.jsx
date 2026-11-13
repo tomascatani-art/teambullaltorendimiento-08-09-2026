@@ -6390,7 +6390,7 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
                           const sug = pres ? pesosSugeridos(rmPesos, pe.nombre, pres) : null;
                           const apx = !pres || (sug && sug.length) ? null : pesosAproxPorRIR(rmPesos, pe.nombre, pres, obj);
                           return (
-                            pe.tipo === "tabata" ? <div className="font-body" style={{ color: "#8B8698", fontSize: 11, marginTop: 2 }}>{formatObjetivo(obj)}</div> : <BloquesSerie obj={obj} pres={pres} sug={sug} apx={apx} />
+                            pe.tipo === "tabata" ? <div className="font-body" style={{ color: "#8B8698", fontSize: 11, marginTop: 2 }}>{formatObjetivo(obj)}</div> : <TablaSerie obj={obj} pres={pres} sug={sug} apx={apx} />
                           );
                         })()}
                         {pe.nota && pe.nota.trim() && (
