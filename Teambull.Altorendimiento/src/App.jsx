@@ -2046,11 +2046,44 @@ function rmConHistorial(rmList, alumno) {
   return [...(rmList || []), ...extra];
 }
 
+// Discos que hay en el gimnasio (kg, por lado) y cuántos de cada uno se pueden poner de cada lado.
+// Los kg que sale del % se redondean al peso más cercano que se puede armar de verdad con la barra
+// de 20 kg más discos de a pares (nada de 59,3 kg). Debajo de 20 kg se redondea a medio kilo.
+const BARRA_KG = 20;
+const DISCOS_GYM = [[20, 5], [15, 1], [10, 1], [5, 1], [2.5, 1], [1.25, 1]];
+const CARGAS_POSIBLES = (() => {
+  // por lado, en cuartos de kilo: suma -> discos (la combinación con menos discos)
+  let mapa = new Map([[0, []]]);
+  for (const [kg, cant] of DISCOS_GYM) {
+    const q = Math.round(kg * 4);
+    const nuevo = new Map(mapa);
+    for (const [suma, lista] of mapa) {
+      for (let c = 1; c <= cant; c++) {
+        const k = suma + q * c, l = [...lista, ...Array(c).fill(kg)];
+        if (!nuevo.has(k) || nuevo.get(k).length > l.length) nuevo.set(k, l);
+      }
+    }
+    mapa = nuevo;
+  }
+  return [...mapa.entries()].map(([q, discos]) => ({ total: BARRA_KG + (q / 4) * 2, discos })).sort((a, b) => a.total - b.total);
+})();
+function cargaDeDiscos(kg) {
+  if (!(kg >= BARRA_KG)) return null;
+  let mejor = null;
+  for (const c of CARGAS_POSIBLES) if (!mejor || Math.abs(c.total - kg) < Math.abs(mejor.total - kg) - 1e-9) mejor = c;
+  return mejor;
+}
+function redondearADiscos(kg) {
+  if (!Number.isFinite(kg)) return kg;
+  const c = cargaDeDiscos(kg);
+  return c ? c.total : Math.round(kg * 2) / 2;
+}
+
 function pesosSugeridos(rmList, nombreEjercicio, textoRM) {
   const pcts = extraerPorcentajes(textoRM);
   const base = buscarRMBase(rmList, nombreEjercicio);
   if (!pcts.length || !base) return null;
-  return pcts.map((pct) => Math.round(((base * pct) / 100) * 2) / 2);
+  return pcts.map((pct) => redondearADiscos((base * pct) / 100));
 }
 
 // RM del día según la velocidad de barra (Biomecánica → Gym): con las series de ese día de un mismo
@@ -2094,7 +2127,7 @@ function pesosAproxPorRIR(rmList, nombreEjercicio, textoRM, series) {
   const rir = parseFloat(mr[1].replace(",", "."));
   const reps = m[1].split("/").map((x) => parseInt(x, 10)).filter((n) => n > 0 && n <= 30);
   if (!reps.length || !(rir >= 0 && rir <= 10)) return null;
-  const pesos = reps.map((r) => Math.round((base / (1 + (r + rir) / 30)) * 2) / 2);
+  const pesos = reps.map((r) => redondearADiscos(base / (1 + (r + rir) / 30)));
   return pesos.filter((p, i) => i === 0 || p !== pesos[i - 1]);
 }
 
@@ -2609,6 +2642,33 @@ function ExercisePicker({ onPick, onClose, version, onAddNew }) {
   );
 }
 
+// Un solo renglón dentro del ejercicio (solo si lleva %): «RM de Sentadilla [100] kg». Se carga ahí
+// mismo, sin bajar hasta «Valores de RM», y es el mismo valor que aparece abajo.
+function RmDelEjercicio({ fila }) {
+  const ctx = React.useContext(RmEditorCtx);
+  if (!ctx || !fila.nombre) return null;
+  const conPct = [...(fila.rmSemanas || []), fila.rm].some((t) => /%/.test(t || ""));
+  if (!conPct) return null;
+  const ex = ctx.rmDelEjercicio(fila.nombre);
+  const enUso = ctx.enUso(fila.nombre);
+  const nombre = String(fila.nombre).split(/\s[—–-]\s/)[0].trim();
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(125,214,192,0.08)", border: "1px solid #2E4A45", borderRadius: 8, padding: "5px 8px", marginBottom: 8 }}>
+      <span className="font-body" style={{ flex: 1, minWidth: 0, color: "#7DD6C0", fontSize: 10.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>RM de {nombre}</span>
+      <input
+        value={ex ? ex.valor : ""}
+        onChange={(e) => ctx.setRmDelEjercicio(fila.nombre, e.target.value)}
+        onBlur={ctx.volcar}
+        placeholder={enUso ? String(enUso).replace(".", ",") : "—"}
+        inputMode="decimal"
+        className="font-body"
+        style={{ width: 62, background: "#26232F", border: "1px solid #322E3D", borderRadius: 6, color: "#F4F1EA", fontSize: 12, fontWeight: 700, padding: "4px 6px", textAlign: "center", flexShrink: 0 }}
+      />
+      <span className="font-body" style={{ color: "#8B8698", fontSize: 10, flexShrink: 0 }}>kg</span>
+    </div>
+  );
+}
+
 function FilaEjercicio({ fila, onChange, onRemove, onAddToLibrary, rolesPersonalizados, onAgregarRolPersonalizado, version }) {
   const [cambiando, setCambiando] = useState(false); // abre la biblioteca para reemplazar este ejercicio
   const set = (field) => (v) => onChange({ ...fila, [field]: v });
@@ -2745,6 +2805,7 @@ function FilaEjercicio({ fila, onChange, onRemove, onAddToLibrary, rolesPersonal
             ))}
             <button onClick={addSemana} className="font-body" style={{ width: 26, height: 26, alignSelf: "flex-end", background: "#26232F", border: "1px dashed #322E3D", borderRadius: 6, color: "#7DD6C0", cursor: "pointer", fontSize: 13, flexShrink: 0 }}>+</button>
           </div>
+          <RmDelEjercicio fila={fila} />
           <div className="font-body" style={{ fontSize: 8, color: "#6B6678", marginBottom: 4 }}>El campo "RM/RIR" de abajo es el respaldo general si dejás vacío el de alguna semana:</div>
           <MiniInput label="RM / RIR (respaldo)" value={fila.rm} onChange={set("rm")} wide />
           <div style={{ marginTop: 4 }} />
@@ -2911,9 +2972,22 @@ function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibr
     onChange({ ...plan, rm: plan.rm.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
   };
   const removeRm = (id) => onChange({ ...plan, rm: plan.rm.filter((r) => r.id !== id) });
+  // RM cargado directo desde el ejercicio (sin bajar a «Valores de RM»): actualiza el que ya está
+  // para ese ejercicio o crea uno nuevo, y queda guardado en el historial igual que abajo.
+  const normRM = (x) => normalizarTexto(x || "").trim().replace(/\s+/g, " ");
+  const rmDelEjercicio = (nombre) => { const base = String(nombre || "").split(/\s[—–-]\s/)[0].trim(); return plan.rm.find((r) => r.ejercicio && normRM(r.ejercicio) === normRM(base)) || plan.rm.find((r) => r.ejercicio && mismoEjercicio(r.ejercicio, base)); };
+  const setRmDelEjercicio = (nombre, valor) => {
+    const ex = rmDelEjercicio(nombre);
+    if (ex) { updateRm(ex.id, { valor }); return; }
+    const id = uid();
+    rmEditadosRef.current.add(id);
+    onChange({ ...plan, rm: [...plan.rm, { id, ejercicio: String(nombre || "").split(/\s[—–-]\s/)[0].trim(), valor }] });
+  };
+  const rmEditorCtx = { rmDelEjercicio, setRmDelEjercicio, enUso: (nombre) => buscarRMBase(rmConHistorial(plan.rm, { historialRM: historialRMAlumno }), nombre), volcar: () => volcarRMsEditados() };
   const addRm = () => onChange({ ...plan, rm: [...plan.rm, { id: uid(), ejercicio: "", valor: "" }] });
 
   return (
+    <RmEditorCtx.Provider value={rmEditorCtx}>
     <div>
       <div className="font-body" style={{ fontSize: 11, color: "#8B8698", fontWeight: 700, marginBottom: 8 }}>DATOS DEL MESOCICLO</div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 18 }}>
@@ -3184,6 +3258,7 @@ function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibr
       })()}
       <button onClick={addRm} className="font-body" style={{ width: "100%", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 8, color: "#8B8698", fontWeight: 700, fontSize: 10, padding: 7, cursor: "pointer" }}>+ Agregar valor de RM</button>
     </div>
+    </RmEditorCtx.Provider>
   );
 }
 
@@ -3269,6 +3344,8 @@ function generarAlertas(a, diasAviso = 7) {
 // Por alumno/a: monto, día de vencimiento y teléfono. Cada mes se marca como pagado; si vence y no
 // pagó, aparece en el Dashboard con un botón para mandarle el recordatorio por WhatsApp.
 const AccionesCtx = React.createContext(null);
+// RM del plan para el renglón «RM de X» dentro de cada ejercicio del editor del coach
+const RmEditorCtx = React.createContext(null);
 const MESES_NOMBRE = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 function estadoCuota(alumno, hoy = todayISO()) {
   const c = alumno.cuota;
@@ -6009,9 +6086,94 @@ function LineaSerie({ obj, pres, sug, apx, linea }) {
     else partes = [pres];
   }
   return (
-    <div className="font-body" style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", columnGap: 14, rowGap: 2, marginTop: 3, fontSize: 13.5, fontWeight: 800, lineHeight: 1.35 }}>
-      <span style={{ color: "#F4F1EA", flexBasis: "100%" }}>{izq}</span>
-      {partes.length > 0 && <span style={{ color: "#7DD6C0", display: "flex", flexWrap: "wrap", alignItems: "baseline", rowGap: 2 }}>{partes.map((t, k) => <React.Fragment key={k}>{k > 0 && <span style={{ color: "#6B6678", margin: "0 6px" }}>/</span>}<span style={{ whiteSpace: "nowrap" }}>{t}</span></React.Fragment>)}</span>}
+    <div className="font-body" style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", justifyContent: "center", columnGap: 14, rowGap: 2, marginTop: 3, fontSize: 15, fontWeight: 800, lineHeight: 1.35 }}>
+      <span style={{ color: "#F4F1EA", flexBasis: "100%", textAlign: "center" }}>{izq}</span>
+      {partes.length > 0 && <span style={{ color: "#7DD6C0", display: "flex", flexWrap: "wrap", alignItems: "baseline", justifyContent: "center", rowGap: 2 }}>{partes.map((t, k) => <React.Fragment key={k}>{k > 0 && <span style={{ color: "#6B6678", margin: "0 6px" }}>/</span>}<span style={{ whiteSpace: "nowrap" }}>{t}</span></React.Fragment>)}</span>}
+    </div>
+  );
+}
+
+// Rectangulitos parados, uno por tramo: arriba las reps, en el medio el % y abajo el peso.
+// Arriba de todo, la cantidad de series. Sin % queda solo «3 series × 6-4-2».
+// En el ejercicio abierto: «Peso calculado con tu RM de 100 kg · Cambiar», o si todavía no tiene RM,
+// un botón para cargarlo ahí mismo (queda en su historial y le llega al coach, igual que en Progreso).
+// Cartelito chiquito cuando el peso del % no se puede armar justo con los discos y se redondeó
+// (ej. 85% de 70 = 59,5 kg → 60 kg).
+function AvisoRedondeo({ rm, pres, pesos }) {
+  if (!rm || !pesos) return null;
+  const kg = (x) => String(Math.round(x * 100) / 100).replace(".", ",");
+  const pcts = extraerPorcentajes(pres);
+  const cambios = [...new Map(pcts.map((pc, k) => [pc, { exacto: (rm * pc) / 100, final: pesos[k] }])).values()].filter((c) => c.final != null && Math.abs(c.exacto - c.final) > 0.01);
+  if (!cambios.length) return null;
+  return (
+    <div className="font-body" style={{ display: "inline-block", marginTop: 6, background: "rgba(255,201,74,0.08)", border: "1px solid rgba(255,201,74,0.35)", borderRadius: 8, padding: "4px 8px", color: "#C9B98A", fontSize: 10, lineHeight: 1.4 }}>
+      ⓘ Redondeado para armarlo con los discos: {cambios.map((c) => `${kg(c.exacto)} → ${kg(c.final)} kg`).join(" · ")}
+    </div>
+  );
+}
+
+function MiRMInline({ nombre, conPct, rmActual, onGuardar }) {
+  const [abierto, setAbierto] = useState(false);
+  const [valor, setValor] = useState("");
+  const [guardado, setGuardado] = useState(null);
+  if (!conPct || !onGuardar) return null;
+  const base = String(nombre || "").split(/\s[—–-]\s/)[0].trim();
+  const guardar = () => {
+    const v = parseFloat(String(valor).replace(",", "."));
+    if (!Number.isFinite(v) || v <= 0) return;
+    onGuardar(base, v); setGuardado(v); setAbierto(false); setValor("");
+  };
+  const kg = (x) => String(x).replace(".", ",");
+  if (abierto) return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
+      <span className="font-body" style={{ color: "#F4F1EA", fontSize: 12, fontWeight: 700, flex: 1, minWidth: 0 }}>Tu RM de {base}</span>
+      <input autoFocus value={valor} onChange={(e) => setValor(e.target.value)} onKeyDown={(e) => e.key === "Enter" && guardar()} placeholder={rmActual ? kg(rmActual) : "kg"} inputMode="decimal" className="font-body" style={{ width: 70, background: "#151319", border: "1px solid #7DD6C0", borderRadius: 8, color: "#F4F1EA", fontSize: 15, fontWeight: 800, padding: "7px 8px", textAlign: "center" }} />
+      <button onClick={guardar} className="font-body" style={{ background: "#7DD6C0", border: "none", borderRadius: 8, color: "#0B2A2E", fontWeight: 800, fontSize: 12, padding: "9px 12px", cursor: "pointer" }}>Guardar</button>
+    </div>
+  );
+  return (
+    <div style={{ marginTop: 6 }}>
+      {guardado != null && <div className="font-body" style={{ color: "#33D6A6", fontSize: 11, fontWeight: 700, marginBottom: 4 }}>✓ RM de {kg(guardado)} kg guardado.{rmActual === guardado ? " Ya se calcularon tus kilos." : " Cuando tu coach lo confirme, se recalculan los kilos."}</div>}
+      {rmActual ? (
+        <div className="font-body" style={{ color: "#8B8698", fontSize: 10.5 }}>Peso calculado con tu RM de {kg(rmActual)} kg · <button onClick={() => setAbierto(true)} style={{ background: "none", border: "none", padding: 0, color: "#7DD6C0", fontWeight: 700, fontSize: 10.5, cursor: "pointer" }}>✎ Cambiar</button></div>
+      ) : (
+        <button onClick={() => setAbierto(true)} className="font-body" style={{ width: "100%", background: "rgba(125,214,192,0.12)", border: "1px dashed #7DD6C0", borderRadius: 10, color: "#7DD6C0", fontWeight: 800, fontSize: 12.5, padding: "10px 12px", cursor: "pointer" }}>＋ Cargá tu RM para ver los kilos</button>
+      )}
+    </div>
+  );
+}
+
+function BloquesSerie({ obj, pres, sug, apx }) {
+  if (!obj || obj === "—") return null;
+  const m = String(obj).match(/^\s*(\d+)\s*[x×]\s*(.+)$/i);
+  const repsL = m ? m[2].split("/").map((x) => x.trim()).filter(Boolean) : [];
+  if (!pres || !m) return <LineaSerie obj={obj} pres={pres} sug={sug} apx={apx} />;
+  const pcts = extraerPorcentajes(pres);
+  const kgs = sug && sug.length ? sug.map((p) => `${String(p).replace(".", ",")} kg`) : apx && apx.length ? apx.map((p) => `≈${String(p).replace(".", ",")} kg`) : [];
+  const repTxt = (r) => `${r} ${r === "1" ? "rep" : "reps"}`;
+  let bloques;
+  if (pcts.length > 1) bloques = pcts.map((pc, k) => ({ reps: repsL.length === pcts.length ? repTxt(repsL[k]) : "", pct: `${String(pc).replace(".", ",")}%`, kg: kgs.length === pcts.length ? kgs[k] : "" }));
+  else bloques = [{ reps: repTxt(repsL.join("-")), pct: pres, kg: kgs.join(" / ") }];
+  // Tramos seguidos iguales (ej. 2 series al 85%) van en un solo rectángulo con «2 series» arriba.
+  if (pcts.length > 1) bloques = bloques.reduce((acc, b) => { const u = acc[acc.length - 1]; if (u && u.reps === b.reps && u.pct === b.pct && u.kg === b.kg) u.veces += 1; else acc.push({ ...b, veces: 1 }); return acc; }, []);
+  const sinReps = bloques.every((b) => !b.reps);
+  const faltaRM = pcts.length > 0 && !kgs.length;
+  // Siempre en una sola fila: con más tramos los rectángulos y la letra se achican.
+  const n = bloques.length, fr = n >= 6 ? 10 : n === 5 ? 11 : 12.5, fv = n >= 6 ? 11.5 : n === 5 ? 12.5 : 14.5;
+  return (
+    <div className="font-body" style={{ marginTop: 4 }}>
+      <div style={{ color: "#F4F1EA", fontSize: 15, fontWeight: 800, textAlign: "center" }}>{m[1]} {m[1] === "1" ? "serie" : "series"}{sinReps ? ` × ${repsL.join("-")}` : ""}</div>
+      <div style={{ display: "flex", flexWrap: "nowrap", justifyContent: "center", gap: n >= 5 ? 3 : 5, marginTop: 5 }}>
+        {bloques.map((b, k) => (
+          <div key={k} style={{ flex: bloques.length > 1 ? "1 1 0" : "0 0 auto", minWidth: 0, maxWidth: 120, display: "flex", flexDirection: "column", alignItems: "center", gap: 1, padding: n >= 5 ? "5px 2px" : "6px 6px", borderRadius: n >= 5 ? 8 : 10, background: "#151319", border: "1px solid #322E3D" }}>
+            {bloques.some((x) => x.veces > 1) && <span style={{ color: "#F4F1EA", fontSize: fr, fontWeight: 800, whiteSpace: "nowrap" }}>{b.veces} {b.veces === 1 ? "serie" : "series"}</span>}
+            {b.reps && <span style={{ color: "#F4F1EA", fontSize: fr, fontWeight: 800, whiteSpace: "nowrap" }}>{b.reps}</span>}
+            <span style={{ color: "#7DD6C0", fontSize: fv, fontWeight: 800, whiteSpace: "nowrap" }}>{b.pct}</span>
+            {b.kg && <span style={{ color: "#7DD6C0", fontSize: fv, fontWeight: 800, whiteSpace: "nowrap" }}>{b.kg}</span>}
+          </div>
+        ))}
+      </div>
+      {faltaRM && <div style={{ color: "#8B8698", fontSize: 10.5, fontWeight: 600, textAlign: "center", marginTop: 4 }}>Tocá para cargar tu RM y ver los kilos</div>}
     </div>
   );
 }
@@ -6078,7 +6240,7 @@ function ChipsPctKg({ pres, sug, apx, obj }) {
   );
 }
 
-function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizados, onCerrarAvisosRM }) {
+function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizados, onCerrarAvisosRM, onGuardarHistorialRM }) {
   // Si hay rutinas extra (además de la principal), la alumna puede elegir cuál está viendo/usando.
   const [rutinaActivaId, setRutinaActivaId] = useState(null); // null = la principal
   const planActivo = rutinaActivaId ? (alumno.planesSecundarios || []).find((p) => p.id === rutinaActivaId)?.plan || alumno.plan : alumno.plan;
@@ -6144,7 +6306,7 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
   // si hoy le midieron la velocidad de barra en este ejercicio, la carga sale del RM de hoy
   const rmHoy = activePE.tipo === "tabata" ? null : buscarRMBase(rmsDelDiaBio(alumno), activePE.nombre);
   const pctsHoy = extraerPorcentajes(rmDeSemana(activePE, semana));
-  const pesosHoy = rmHoy && pctsHoy.length ? pctsHoy.map((pct) => Math.round(((rmHoy * pct) / 100) * 2) / 2) : null;
+  const pesosHoy = rmHoy && pctsHoy.length ? pctsHoy.map((pct) => redondearADiscos((rmHoy * pct) / 100)) : null;
 
   return (
     <div>
@@ -6218,8 +6380,8 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
                   <div key={pe.id}>
                     <div onClick={() => setActiveId(pe.id)} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 12px", borderRadius: 10, cursor: "pointer", border: activeId === pe.id ? "1px solid #FF6B35" : `1px solid ${rolPE ? rolPE.color : "#322E3D"}`, background: activeId === pe.id ? "rgba(255,107,53,0.12)" : (rolPE ? `${rolPE.color}38` : "#1C1A24"), boxSizing: "border-box" }}>
                       <span style={{ fontSize: 16, flexShrink: 0 }}>{pe.emoji}</span>
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <button onClick={(e) => { e.stopPropagation(); if (activeId === pe.id && pe.video) { openVideo(videoFila); } else { setActiveId(pe.id); } }} className="font-body" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left", display: "block", color: done ? "#33D6A6" : "#F4F1EA", fontWeight: 700, fontSize: 14 }}>
+                      <div style={{ minWidth: 0, flex: 1, textAlign: "center" }}>
+                        <button onClick={(e) => { e.stopPropagation(); if (activeId === pe.id && pe.video) { openVideo(videoFila); } else { setActiveId(pe.id); } }} className="font-body" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "center", display: "block", width: "100%", color: done ? "#33D6A6" : "#F4F1EA", fontWeight: 700, fontSize: 16.5 }}>
                           {done ? "✓ " : ""}{pe.nombre}
                         </button>
                         {(() => {
@@ -6228,7 +6390,7 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
                           const sug = pres ? pesosSugeridos(rmPesos, pe.nombre, pres) : null;
                           const apx = !pres || (sug && sug.length) ? null : pesosAproxPorRIR(rmPesos, pe.nombre, pres, obj);
                           return (
-                            pe.tipo === "tabata" ? <div className="font-body" style={{ color: "#8B8698", fontSize: 11, marginTop: 2 }}>{formatObjetivo(obj)}</div> : <LineaSerie obj={obj} pres={pres} sug={sug} apx={apx} />
+                            pe.tipo === "tabata" ? <div className="font-body" style={{ color: "#8B8698", fontSize: 11, marginTop: 2 }}>{formatObjetivo(obj)}</div> : <BloquesSerie obj={obj} pres={pres} sug={sug} apx={apx} />
                           );
                         })()}
                         {pe.nota && pe.nota.trim() && (
@@ -6284,7 +6446,8 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, rolesPersonalizado
                   <div>
                     <div className="font-body" style={{ color: "#8B8698", fontSize: 10 }}>{maxSemanas > 1 ? `Objetivo — semana ${semana + 1}` : "Objetivo"}</div>
                     <TablaSerie obj={objetivo} pres={rmDeSemana(activePE, semana)} sug={pesosSug} apx={pesosAprox} grande />
-                    {pesosSug && pesosSug.length > 0 && <div className="font-body" style={{ color: "#8B8698", fontSize: 10, marginTop: 4 }}>Peso calculado con tu RM de {String(buscarRMBase(rmPesos, activePE.nombre)).replace(".", ",")} kg</div>}
+                    <MiRMInline key={activePE.id} nombre={activePE.nombre} conPct={extraerPorcentajes(rmDeSemana(activePE, semana)).length > 0} rmActual={buscarRMBase(rmPesos, activePE.nombre)} onGuardar={onGuardarHistorialRM} />
+                    {pesosSug && pesosSug.length > 0 && <AvisoRedondeo rm={buscarRMBase(rmPesos, activePE.nombre)} pres={rmDeSemana(activePE, semana)} pesos={pesosSug} />}
                   </div>
                 ) : (
                 <div style={{ background: "#151319", border: "1px solid #26232F", borderRadius: 12, padding: "10px 14px" }}>
@@ -9089,7 +9252,7 @@ export default function GymPlannerCoachApp() {
     );
   } else {
     if (tab === "inicio") body = <AthleteInicio alumno={athlete} rankingReaccion={rankingLargada(alumnos, athlete)} ganadorReaccion={ganadorMesPasado(alumnos, athlete, "largada")} rankingRelevo={rankingJuego(alumnos, athlete, "relevo")} ganadorRelevo={ganadorMesPasado(alumnos, athlete, "relevo")} goEntrenar={() => setTab("entrenar")} onCheckin={registrarCheckin} onUpdateFoto={(dataUrl) => updateAlumno(athlete.id, { fotoPerfil: dataUrl })} onMarcarAvisoVisto={() => updateAlumno(athlete.id, { avisoVistoTexto: athlete.avisoCoach, avisoVistoFecha: new Date().toISOString() })} onGuardarReaccion={(ms) => updateAlumno(athlete.id, guardarIntentoJuego(athlete, "largada", ms))} onGuardarRelevo={(ms) => updateAlumno(athlete.id, guardarIntentoJuego(athlete, "relevo", ms))} />;
-    else if (tab === "entrenar") body = <AthleteEntrenar alumno={athlete} onCerrarAvisosRM={() => marcarAvisosRMVistos(athlete.id, "athlete")} onFinalizar={(id) => { finalizarEntrenamiento(id); setTab("inicio"); }} onUpdateNota={(exId, exNombre, texto, claveNota) => updateNota(athlete.id, exId, exNombre, texto, claveNota)} rolesPersonalizados={rolesPersonalizados} />;
+    else if (tab === "entrenar") body = <AthleteEntrenar alumno={athlete} onGuardarHistorialRM={(ejercicio, valor) => agregarHistorialRM(athlete.id, ejercicio, valor, "athlete")} onCerrarAvisosRM={() => marcarAvisosRMVistos(athlete.id, "athlete")} onFinalizar={(id) => { finalizarEntrenamiento(id); setTab("inicio"); }} onUpdateNota={(exId, exNombre, texto, claveNota) => updateNota(athlete.id, exId, exNombre, texto, claveNota)} rolesPersonalizados={rolesPersonalizados} />;
     else if (tab === "progreso") body = <AthleteProgreso alumno={athlete} onGuardarHistorialRM={(ejercicio, valor) => agregarHistorialRM(athlete.id, ejercicio, valor, "athlete")} onCerrarAvisosRM={() => marcarAvisosRMVistos(athlete.id, "athlete")} onUpdateMarcas={(patch) => updateAlumno(athlete.id, patch)} />;
     else if (tab === "nutricion") body = <CalculadoraScreen alumno={athlete} />;
     else body = <ChatScreen alumno={athlete} onSendMsg={sendMsg} />;
