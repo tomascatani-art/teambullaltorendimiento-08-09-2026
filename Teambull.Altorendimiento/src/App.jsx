@@ -1145,6 +1145,189 @@ const ESTILO_PDF = `
 const nombreConVideoHTML = (nombre, video) =>
   video ? `<a class="video" href="${video}" target="_blank" rel="noopener noreferrer">▶ ${nombre}</a>` : nombre;
 
+// ───────────── Plan en PDF de verdad (sin librerías) ─────────────
+// El visor de archivos de WhatsApp no deja tocar los links de un .html; en un PDF sí.
+// Anchos de Helvetica (centésimas de em) para los caracteres 32–255 de WinAnsi, para cortar líneas.
+const PDF_ANCHOS = { F1: "28,28,36,56,56,89,67,19,33,33,39,58,28,33,28,28,56,56,56,56,56,56,56,56,56,56,28,28,58,58,58,56,102,67,67,72,72,67,61,78,72,28,50,67,56,83,72,78,67,78,72,67,61,72,67,94,67,67,61,28,28,28,47,56,33,56,56,50,56,56,28,56,56,22,22,50,22,83,56,56,56,56,33,50,28,56,50,72,50,50,50,33,26,33,58,76,56,56,22,56,33,100,56,56,33,100,67,33,100,56,61,56,56,22,22,33,33,35,56,100,33,100,50,33,94,56,50,67,28,33,56,56,56,56,26,56,33,74,37,56,58,33,74,33,40,58,33,33,33,56,54,28,33,33,36,56,83,83,83,61,67,67,67,67,67,67,100,72,67,67,67,67,28,28,28,28,72,72,78,78,78,78,78,58,78,72,72,72,72,67,67,61,56,56,56,56,56,56,89,50,56,56,56,56,28,28,28,28,56,56,56,56,56,56,56,58,61,56,56,56,56,50,56,50".split(",").map(Number), F2: "28,33,47,56,56,89,72,24,33,33,39,58,28,33,28,28,56,56,56,56,56,56,56,56,56,56,33,33,58,58,58,61,98,72,72,72,72,67,61,78,72,28,56,72,61,83,72,78,67,78,72,67,61,72,67,94,67,67,61,33,28,33,58,56,33,56,61,56,61,56,33,61,61,28,28,56,28,89,61,61,61,61,39,56,33,61,56,78,56,56,50,39,28,39,58,76,56,61,28,56,50,100,56,56,33,100,67,33,100,61,61,61,61,28,28,50,50,35,56,100,33,100,56,33,94,61,50,67,28,33,56,56,56,56,28,56,33,74,37,56,58,33,74,33,40,58,33,33,33,61,56,28,33,33,36,56,83,83,83,61,72,72,72,72,72,72,100,72,67,67,67,67,28,28,28,28,72,72,78,78,78,78,78,58,78,72,72,72,72,67,67,61,56,56,56,56,56,56,89,56,56,56,56,56,28,28,28,28,61,61,61,61,61,61,61,58,61,61,61,61,61,56,61,56".split(",").map(Number) };
+PDF_ANCHOS.F3 = PDF_ANCHOS.F1;
+const PDF_ESPECIALES = { "€": 128, "‚": 130, "„": 132, "…": 133, "‘": 145, "’": 146, "“": 147, "”": 148, "•": 149, "–": 150, "—": 151, "™": 153, "≈": 126, "×": 215, "→": 62, "▶": 62, "≥": 62, "≤": 60 };
+function pdfCodificar(txt) {
+  let out = "";
+  for (const ch of String(txt == null ? "" : txt).normalize("NFC")) {
+    const c = ch.codePointAt(0);
+    if (PDF_ESPECIALES[ch] !== undefined) out += String.fromCharCode(PDF_ESPECIALES[ch]);
+    else if ((c >= 32 && c < 127) || (c >= 160 && c <= 255)) out += ch;
+    else if (c === 10 || c === 9) out += " ";
+    // lo demás (emojis, símbolos raros) se saca
+  }
+  return out;
+}
+const pdfAncho = (cod, fuente, tam) => { let w = 0; for (let i = 0; i < cod.length; i++) { const c = cod.charCodeAt(i); w += (PDF_ANCHOS[fuente][c - 32] || 56); } return (w / 100) * tam; };
+function pdfCortar(texto, fuente, tam, ancho) {
+  const cod = pdfCodificar(texto).replace(/\s+/g, " ").trim();
+  if (!cod) return [];
+  const lineas = []; let actual = "";
+  for (const palabra of cod.split(" ")) {
+    const prueba = actual ? actual + " " + palabra : palabra;
+    if (pdfAncho(prueba, fuente, tam) <= ancho) { actual = prueba; continue; }
+    if (actual) lineas.push(actual);
+    let p = palabra;
+    while (pdfAncho(p, fuente, tam) > ancho && p.length > 1) { let k = p.length - 1; while (k > 1 && pdfAncho(p.slice(0, k), fuente, tam) > ancho) k--; lineas.push(p.slice(0, k)); p = p.slice(k); }
+    actual = p;
+  }
+  if (actual) lineas.push(actual);
+  return lineas;
+}
+const pdfEsc = (s) => s.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+const pdfColor = (hex) => { const h = hex.replace("#", ""); return [0, 2, 4].map((i) => (parseInt(h.slice(i, i + 2), 16) / 255).toFixed(3)).join(" "); };
+
+function crearDocumentoPDF() {
+  const W = 595, H = 842;
+  const paginas = [];
+  let pag = null;
+  const nueva = () => { pag = { ops: [], links: [] }; paginas.push(pag); pag.ops.push(`${pdfColor("#121017")} rg 0 0 ${W} ${H} re f`); };
+  nueva();
+  return {
+    W, H,
+    nueva,
+    rect(x, y, w, h, fondo, borde) {
+      if (fondo) pag.ops.push(`${pdfColor(fondo)} rg ${x.toFixed(2)} ${(H - y - h).toFixed(2)} ${w.toFixed(2)} ${h.toFixed(2)} re f`);
+      if (borde) pag.ops.push(`${pdfColor(borde)} RG 0.6 w ${x.toFixed(2)} ${(H - y - h).toFixed(2)} ${w.toFixed(2)} ${h.toFixed(2)} re S`);
+    },
+    linea(x1, y1, x2, y2, color, grosor = 0.6) { pag.ops.push(`${pdfColor(color)} RG ${grosor} w ${x1.toFixed(2)} ${(H - y1).toFixed(2)} m ${x2.toFixed(2)} ${(H - y2).toFixed(2)} l S`); },
+    // y = línea de base, medida desde arriba. «cod» ya viene codificado (pdfCortar / pdfCodificar).
+    texto(x, y, cod, fuente, tam, color) { if (cod) pag.ops.push(`BT ${pdfColor(color)} rg /${fuente} ${tam} Tf ${x.toFixed(2)} ${(H - y).toFixed(2)} Td (${pdfEsc(cod)}) Tj ET`); },
+    link(x, y, w, h, url) { pag.links.push({ x, y, w, h, url }); },
+    generar() {
+      const objs = [];
+      const add = (s) => { objs.push(s); return objs.length; };
+      const cat = add(""), pagesId = add("");
+      const f1 = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
+      const f2 = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>");
+      const f3 = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique /Encoding /WinAnsiEncoding >>");
+      const kids = [];
+      paginas.forEach((p, i) => {
+        const pie = pdfCodificar(`Team Bull · ${i + 1} de ${paginas.length}`);
+        p.ops.push(`BT ${pdfColor("#6B6678")} rg /F1 7.5 Tf ${(W - 28 - pdfAncho(pie, "F1", 7.5)).toFixed(2)} 18 Td (${pdfEsc(pie)}) Tj ET`);
+        const cuerpo = p.ops.join("\n");
+        const cont = add(`<< /Length ${cuerpo.length} >>\nstream\n${cuerpo}\nendstream`);
+        const annots = p.links.map((l) => add(`<< /Type /Annot /Subtype /Link /Rect [${l.x.toFixed(2)} ${(H - l.y - l.h).toFixed(2)} ${(l.x + l.w).toFixed(2)} ${(H - l.y).toFixed(2)}] /Border [0 0 0] /A << /S /URI /URI (${pdfEsc(pdfCodificar(l.url))}) >> >>`));
+        kids.push(add(`<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /Font << /F1 ${f1} 0 R /F2 ${f2} 0 R /F3 ${f3} 0 R >> >> /Contents ${cont} 0 R${annots.length ? ` /Annots [${annots.map((a) => `${a} 0 R`).join(" ")}]` : ""} >>`));
+      });
+      objs[cat - 1] = `<< /Type /Catalog /Pages ${pagesId} 0 R >>`;
+      objs[pagesId - 1] = `<< /Type /Pages /Kids [${kids.map((k) => `${k} 0 R`).join(" ")}] /Count ${kids.length} >>`;
+      let out = "%PDF-1.4\n%\xE2\xE3\xCF\xD3\n";
+      const offs = [];
+      objs.forEach((o, i) => { offs.push(out.length); out += `${i + 1} 0 obj\n${o}\nendobj\n`; });
+      const xref = out.length;
+      out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n` + offs.map((o) => `${String(o).padStart(10, "0")} 00000 n \n`).join("");
+      out += `trailer\n<< /Size ${objs.length + 1} /Root ${cat} 0 R >>\nstartxref\n${xref}\n%%EOF`;
+      const bytes = new Uint8Array(out.length);
+      for (let i = 0; i < out.length; i++) bytes[i] = out.charCodeAt(i) & 255;
+      return bytes;
+    },
+  };
+}
+
+// Arma el plan del alumno en PDF: mismos colores que la app y el nombre de cada ejercicio con video
+// es un link que se puede tocar desde WhatsApp.
+function generarPDFPlan(alumno) {
+  const p = alumno.plan || { meta: {}, calentamiento: [], dias: [] };
+  const meta = p.meta || {};
+  const doc = crearDocumentoPDF();
+  const M = 28, ANCHO = doc.W - 2 * M, ABAJO = doc.H - 34;
+  const C = { blanco: "#F4F1EA", gris: "#8B8698", gris2: "#6B6678", naranja: "#FF6B35", agua: "#7DD6C0", tarjeta: "#1C1A24", cabeza: "#26232F", borde: "#322E3D" };
+  let y = M;
+  const lugar = (alto) => { if (y + alto > ABAJO) { doc.nueva(); y = M; return true; } return false; };
+
+  doc.texto(M, y + 10, pdfCodificar("TEAM BULL"), "F2", 10, C.naranja);
+  y += 30;
+  pdfCortar(alumno.nombre, "F2", 20, ANCHO).forEach((l) => { doc.texto(M, y, l, "F2", 20, C.blanco); y += 23; });
+  const datos = [["Objetivo", meta.objetivo], ["Actividad", meta.actividad], ["Mesociclo", meta.mesociclo], ["Fecha", meta.fecha]].filter(([, v]) => v && String(v).trim()).map(([k, v]) => `${k}: ${v}`).join("   ·   ");
+  pdfCortar(datos, "F1", 9, ANCHO).forEach((l) => { doc.texto(M, y, l, "F1", 9, C.gris); y += 12; });
+  y += 4;
+  doc.texto(M, y, pdfCodificar("> Tocá el nombre de un ejercicio en verde agua para ver el video."), "F2", 8.5, C.agua);
+  y += 18;
+
+  // Tabla genérica: columnas [{ titulo, ancho }], filas = [{ celdas: [[{cod, fuente, tam, color, link?}] ...] }]
+  const tabla = (titulo, columnas, filas) => {
+    const pad = 6, cab = 18;
+    const dibujarCabecera = () => {
+      let x = M;
+      doc.rect(M, y, ANCHO, cab, C.cabeza, C.borde);
+      columnas.forEach((c) => { doc.texto(x + pad, y + 12, pdfCodificar(c.titulo.toUpperCase()), "F2", 7.5, C.gris); x += c.ancho; });
+      y += cab;
+    };
+    lugar(14 + cab + 30);
+    if (titulo) { pdfCortar(titulo.toUpperCase(), "F2", 9.5, ANCHO).forEach((l) => { doc.texto(M, y + 9, l, "F2", 9.5, C.naranja); y += 13; }); y += 3; }
+    dibujarCabecera();
+    filas.forEach((fila) => {
+      // cada celda: lista de renglones { cod, fuente, tam, color, link }
+      const celdas = fila.map((partes, i) => {
+        const ancho = columnas[i].ancho - 2 * pad;
+        const renglones = [];
+        partes.forEach((pt) => pdfCortar(pt.texto, pt.fuente, pt.tam, ancho).forEach((cod) => renglones.push({ ...pt, cod })));
+        return renglones;
+      });
+      const alto = Math.max(...celdas.map((r) => r.reduce((t, x) => t + x.tam + 3, 0))) + 2 * pad - 2;
+      if (lugar(alto)) dibujarCabecera();
+      doc.rect(M, y, ANCHO, alto, C.tarjeta, C.borde);
+      let x = M;
+      celdas.forEach((renglones, i) => {
+        if (i > 0) doc.linea(x, y, x, y + alto, C.borde);
+        let yy = y + pad;
+        renglones.forEach((r) => {
+          yy += r.tam;
+          doc.texto(x + pad, yy, r.cod, r.fuente, r.tam, r.color);
+          if (r.link) { const w = pdfAncho(r.cod, r.fuente, r.tam); doc.link(x + pad - 2, yy - r.tam, w + 4, r.tam + 4, r.link); doc.linea(x + pad, yy + 1.5, x + pad + w, yy + 1.5, r.color, 0.5); }
+          yy += 3;
+        });
+        x += columnas[i].ancho;
+      });
+      y += alto;
+    });
+    y += 12;
+  };
+  const celdaNombre = (f) => {
+    const v = linkVideoParaCompartir(f);
+    return [{ texto: f.nombre, fuente: "F2", tam: 9.5, color: v ? C.agua : C.blanco, link: v || null }, ...(f.nota ? [{ texto: f.nota, fuente: "F3", tam: 7.5, color: C.gris }] : [])];
+  };
+
+  if ((p.calentamiento || []).length) {
+    tabla("Entrada en calor", [{ titulo: "Ejercicio", ancho: ANCHO - 140 }, { titulo: "Series", ancho: 70 }, { titulo: "Reps", ancho: 70 }],
+      p.calentamiento.map((w) => [celdaNombre(w), [{ texto: w.series || "—", fuente: "F1", tam: 9, color: C.blanco }], [{ texto: w.reps || "—", fuente: "F1", tam: 9, color: C.blanco }]]));
+  }
+  (p.dias || []).forEach((d) => {
+    lugar(60);
+    y += 4;
+    pdfCortar(`${d.nombre}${d.diaSemana ? ` — ${d.diaSemana}` : ""}`, "F2", 14, ANCHO).forEach((l) => { doc.texto(M, y + 12, l, "F2", 14, C.blanco); y += 17; });
+    doc.linea(M, y + 2, M + ANCHO, y + 2, C.borde);
+    y += 12;
+    (d.bloques || []).forEach((b) => {
+      const ejs = b.ejercicios || [];
+      if (!ejs.length) return;
+      const nSem = Math.max(1, ...ejs.filter((f) => f.tipo !== "tabata").map((f) => (f.semanas || []).length));
+      const anchoEj = Math.max(150, Math.min(230, ANCHO - nSem * 62));
+      const anchoSem = (ANCHO - anchoEj) / nSem;
+      const columnas = [{ titulo: "Ejercicio", ancho: anchoEj }, ...Array.from({ length: nSem }, (_, i) => ({ titulo: `Sem. ${i + 1}`, ancho: anchoSem }))];
+      const filas = ejs.map((f) => {
+        if (f.tipo === "tabata") {
+          const t = f.tabata || {};
+          return [celdaNombre(f), [{ texto: `Tabata: ${t.trabajo}s trabajo / ${t.descanso}s descanso × ${t.rounds} rounds`, fuente: "F1", tam: 8.5, color: C.blanco }], ...Array.from({ length: nSem - 1 }, () => [])];
+        }
+        return [celdaNombre(f), ...Array.from({ length: nSem }, (_, i) => {
+          const s = (f.semanas || [])[i];
+          if (i >= (f.semanas || []).length) return [];
+          const r = rmDeSemana(f, i), kg = kgDeSemana(p, f, i, alumno);
+          return [{ texto: s || "—", fuente: "F2", tam: 9, color: C.blanco }, ...(r ? [{ texto: r, fuente: "F1", tam: 7.5, color: C.agua }] : []), ...(kg ? [{ texto: kg, fuente: "F2", tam: 7.5, color: C.naranja }] : [])];
+        })];
+      });
+      tabla(b.nombre, columnas, filas);
+    });
+  });
+  return doc.generar();
+}
+
 function generarHTMLPlan(alumno) {
   const p = alumno.plan;
   const filaHTML = (f) => `<tr><td>${nombreConVideoHTML(f.nombre, linkVideoParaCompartir(f))}${f.nota ? `<div class="nota">${f.nota}</div>` : ""}</td>${f.tipo === "tabata" ? `<td colspan="99">Tabata: ${f.tabata.trabajo}s trabajo / ${f.tabata.descanso}s descanso × ${f.tabata.rounds} rounds</td>` : f.semanas.map((s, i) => { const r = rmDeSemana(f, i); const kg = kgDeSemana(p, f, i, alumno); return `<td>${s || "—"}${r ? `<small>${r}</small>` : ""}${kg ? `<small class="kg">${kg}</small>` : ""}</td>`; }).join("")}</tr>`;
@@ -1168,12 +1351,11 @@ function compartirPorWhatsApp(alumno) {
 
 // Descarga el plan como archivo .html al dispositivo
 function descargarPlanPDF(alumno) {
-  const html = generarHTMLPlan(alumno);
-  const blob = new Blob([html], { type: "text/html" });
+  const blob = new Blob([generarPDFPlan(alumno)], { type: "application/pdf" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `Plan-${slugify(alumno.nombre)}.html`;
+  a.download = `Plan-${slugify(alumno.nombre)}.pdf`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -1213,8 +1395,8 @@ function descargarPlantelPDF(alumnos) {
 async function compartirPlan(alumno) {
   const texto = generarTextoPlan(alumno);
   try {
-    const html = generarHTMLPlan(alumno);
-    const file = new File([html], `Plan-${slugify(alumno.nombre)}.html`, { type: "text/html" });
+    // PDF de verdad: en WhatsApp los links a los videos se pueden tocar (en un .html no).
+    const file = new File([generarPDFPlan(alumno)], `Plan-${slugify(alumno.nombre)}.pdf`, { type: "application/pdf" });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       // Solo el archivo: si se manda también el texto, WhatsApp lo pega entero abajo del archivo.
       await navigator.share({ files: [file], title: `Plan de ${alumno.nombre}` });
