@@ -655,10 +655,24 @@ const openVideo = (url) => {
   window.dispatchEvent(new CustomEvent("teambull-abrir-video", { detail: { url } }));
 };
 
+// Deja abierta de antemano la conexión con YouTube, así el video arranca más rápido al tocarlo.
+let _ytPreconectado = false;
+function preconectarYoutube() {
+  if (_ytPreconectado || typeof document === "undefined") return;
+  _ytPreconectado = true;
+  ["https://www.youtube.com", "https://www.google.com", "https://i.ytimg.com", "https://s.ytimg.com", "https://googleads.g.doubleclick.net", "https://static.doubleclick.net", "https://yt3.ggpht.com"].forEach((href) => {
+    const l = document.createElement("link"); l.rel = "preconnect"; l.href = href; l.crossOrigin = "anonymous"; document.head.appendChild(l);
+  });
+}
+
 function VideoModal() {
   const [url, setUrl] = useState(null);
+  const [listo, setListo] = useState(false); // el reproductor de YouTube ya cargó
+  useEffect(() => { const t = setTimeout(preconectarYoutube, 1500); return () => clearTimeout(t); }, []);
+  // Por las dudas: si el reproductor no avisa que cargó, a los 4 s se muestra igual.
+  useEffect(() => { if (!url) return; const t = setTimeout(() => setListo(true), 4000); return () => clearTimeout(t); }, [url]);
   useEffect(() => {
-    const handler = (e) => setUrl(e.detail.url);
+    const handler = (e) => { setListo(false); setUrl(e.detail.url); };
     window.addEventListener("teambull-abrir-video", handler);
     return () => window.removeEventListener("teambull-abrir-video", handler);
   }, []);
@@ -670,12 +684,22 @@ function VideoModal() {
       <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 480, background: "#121017", borderRadius: 16, overflow: "hidden", position: "relative" }}>
         <button onClick={() => setUrl(null)} className="font-body" style={{ position: "absolute", top: 8, right: 8, zIndex: 2, background: "rgba(0,0,0,0.65)", border: "none", borderRadius: 999, color: "#fff", width: 30, height: 30, fontSize: 15, cursor: "pointer" }}>✕</button>
         {videoId ? (
-          <div style={{ position: "relative", paddingBottom: "56.25%", height: 0 }}>
+          <div style={{ position: "relative", paddingBottom: "56.25%", height: 0, background: "#000" }}>
+            {/* Mientras carga el reproductor se ve la imagen del video (no una pantalla en blanco). */}
+            {!listo && (
+              <div style={{ position: "absolute", inset: 0, backgroundImage: `url(https://i.ytimg.com/vi/${videoId}/hqdefault.jpg)`, backgroundSize: "cover", backgroundPosition: "center", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ width: 84, height: 84, borderRadius: 999, background: "rgba(18,16,23,0.8)", display: "flex", alignItems: "center", justifyContent: "center", animation: "tbLatido 1.1s ease-in-out infinite" }}>
+                  <img src={BULL_LOGO_B64} alt="Cargando" style={{ width: 56, height: 56, objectFit: "contain" }} />
+                </div>
+                <style>{"@keyframes tbLatido { 0%, 100% { transform: scale(0.9); opacity: 0.75; } 50% { transform: scale(1.06); opacity: 1; } }"}</style>
+              </div>
+            )}
             {/* YouTube ahora exige saber desde qué sitio se reproduce el video: sin el origin y el
                 referrer el reproductor queda en negro (pasa sobre todo en iPhone). */}
             <iframe
               src={`https://www.youtube.com/embed/${videoId}?autoplay=1&playsinline=1&rel=0&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}`}
-              style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none", background: "#000" }}
+              onLoad={() => setTimeout(() => setListo(true), 250)}
+              style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none", background: "#000", opacity: listo ? 1 : 0, transition: "opacity 0.2s" }}
               allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
               referrerPolicy="strict-origin-when-cross-origin"
               allowFullScreen
@@ -1048,13 +1072,22 @@ function kgDeSemana(plan, fila, i, alumno) {
   return aprox && aprox.length ? `≈ ${aprox.map((p) => `${String(p).replace(".", ",")} kg`).join(" / ")}` : "";
 }
 
+// Link de video para compartir fuera de la app: el que tiene el ejercicio, o el que ya le cargaste a
+// un ejercicio con ese nombre en otra planificación. Los de YouTube van cortos (youtu.be/…).
+function linkVideoParaCompartir(fila) {
+  const v = esLinkDeVideo(fila && fila.video) ? fila.video : videoConocido(fila && fila.nombre);
+  if (!v) return null;
+  const id = extraerYoutubeId(v);
+  return id ? `https://youtu.be/${id}` : v;
+}
+
 function generarTextoPlan(alumno) {
   const p = alumno.plan;
   let t = `🐂 TEAM BULL — Plan de ${alumno.nombre}\n`;
   t += `Objetivo: ${p.meta.objetivo || "—"} | Actividad: ${p.meta.actividad || "—"} | Mesociclo: ${p.meta.mesociclo || "—"} | Fecha: ${p.meta.fecha || "—"}\n\n`;
   if (p.calentamiento.length) {
     t += `ENTRADA EN CALOR\n`;
-    p.calentamiento.forEach((w) => { t += `• ${w.nombre}${w.series ? ` — ${w.series}x${w.reps || "?"}` : ""}\n`; });
+    p.calentamiento.forEach((w) => { const v = linkVideoParaCompartir(w); t += `• ${w.nombre}${w.series ? ` — ${w.series}x${w.reps || "?"}` : ""}\n${v ? `   ▶ ${v}\n` : ""}`; });
     t += `\n`;
   }
   if (p.dias.length === 0) {
@@ -1073,7 +1106,8 @@ function generarTextoPlan(alumno) {
           t += `  • ${f.nombre} — Tabata ${f.tabata.trabajo}s/${f.tabata.descanso}s x${f.tabata.rounds}\n`;
         } else {
           const sems = f.semanas.map((s, i) => { const r = rmDeSemana(f, i); const kg = kgDeSemana(p, f, i, alumno); return `${s || ""}${r ? ` (${r}${kg ? ` = ${kg}` : ""})` : ""}`; }).filter((s) => s.trim()).join(" / ");
-          t += `  • ${f.nombre}${f.nota ? ` (${f.nota})` : ""}${sems ? ` — ${sems}` : ""}\n`;
+          const v = linkVideoParaCompartir(f);
+          t += `  • ${f.nombre}${f.nota ? ` (${f.nota})` : ""}${sems ? ` — ${sems}` : ""}\n${v ? `     ▶ ${v}\n` : ""}`;
         }
       });
     });
@@ -1113,14 +1147,14 @@ const nombreConVideoHTML = (nombre, video) =>
 
 function generarHTMLPlan(alumno) {
   const p = alumno.plan;
-  const filaHTML = (f) => `<tr><td>${nombreConVideoHTML(f.nombre, f.video)}${f.nota ? `<div class="nota">${f.nota}</div>` : ""}</td>${f.tipo === "tabata" ? `<td colspan="99">Tabata: ${f.tabata.trabajo}s trabajo / ${f.tabata.descanso}s descanso × ${f.tabata.rounds} rounds</td>` : f.semanas.map((s, i) => { const r = rmDeSemana(f, i); const kg = kgDeSemana(p, f, i, alumno); return `<td>${s || "—"}${r ? `<small>${r}</small>` : ""}${kg ? `<small class="kg">${kg}</small>` : ""}</td>`; }).join("")}</tr>`;
+  const filaHTML = (f) => `<tr><td>${nombreConVideoHTML(f.nombre, linkVideoParaCompartir(f))}${f.nota ? `<div class="nota">${f.nota}</div>` : ""}</td>${f.tipo === "tabata" ? `<td colspan="99">Tabata: ${f.tabata.trabajo}s trabajo / ${f.tabata.descanso}s descanso × ${f.tabata.rounds} rounds</td>` : f.semanas.map((s, i) => { const r = rmDeSemana(f, i); const kg = kgDeSemana(p, f, i, alumno); return `<td>${s || "—"}${r ? `<small>${r}</small>` : ""}${kg ? `<small class="kg">${kg}</small>` : ""}</td>`; }).join("")}</tr>`;
   const diaHTML = (d) => `<h3>${d.nombre}${d.diaSemana ? ` — ${d.diaSemana}` : ""}</h3>` + d.bloques.map((b) => `<h4>${b.nombre}</h4><table><tr><th>Ejercicio</th>${b.ejercicios[0] && b.ejercicios[0].tipo !== "tabata" ? b.ejercicios[0].semanas.map((_, i) => `<th>Sem.${i + 1}</th>`).join("") : "<th>Detalle</th>"}</tr>${b.ejercicios.map(filaHTML).join("")}</table>`).join("");
   return sinEmojis(`<html><head><meta charset="utf-8"><title>Plan — ${alumno.nombre}</title><style>${ESTILO_PDF}</style></head><body>
     <button class="btn-imprimir" onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button>
     <h1>🐂 Team Bull</h1>
     <h2>${alumno.nombre}</h2>
     <div class="meta"><span><b>Objetivo:</b> ${p.meta.objetivo || "—"}</span><span><b>Actividad:</b> ${p.meta.actividad || "—"}</span><span><b>Mesociclo:</b> ${p.meta.mesociclo || "—"}</span><span><b>Fecha:</b> ${p.meta.fecha || "—"}</span></div>
-    ${p.calentamiento.length ? `<h4>Entrada en calor</h4><table><tr><th>Ejercicio</th><th>Series</th><th>Reps</th></tr>${p.calentamiento.map((w) => `<tr><td>${nombreConVideoHTML(w.nombre, w.video)}${w.nota ? `<div class="nota">${w.nota}</div>` : ""}</td><td>${w.series || "—"}</td><td>${w.reps || "—"}</td></tr>`).join("")}</table>` : ""}
+    ${p.calentamiento.length ? `<h4>Entrada en calor</h4><table><tr><th>Ejercicio</th><th>Series</th><th>Reps</th></tr>${p.calentamiento.map((w) => `<tr><td>${nombreConVideoHTML(w.nombre, linkVideoParaCompartir(w))}${w.nota ? `<div class="nota">${w.nota}</div>` : ""}</td><td>${w.series || "—"}</td><td>${w.reps || "—"}</td></tr>`).join("")}</table>` : ""}
     ${p.dias.map(diaHTML).join("")}
   </body></html>`);
 }
@@ -1182,7 +1216,8 @@ async function compartirPlan(alumno) {
     const html = generarHTMLPlan(alumno);
     const file = new File([html], `Plan-${slugify(alumno.nombre)}.html`, { type: "text/html" });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: `Plan de ${alumno.nombre}`, text: texto });
+      // Solo el archivo: si se manda también el texto, WhatsApp lo pega entero abajo del archivo.
+      await navigator.share({ files: [file], title: `Plan de ${alumno.nombre}` });
       return;
     }
     if (navigator.share) {
