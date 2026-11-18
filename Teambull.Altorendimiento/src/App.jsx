@@ -4329,7 +4329,7 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
   return (
     <div>
       <TopBar title="Dashboard" subtitle={coachNombre ? `Entrenador: ${coachNombre}` : "Team Bull"}
-        right={<button onClick={() => setEditando(!editando)} style={{ background: "none", border: "none", color: "#8B8698", fontSize: 16, cursor: "pointer", marginTop: 26 }}>⚙️</button>} />
+        right={<button onClick={() => { const abrir = !editando; setEditando(abrir); if (abrir) setTimeout(() => { const el = document.getElementById("ajustes-coach"); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }, 60); }} aria-label="Configuración" style={{ background: editando ? "rgba(255,107,53,0.15)" : "none", border: "none", borderRadius: 12, color: "#8B8698", fontSize: 20, cursor: "pointer", marginTop: 18, padding: "8px 10px", lineHeight: 1 }}>⚙️</button>} />
       <div style={{ padding: "0 20px 12px" }}>
         <CampoBuscarAlumno valor={buscaAlumno} onChange={setBuscaAlumno} />
         {buscaAlumno.trim() && (() => {
@@ -4349,7 +4349,11 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
       </div>
       <PanelHoy alumnos={alumnosActivos} goAlumnos={goAlumnos} onUsarPeso={onUsarPesoDeNota} onDescartarPeso={onDescartarPesoDeNota} />
       {editando && (
-        <div style={{ padding: "0 20px 14px" }}>
+        <div id="ajustes-coach" style={{ padding: "0 20px 14px", scrollMarginTop: "calc(56px + env(safe-area-inset-top, 0px))" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+            <div className="font-display" style={{ color: "#F4F1EA", fontSize: 18, fontWeight: 700 }}>⚙️ Configuración</div>
+            <button onClick={() => { setEditando(false); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="font-body" style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 999, color: "#8B8698", fontSize: 11, fontWeight: 700, padding: "6px 12px", cursor: "pointer" }}>Cerrar ✕</button>
+          </div>
           <MiniInput label="Nombre del entrenador (aparece en la ficha)" value={coachNombre} onChange={onUpdateCoach} wide />
 
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, padding: 12, marginTop: 16 }}>
