@@ -1350,8 +1350,19 @@ function compartirPorWhatsApp(alumno) {
 }
 
 // Descarga el plan como archivo .html al dispositivo
-function descargarPlanPDF(alumno) {
-  const blob = new Blob([generarPDFPlan(alumno)], { type: "application/pdf" });
+async function descargarPlanPDF(alumno) {
+  // En iPhone, bajar el archivo lo abre en un visor que al compartir agrega abajo un link «blob:…».
+  // Si el celular puede compartir archivos, se manda directo el PDF solo, sin ningún texto.
+  const archivo = new File([generarPDFPlan(alumno)], `Plan-${slugify(alumno.nombre)}.pdf`, { type: "application/pdf" });
+  try {
+    if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && navigator.canShare && navigator.canShare({ files: [archivo] })) {
+      await navigator.share({ files: [archivo] });
+      return;
+    }
+  } catch (e) {
+    if (e && e.name === "AbortError") return;
+  }
+  const blob = archivo;
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -1399,7 +1410,7 @@ async function compartirPlan(alumno) {
     const file = new File([generarPDFPlan(alumno)], `Plan-${slugify(alumno.nombre)}.pdf`, { type: "application/pdf" });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       // Solo el archivo: si se manda también el texto, WhatsApp lo pega entero abajo del archivo.
-      await navigator.share({ files: [file], title: `Plan de ${alumno.nombre}` });
+      await navigator.share({ files: [file] });
       return;
     }
     if (navigator.share) {
