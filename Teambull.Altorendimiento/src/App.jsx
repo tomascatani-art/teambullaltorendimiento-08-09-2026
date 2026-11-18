@@ -671,14 +671,22 @@ function VideoModal() {
         <button onClick={() => setUrl(null)} className="font-body" style={{ position: "absolute", top: 8, right: 8, zIndex: 2, background: "rgba(0,0,0,0.65)", border: "none", borderRadius: 999, color: "#fff", width: 30, height: 30, fontSize: 15, cursor: "pointer" }}>✕</button>
         {videoId ? (
           <div style={{ position: "relative", paddingBottom: "56.25%", height: 0 }}>
+            {/* YouTube ahora exige saber desde qué sitio se reproduce el video: sin el origin y el
+                referrer el reproductor queda en negro (pasa sobre todo en iPhone). */}
             <iframe
-              src={`https://www.youtube.com/embed/${videoId}?autoplay=1&playsinline=1`}
-              style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }}
-              allow="autoplay; encrypted-media; picture-in-picture"
+              src={`https://www.youtube.com/embed/${videoId}?autoplay=1&playsinline=1&rel=0&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}`}
+              style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none", background: "#000" }}
+              allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+              referrerPolicy="strict-origin-when-cross-origin"
               allowFullScreen
               title="Video del ejercicio"
             />
           </div>
+        ) : null}
+        {videoId ? (
+          <a href={`https://www.youtube.com/watch?v=${videoId}`} target="_blank" rel="noopener" className="font-body" style={{ display: "block", textAlign: "center", padding: "12px 10px", color: "#7DD6C0", fontSize: 12.5, fontWeight: 700, textDecoration: "none", borderTop: "1px solid #26232F" }}>
+            ¿No se ve? Abrir en YouTube ↗
+          </a>
         ) : esBusqueda ? (
           <div style={{ padding: 30, textAlign: "center" }}>
             <div style={{ fontSize: 28, marginBottom: 8 }}>🔍</div>
