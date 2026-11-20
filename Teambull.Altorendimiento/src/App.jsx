@@ -5016,6 +5016,38 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
     setTextoNotifManual("");
     setMandandoNotifManual(false);
   };
+  // La rutina extra se edita en su propia pantalla (como una plantilla). Adentro del perfil, abajo
+  // de todo, en iPhone la pantalla se iba bajando sola al escribir en una casilla.
+  const extraEditando = extraAbierta ? (alumno.planesSecundarios || []).find((x) => x.id === extraAbierta) : null;
+  const extraArribaRef = useRef(null);
+  useEffect(() => {
+    if (extraEditando && extraArribaRef.current) extraArribaRef.current.scrollIntoView({ block: "start" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [extraAbierta]);
+  const cerrarExtra = () => { setExtraAbierta(null); setTimeout(() => { const el = document.getElementById("rutinas-extra"); if (el) el.scrollIntoView({ block: "start" }); }, 60); };
+  if (extraEditando) {
+    const p = extraEditando;
+    return (
+      <div ref={extraArribaRef} style={{ scrollMarginTop: 0 }}>
+        <div style={{ padding: "46px 20px 8px", display: "flex", alignItems: "center", gap: 10 }}>
+          <button onClick={cerrarExtra} style={{ background: "none", border: "none", color: "#F4F1EA", fontSize: 18, cursor: "pointer" }}>←</button>
+          <div style={{ minWidth: 0 }}>
+            <div className="font-body" style={{ color: "#FF6B35", fontSize: 10, fontWeight: 800, letterSpacing: ".04em" }}>RUTINA EXTRA · {alumno.nombre.toUpperCase()}</div>
+            <div className="font-display" style={{ fontSize: 18, color: "#F4F1EA", fontWeight: 700, overflowWrap: "anywhere" }}>{p.nombre}</div>
+          </div>
+        </div>
+        <div style={{ padding: "0 20px 20px" }}>
+          <PlanEditor
+            plan={{ calentamiento: [], dias: [], rm: [], ...p.plan, meta: { ...((p.plan && p.plan.meta) || {}) } }}
+            onChange={(pl) => onUpdateAlumno(alumno.id, { planesSecundarios: alumno.planesSecundarios.map((x) => (x.id === p.id ? { ...x, plan: pl } : x)) })}
+            version={version} onGuardarHistorialRM={(ejercicio, valor) => onGuardarHistorialRM(alumno.id, ejercicio, valor)} onAddToLibrary={onAddToLibrary} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={onAgregarRolPersonalizado} historialRMAlumno={alumno.historialRM} nombreAlumno={alumno.nombre}
+          />
+          <button onClick={cerrarExtra} className="font-body" style={{ width: "100%", marginTop: 4, background: "#FF6B35", color: "#121017", border: "none", borderRadius: 10, fontWeight: 700, fontSize: 14, padding: 13, cursor: "pointer" }}>✓ Listo, volver al perfil</button>
+          <div className="font-body" style={{ color: "#6B6678", fontSize: 10, textAlign: "center", marginTop: 6 }}>Los cambios se guardan solos.</div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div>
       {tab === "plan" && (historialPlan.length > 0 || redoPlan.length > 0) && (
@@ -5250,7 +5282,7 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
             </div>
           )}
 
-          <div style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, padding: 12, marginBottom: 14 }}>
+          <div id="rutinas-extra" style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, padding: 12, marginBottom: 14, scrollMarginTop: "calc(56px + env(safe-area-inset-top, 0px))" }}>
             <button onClick={() => setVerRutinasExtra(!verRutinasExtra)} className="font-body" style={{ width: "100%", background: "none", border: "none", color: "#F4F1EA", fontWeight: 700, fontSize: 12, cursor: "pointer", textAlign: "left", padding: 0, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span>🗂️ Rutinas extra ({alumno.planesSecundarios.length})</span><span>{verRutinasExtra ? "▲" : "▼"}</span>
             </button>
@@ -5265,16 +5297,6 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
                 <button onClick={() => compartirPlan({ ...alumno, nombre: `${alumno.nombre} — ${p.nombre}`, plan: { meta: {}, calentamiento: [], dias: [], rm: [], ...p.plan, meta: { ...((p.plan && p.plan.meta) || {}) } } })} title="Compartir solo esta rutina (PDF / WhatsApp)" className="font-body" style={{ background: "rgba(125,214,192,0.12)", border: "1px solid #7DD6C0", borderRadius: 6, color: "#7DD6C0", fontSize: 9.5, fontWeight: 800, cursor: "pointer", padding: "3px 7px", flexShrink: 0 }}>📤 Compartir</button>
                 <button onClick={() => { if (window.confirm(`¿Eliminar la planificación "${p.nombre}"? Esta acción no se puede deshacer.`)) onQuitarPlanSecundario(alumno.id, p.id); }} className="font-body" style={{ background: "none", border: "none", color: "#E85D5D", fontSize: 12, cursor: "pointer", padding: "0 2px", lineHeight: 1, flexShrink: 0 }}>✕</button>
               </div>
-              {extraAbierta === p.id && (
-                <div style={{ border: "1px solid #FF6B35", borderRadius: 10, padding: 8, marginBottom: 10, background: "#15131A" }}>
-                  <div className="font-body" style={{ color: "#FF6B35", fontSize: 10, fontWeight: 800, letterSpacing: ".04em", marginBottom: 6 }}>RUTINA EXTRA: {p.nombre.toUpperCase()}</div>
-                  <PlanEditor
-                    plan={{ calentamiento: [], dias: [], rm: [], ...p.plan, meta: { ...((p.plan && p.plan.meta) || {}) } }}
-                    onChange={(pl) => onUpdateAlumno(alumno.id, { planesSecundarios: alumno.planesSecundarios.map((x) => (x.id === p.id ? { ...x, plan: pl } : x)) })}
-                    version={version} onGuardarHistorialRM={(ejercicio, valor) => onGuardarHistorialRM(alumno.id, ejercicio, valor)} onAddToLibrary={onAddToLibrary} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={onAgregarRolPersonalizado} historialRMAlumno={alumno.historialRM} nombreAlumno={alumno.nombre}
-                  />
-                </div>
-              )}
               </React.Fragment>
             ))}
             {agregandoSecundaria ? (
