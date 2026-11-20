@@ -5036,6 +5036,13 @@ function AlumnoDetalle({ alumno, alumnos, templates, onBack, onAsignarPlantilla,
             <div className="font-display" style={{ fontSize: 18, color: "#F4F1EA", fontWeight: 700, overflowWrap: "anywhere" }}>{p.nombre}</div>
           </div>
         </div>
+        {/* Cambiar el nombre de la rutina extra (es el que ve el/la alumno/a). */}
+        <div style={{ padding: "0 20px 12px" }}>
+          <div className="font-body" style={{ color: "#8B8698", fontSize: 10, fontWeight: 600, marginBottom: 4 }}>NOMBRE DE LA RUTINA (lo ve {alumno.nombre})</div>
+          <input value={p.nombre} onChange={(e) => onUpdateAlumno(alumno.id, { planesSecundarios: alumno.planesSecundarios.map((x) => (x.id === p.id ? { ...x, nombre: e.target.value } : x)) })}
+            onBlur={(e) => { if (!e.target.value.trim()) onUpdateAlumno(alumno.id, { planesSecundarios: alumno.planesSecundarios.map((x) => (x.id === p.id ? { ...x, nombre: "Rutina extra" } : x)) }); }}
+            placeholder="Ej: Flexibilidad en casa" className="font-body" style={{ width: "100%", boxSizing: "border-box", background: "#1C1A24", border: "1px solid #FF6B35", borderRadius: 10, color: "#F4F1EA", fontSize: 16, fontWeight: 700, padding: "10px 12px" }} />
+        </div>
         <div style={{ padding: "0 20px 20px" }}>
           <PlanEditor
             plan={{ calentamiento: [], dias: [], rm: [], ...p.plan, meta: { ...((p.plan && p.plan.meta) || {}) } }}
