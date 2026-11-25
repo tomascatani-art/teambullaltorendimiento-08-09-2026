@@ -391,6 +391,36 @@ function analizar() {
   return analyzeBar(barPath(pts, S.scale), S.scale, { win: [a, b] });
 }
 function compute() { S.res = analizar(); }
+// Un solo botón sobre el video para marcar la serie: el primer toque marca el inicio en el cuadro que se
+// ve, el segundo el fin; con los dos puestos, otro toque las borra para marcar de nuevo.
+function botonSerie() {
+  const pl = $('gy-player');
+  if (!pl) return;
+  let el = $('gy-marca');
+  if (!el) {
+    el = document.createElement('button'); el.id = 'gy-marca'; el.type = 'button'; el.className = 'gy-marca';
+    ['pointerdown', 'touchstart'].forEach(ev => el.addEventListener(ev, (e) => e.stopPropagation(), { passive: true }));
+    el.addEventListener('click', (e) => {
+      e.stopPropagation(); video().pause();
+      const { a, b } = S.rango;
+      if (a == null) marcarRango('a');
+      else if (b == null) marcarRango('b');
+      else { snap(); S.rango = { a: null, b: null }; S.hint = 'Marcas borradas: pará en el comienzo de la serie y tocá «Inicio».'; compute(); panel(); draw(); }
+    });
+    pl.appendChild(el);
+  }
+  const ver = S.mode === 'bar' && S.file && !S.live && !S.abort && S.tool !== 'disco' && S.pts.length > 1;
+  el.hidden = !ver;
+  if (!ver) return;
+  const { a, b } = S.rango, s1 = (t) => f(t, 1) + ' s';
+  const [txt, sub, est] = a == null ? ['⏵ Inicio', 'tocá donde empieza la serie', 'ini']
+    : b == null ? ['⏹ Fin', `inicio ${s1(a)} · tocá donde termina`, 'fin']
+    : ['↺ Marcar de nuevo', `serie ${s1(a)} a ${s1(b)}`, 'ok'];
+  const html = `<b>${txt}</b><small>${sub}</small>`;
+  if (el.innerHTML !== html) el.innerHTML = html;
+  el.dataset.est = est;
+}
+
 // Marcar inicio o fin de la serie en el cuadro que se ve (tocar de nuevo en el mismo cuadro lo quita).
 function marcarRango(k) {
   const t = timeOf(curFrame());
@@ -574,6 +604,7 @@ function draw() {
     }
   }
   aplicarZoom(i);
+  botonSerie();
   // el resultado del salto marcado, grande sobre el video (fuera del zoom, para que se lea nítido)
   let badge = $('gy-jbadge');
   if (!badge) { badge = document.createElement('div'); badge.id = 'gy-jbadge'; badge.className = 'gy-jbadge'; $('gy-player').appendChild(badge); }
@@ -939,11 +970,6 @@ function renderTools() {
       h += b('gy-fix', S.tool === 'fix' ? 'Listo' : 'Corregir punto', { on: S.tool === 'fix' });
       h += b('gy-from', 'Seguir desde acá', { attr: curPoint() ? '' : ' disabled title="En este cuadro no hay punto: tocá el centro"' });
     }
-    if (!S.live && !tracking && S.tool !== 'disco') {
-      const fr = (t) => t == null ? '' : ` ✓ <small>${f(t, 1)} s</small>`;
-      h += b('gy-ini', `⏵ Inicio${fr(S.rango.a)}`, { on: S.rango.a != null, attr: ' title="Marca en este cuadro dónde empieza la primera repetición (tocá de nuevo en el mismo cuadro para quitarlo)"' });
-      h += b('gy-fin', `⏹ Fin${fr(S.rango.b)}`, { on: S.rango.b != null, attr: ' title="Marca en este cuadro dónde termina la última repetición"' });
-    }
     if (S.live && !done && tracking && S.rango.a == null) h += b('gy-ini-vivo', '▶ Empieza la serie', { primary: true });
     if ((S.zoom || 1) > 1 && !S.live) h += b('gy-zoom-off', `🔍 ${fmtZoom()} · Quitar zoom`, { on: true });
     if (S.live && !done) h += b('gy-live-sound', S.sound ? 'Sonido ✓' : 'Sin sonido', { on: S.sound }) + b('gy-live-end', 'Terminar la serie', { primary: true });
@@ -985,7 +1011,7 @@ function barPanel() {
     <p class="fine">Los botones están arriba del video. Si la línea se va del disco en algún cuadro, tocá <b>Corregir punto</b> y arrastralo (o tocá donde va); <b>Seguir desde acá</b> vuelve a seguir desde el punto corregido.</p>
     <p class="fine" id="gy-hint">${esc(S.hint)}</p></div></div>
     ${S.live ? '' : `<div class="gy-step"><div class="gy-step-n">3</div><div><b>Marcar la serie</b>
-    <p class="fine">Para que cuente solo lo que vos querés: pará el video justo antes de que empiece la primera repetición y tocá <b>⏵ Inicio</b>; después, donde termina la última, tocá <b>⏹ Fin</b>. Lo de afuera (sacar la barra, acomodarse, dejarla) no se cuenta. Si no marcás nada, busca las repeticiones solo en todo el video.</p>
+    <p class="fine">Para que cuente solo lo que vos querés: pará el video justo antes de que empiece la primera repetición y tocá el botón <b>⏵ Inicio</b> que está arriba del video; ese mismo botón pasa a ser <b>⏹ Fin</b>: tocalo donde termina la última. Lo de afuera (sacar la barra, acomodarse, dejarla) no se cuenta. Si no marcás nada, busca las repeticiones solo en todo el video.</p>
     ${S.rango.a != null || S.rango.b != null ? `<p class="fine ok-line">Serie marcada: ${S.rango.a != null ? `desde ${f(S.rango.a, 2)} s` : 'desde el principio'} ${S.rango.b != null ? `hasta ${f(S.rango.b, 2)} s` : 'hasta el final'}. ${S.rango.a != null ? '<button class="linkish" type="button" data-gyir="a">ver inicio</button> ' : ''}${S.rango.b != null ? '<button class="linkish" type="button" data-gyir="b">ver fin</button> ' : ''}<button class="linkish" type="button" id="gy-rango-borrar">quitar marcas</button></p>` : ''}</div></div>`}`;
   if (!S.live && S.fps) { const fv = fpsVerdict('bar', S.fps); if (fv.text) h = `<p class="${fv.ok ? 'fine ok-line' : 'notice'}">${esc(fv.text)}</p>` + h; }
   if (S.pts.length > 10 && !sc) h += '<p class="notice">Falta la escala (paso 1) para pasar el recorrido a metros.</p>';
