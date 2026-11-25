@@ -27,12 +27,12 @@ export const JUMPS = {
 };
 
 let H = null, ready = false;
-const S = { mode: 'bar', sound: true, live: null, file: null, url: null, times: null, frameDur: 1 / 30, W: 0, Hh: 0, tool: null, scale: null, scalePts: [], pts: [], res: null, abort: null, jumps: [], marks: {}, hint: '', auto: null, lupa: false, lupaPt: null, zoom: 1, zv: null, zm: null, disco: null, recorte: null, comprimido: '', evId: null, date: '', keepVid: true, sesion: [] };
+const S = { mode: 'bar', sound: true, live: null, file: null, url: null, times: null, frameDur: 1 / 30, W: 0, Hh: 0, tool: null, scale: null, scalePts: [], pts: [], res: null, abort: null, jumps: [], marks: {}, hint: '', auto: null, lupa: false, lupaPt: null, zoom: 1, zv: null, zm: null, disco: null, recorte: null, comprimido: '', evId: null, date: '', keepVid: true, sesion: [], rango: { a: null, b: null } };
 const video = () => $('gy-video'), overlay = () => $('gy-overlay');
 // Deshacer: copia de lo marcado antes de cada cambio (disco, punto seguido, correcciones, saltos)
 const hist = [];
 function snap() {
-  hist.push(JSON.stringify({ scalePts: S.scalePts, scale: S.scale, pts: S.pts, marks: S.marks, jumps: S.jumps }));
+  hist.push(JSON.stringify({ scalePts: S.scalePts, scale: S.scale, pts: S.pts, marks: S.marks, jumps: S.jumps, rango: S.rango }));
   if (hist.length > 40) hist.shift();
 }
 function undo() {
@@ -256,7 +256,7 @@ function cerrarVideo() {
   v.pause(); v.srcObject = null; v.removeAttribute('src'); v.load();
   if (S.url) URL.revokeObjectURL(S.url);
   S.file = null; S.url = null; S.times = null;
-  S.scale = null; S.scalePts = []; S.pts = []; S.res = null; S.jumps = []; S.marks = {}; S.tool = null; S.hint = ''; S.auto = null; S.lupaPt = null; S.zoom = 1; S.zv = S.zm = S.disco = null; S.recorte = null; recortar(null); S.evId = null; S.date = ''; hist.length = 0;
+  S.scale = null; S.scalePts = []; S.pts = []; S.res = null; S.jumps = []; S.marks = {}; S.tool = null; S.hint = ''; S.auto = null; S.lupaPt = null; S.zoom = 1; S.zv = S.zm = S.disco = null; S.recorte = null; recortar(null); S.evId = null; S.date = ''; S.rango = { a: null, b: null }; hist.length = 0;
   aplicarZoom(0);
   $('gy-work').hidden = true;
   if ($('gy-calidad')) $('gy-calidad').hidden = true;
@@ -271,7 +271,7 @@ async function load(file) {
   $('gy-show').hidden = true;
   if (S.url) URL.revokeObjectURL(S.url);
   S.file = file; S.url = URL.createObjectURL(file);
-  S.scale = null; S.scalePts = []; S.pts = []; S.res = null; S.jumps = []; S.marks = {}; S.tool = null; S.hint = ''; S.auto = null; S.lupaPt = null; S.zoom = 1; S.zv = S.zm = S.disco = null; S.recorte = null; recortar(null); S.evId = null; S.date = ''; hist.length = 0;
+  S.scale = null; S.scalePts = []; S.pts = []; S.res = null; S.jumps = []; S.marks = {}; S.tool = null; S.hint = ''; S.auto = null; S.lupaPt = null; S.zoom = 1; S.zv = S.zm = S.disco = null; S.recorte = null; recortar(null); S.evId = null; S.date = ''; S.rango = { a: null, b: null }; hist.length = 0;
   const v = video();
   await new Promise((resolve, reject) => { v.onloadeddata = resolve; v.onerror = () => reject(new Error('Este navegador no puede leer el video.')); v.src = S.url; v.load(); }).catch(err => { H?.notify?.(err.message); throw err; });
   S.W = v.videoWidth; S.Hh = v.videoHeight;
@@ -306,6 +306,7 @@ function onTap(e) {
       S.scale = barScale(S.scalePts[0], S.scalePts[1], D);
       S.tool = null; S.hint = S.scale ? '' : 'Los dos puntos quedaron muy juntos: volvé a marcar los bordes del disco.';
       if (S.pts.length > 1) compute();
+      if (S.scale && seguirAlMarcar()) { const [a, c] = S.scalePts; arrancarSeguimiento([(a[0] + c[0]) / 2, (a[1] + c[1]) / 2]); return; }
     }
     panel(); draw();
   } else if (S.tool === 'center') { snap(); S.tool = null; if (S.live) liveTrack(p); else track(p); }
@@ -320,9 +321,33 @@ function onTap(e) {
   }
 }
 
+// Apenas se confirma el disco se lo empieza a seguir desde su centro (no hace falta tocarlo otra vez).
+// Solo la primera vez: si ya hay un recorrido seguido, cambiar el disco solo corrige la escala.
+const seguirAlMarcar = () => !S.abort && !(S.live?.done) && (S.live ? true : S.pts.length < 2);
+function arrancarSeguimiento(c) {
+  S.tool = null;
+  if (S.live) liveTrack(c); else track(c);
+}
+// Tamaño de trabajo y molde según el disco marcado: se achica el cuadro hasta que el disco tenga unos
+// 30 px de radio y se usa como molde casi todo el disco (no un cuadradito en el centro, que se confunde
+// con la barra o con el fondo). Así sigue igual de bien un disco chico o uno que ocupa media pantalla.
+function medidasSeguimiento(maxW, enVivo) {
+  let sc = Math.min(maxW, S.W) / S.W;
+  const r = S.scale ? S.scale.px / 2 : 0;
+  if (r > 0) {
+    sc = Math.max(Math.min(sc, 30 / r), Math.min(sc, 160 / S.W));
+    const rk = r * sc;
+    return { sc, half: Math.max(6, Math.round(0.7 * rk)), search: Math.max(enVivo ? 10 : 12, Math.round((enVivo ? 0.6 : 0.8) * rk)), minScore: 0.5 };
+  }
+  const Wk = Math.min(maxW, S.W);
+  return enVivo
+    ? { sc, half: Math.max(8, Math.round(14 * Wk / 720)), search: Math.max(16, Math.round(30 * Wk / 720)), minScore: 0.6 }
+    : { sc, half: Math.max(10, Math.round(14 * Wk / 720)), search: Math.max(24, Math.round(40 * Wk / 720)), minScore: 0.6 };
+}
+
 async function track(p0) {
   const v = video(), i0 = curFrame();
-  const Wk = Math.min(960, S.W), sc = Wk / S.W, Hk = Math.round(S.Hh * sc);
+  const M = medidasSeguimiento(960, false), sc = M.sc, Wk = Math.round(S.W * sc), Hk = Math.round(S.Hh * sc);
   const cv = document.createElement('canvas'); cv.width = Wk; cv.height = Hk;
   const cx = cv.getContext('2d', { willReadFrequently: true });
   const getGray = async (i) => {
@@ -340,23 +365,42 @@ async function track(p0) {
   S.res = null;
   S.abort = new AbortController();
   S.hint = 'Siguiendo el disco…'; panel();
-  const half = Math.max(10, Math.round(14 * Wk / 720)), search = Math.max(24, Math.round(40 * Wk / 720));
   let res;
   try {
     res = await trackForward(getGray, i0, [p0[0] * sc, p0[1] * sc], {
-      maxFrames: nFrames() - 1 - i0, half, search, minScore: 0.6, subpixel: true, signal: S.abort.signal,
+      maxFrames: nFrames() - 1 - i0, half: M.half, search: M.search, minScore: M.minScore, subpixel: true, signal: S.abort.signal,
       onPoint: (pt, k) => { S.pts.push({ t: timeOf(pt.i), x: pt.x / sc, y: pt.y / sc }); if (k % 3 === 0) { draw(); $('gy-hint').textContent = `Siguiendo el disco… ${f(timeOf(pt.i) - t0, 1)} s`; } },
     });
   } finally { S.abort = null; }
   const last = S.pts[S.pts.length - 1];
   await seekVideo(v, last.t + S.frameDur * 0.5);
   if (res.lost) { S.tool = 'center'; S.hint = `Perdí el disco a los ${f(last.t, 2)} s (se tapó o cambió mucho). El video quedó en ese cuadro: tocá el centro del disco para seguir desde ahí.`; }
-  else S.hint = `Listo: ${S.pts.length} cuadros seguidos. Revisá la línea con el reproductor; si se fue del disco en algún cuadro, pausá ahí y volvé a tocar el centro.`;
+  else S.hint = `Listo: ${S.pts.length} cuadros seguidos. Revisá con el reproductor que el círculo vaya con el disco. Para contar solo la serie, marcá «Inicio» y «Fin» (paso 3).`;
   compute(); panel(); draw();
 }
 
-function compute() {
-  S.res = S.scale && S.pts.length > 10 ? analyzeBar(barPath(S.pts, S.scale), S.scale) : null;
+// Recorrido y repeticiones. Con inicio y fin marcados a mano solo se usa ese tramo (con un margen chico
+// para que la velocidad de las puntas se calcule bien) y solo cuentan las subidas de adentro.
+function analizar() {
+  if (!S.scale || S.pts.length <= 10) return null;
+  const { a, b } = S.rango || {};
+  if (a == null && b == null) return analyzeBar(barPath(S.pts, S.scale), S.scale);
+  const pad = 0.3, lo = a ?? -Infinity, hi = b ?? Infinity;
+  const pts = S.pts.filter(q => q.t >= lo - pad && q.t <= hi + pad);
+  if (pts.length <= 10) return { error: 'Entre el inicio y el fin que marcaste hay muy pocos cuadros seguidos.' };
+  return analyzeBar(barPath(pts, S.scale), S.scale, { win: [a, b] });
+}
+function compute() { S.res = analizar(); }
+// Marcar inicio o fin de la serie en el cuadro que se ve (tocar de nuevo en el mismo cuadro lo quita).
+function marcarRango(k) {
+  const t = timeOf(curFrame());
+  snap();
+  const r = { ...S.rango };
+  r[k] = r[k] != null && Math.abs(r[k] - t) < S.frameDur * 0.5 ? null : t;
+  if (r.a != null && r.b != null && r.b <= r.a) { S.hint = k === 'a' ? 'El inicio tiene que ir antes del fin.' : 'El fin tiene que ir después del inicio.'; hist.pop(); panel(); return; }
+  S.rango = r;
+  S.hint = r[k] == null ? (k === 'a' ? 'Se quitó el inicio.' : 'Se quitó el fin.') : `${k === 'a' ? 'Inicio' : 'Fin'} de la serie en el cuadro ${curFrame() + 1} (${f(t, 2)} s).`;
+  compute(); panel(); draw();
 }
 
 // ---------- salto: zoom, recorte y resultado ----------
@@ -488,9 +532,19 @@ function draw() {
       ctx.fillStyle = '#4cc9f0'; ctx.beginPath(); ctx.arc(c[0] + r, c[1], 9 / z, 0, 7); ctx.fill();
       ctx.strokeStyle = '#fff'; ctx.lineWidth = 2 / z; ctx.stroke();
     } else if (S.scalePts.length === 2) {
-      const [a, b] = [X(S.scalePts[0]), X(S.scalePts[1])];
-      ctx.strokeStyle = 'rgba(76,201,240,.8)'; ctx.lineWidth = 1.5 / z; ctx.setLineDash([5 / z, 4 / z]);
-      ctx.beginPath(); ctx.arc((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, Math.hypot(b[0] - a[0], b[1] - a[1]) / 2, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+      // el círculo acompaña al disco: va centrado en el punto seguido de este cuadro. Si todavía no hay
+      // recorrido, queda punteado donde se marcó; si en este cuadro no hay punto, no se dibuja (no queda
+      // un círculo fijo en la pantalla que no sigue a nada).
+      const [a, b] = [X(S.scalePts[0]), X(S.scalePts[1])], rr = Math.hypot(b[0] - a[0], b[1] - a[1]) / 2;
+      const cur = S.pts.length ? (S.live ? S.pts[S.pts.length - 1] : S.pts.find(q => Math.abs(q.t - timeOf(i)) < S.frameDur * 0.5)) : null;
+      if (cur) {
+        const c = X([cur.x, cur.y]);
+        ctx.strokeStyle = '#4cc9f0'; ctx.lineWidth = 2.5 / z;
+        ctx.beginPath(); ctx.arc(c[0], c[1], rr, 0, 7); ctx.stroke();
+      } else if (!S.pts.length) {
+        ctx.strokeStyle = 'rgba(76,201,240,.8)'; ctx.lineWidth = 1.5 / z; ctx.setLineDash([5 / z, 4 / z]);
+        ctx.beginPath(); ctx.arc((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, rr, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+      }
     }
     if (S.pts.length > 1) {
       // recorrido hasta el instante actual; las subidas en color
@@ -537,6 +591,7 @@ function draw() {
     const c = S.res.curve; let j = 0; while (j < c.t.length - 1 && c.t[j + 1] <= t) j++;
     if (Number.isFinite(c.v[j]) && Math.abs(c.t[j] - t) < 2 * S.frameDur) hud += ` · barra ${f(c.v[j], 2)} m/s`;
   }
+  if (S.mode === 'bar' && (S.rango.a != null || S.rango.b != null)) hud += `${S.rango.a != null ? ' · inicio ✓' : ''}${S.rango.b != null ? ' · fin ✓' : ''}`;
   if (S.mode === 'bar' && S.res?.reps?.length) { const rs = S.res.reps; hud += ` · ${rs.length} rep · mejor ${f(S.res.best.mv)} m/s`; }
   if (S.mode === 'jump') { const m = S.marks; hud += [m.contact != null && ' · contacto ✓', m.take != null && ' · despegue ✓', m.land != null && ' · caída ✓'].filter(Boolean).join(''); }
   $('gy-hud').textContent = hud;
@@ -602,7 +657,7 @@ async function startLive(seguir = null) {
   S.live = { stream, code: seguir?.code || newCode(), link: seguir?.link || null, kind: seguir?.kind || '', quiereVideo: !!seguir?.quiereVideo, T0: null, times: [], peer: null, done: false };
   S.live.rec = grabarVivo(stream, S.live);
   S.file = { name: 'en vivo' }; S.times = null; S.grabado = null; S.W = v.videoWidth; S.Hh = v.videoHeight;
-  S.scale = null; S.scalePts = []; S.pts = []; S.res = null; S.tool = 'scale'; S.hint = ''; hist.length = 0; S.evId = null;
+  S.scale = null; S.scalePts = []; S.pts = []; S.res = null; S.tool = 'scale'; S.hint = ''; hist.length = 0; S.evId = null; S.rango = { a: null, b: null };
   if (seguir?.scale) { S.scale = seguir.scale; S.scalePts = seguir.scalePts; S.tool = 'center'; S.hint = `Serie ${S.sesion.length + 1}: con la barra quieta, tocá el centro del disco.`; }
   $('gy-stage').style.aspectRatio = `${S.W} / ${S.Hh}`; $('gy-stage').style.setProperty('--ar', S.W / S.Hh);
   $('gy-work').hidden = false;
@@ -671,7 +726,7 @@ async function liveTrack(p0) {
   const L = S.live, v = video();
   if (!L || L.done) return;
   // en vivo cada cuadro tiene que procesarse antes del siguiente: copia más chica y búsqueda más corta
-  const Wk = Math.min(480, S.W), sc = Wk / S.W, Hk = Math.round(S.Hh * sc);
+  const M = medidasSeguimiento(480, true), sc = M.sc, Wk = Math.round(S.W * sc), Hk = Math.round(S.Hh * sc);
   const cv = document.createElement('canvas'); cv.width = Wk; cv.height = Hk;
   const cx = cv.getContext('2d', { willReadFrequently: true });
   const times = [];
@@ -687,12 +742,11 @@ async function liveTrack(p0) {
   };
   S.res = S.pts.length ? S.res : null;
   S.abort = new AbortController();
-  S.hint = 'Siguiendo el disco en vivo…'; panel();
-  const half = Math.max(8, Math.round(14 * Wk / 720)), search = Math.max(16, Math.round(30 * Wk / 720));
+  S.hint = S.rango.a == null ? 'Sigo el disco. Tocá «▶ Empieza la serie» justo antes de la primera repetición: recién ahí cuento.' : 'Siguiendo el disco en vivo…'; panel();
   let first = true, k0 = 0, res;
   try {
     res = await trackForward(getGray, 0, [p0[0] * sc, p0[1] * sc], {
-      maxFrames: 60 * 600, half, search, minScore: 0.6, subpixel: true, signal: S.abort.signal,
+      maxFrames: 60 * 600, half: M.half, search: M.search, minScore: M.minScore, subpixel: true, signal: S.abort.signal,
       onPoint: (pt, k) => {
         if (first) { S.pts.push({ t: times[0], x: p0[0], y: p0[1] }); first = false; }
         S.pts.push({ t: times[pt.i], x: pt.x / sc, y: pt.y / sc });
@@ -714,9 +768,11 @@ function liveUpdate(force = false) {
   d.sort((a, b) => a - b);
   if (d[d.length >> 1] > 0) S.frameDur = d[d.length >> 1];
   if (!S.scale) return;
+  // en vivo no se cuenta nada hasta que se toca «Empieza la serie»
+  if (S.live && !S.live.done && S.rango.a == null) { if (force) panel(); return; }
   const before = (S.res?.reps || []).length;
-  const r = analyzeBar(barPath(S.pts, S.scale), S.scale);
-  if (r.error && !force) return;
+  const r = analizar();
+  if (!r || (r.error && !force)) return;
   S.res = r.error ? (S.res || r) : r;
   const now = (S.res.reps || []).length;
   if (now > before && S.live && !S.live.done) {
@@ -765,6 +821,7 @@ async function verGrabacion(L) {
   if (S.live !== L) { URL.revokeObjectURL(url); return; }
   const off = L.T0 != null && L.recT0 != null ? L.T0 - L.recT0 : 0;
   S.pts = S.pts.map(p => ({ ...p, t: p.t + off }));
+  S.rango = { a: S.rango.a != null ? S.rango.a + off : null, b: S.rango.b != null ? S.rango.b + off : null };
   if (timing?.times?.length) { S.times = timing.times.filter(t => t < v.duration); S.frameDur = timing.frameDur; }
   else S.times = null;
   S.url = url; S.file = file; S.grabado = file; hist.length = 0;
@@ -788,7 +845,7 @@ async function guardarGrabacion() {
 function serieActual() {
   const ex = $('gy-ex').value, load = num($('gy-load').value);
   const meta = { fileName: S.file?.name || 'en vivo', fps: +(1 / S.frameDur).toFixed(2), width: S.W, height: S.Hh };
-  const data = barSaved(S.res, { exercise: ex, load: Number.isFinite(load) ? load : null, meta, scale: { p1: S.scalePts[0], p2: S.scalePts[1], D: S.scale.D }, corte: corteId() });
+  const data = barSaved(S.res, { exercise: ex, load: Number.isFinite(load) ? load : null, meta, scale: { p1: S.scalePts[0], p2: S.scalePts[1], D: S.scale.D }, corte: corteId(), rango: S.rango.a != null || S.rango.b != null ? S.rango : null });
   return { ex, load: Number.isFinite(load) ? load : null, data, file: S.file instanceof Blob ? S.file : null };
 }
 const serieValida = () => S.mode === 'bar' && S.scale && S.res && !S.res.error && S.res.reps?.length > 0;
@@ -832,6 +889,7 @@ function endLive() {
   video().srcObject = null; $('gy-player')?.classList.remove('gy-en-vivo');
   vivoCompleto(false);
   S.tool = null;
+  if (S.rango.a != null && S.rango.b == null && S.pts.length) S.rango = { ...S.rango, b: S.pts[S.pts.length - 1].t };
   compute();
   S.hint = S.pts.length ? `Serie terminada: ${S.pts.length} cuadros seguidos a ${f(1 / S.frameDur, 0)} cuadros por segundo.` : '';
   sendState(true);
@@ -881,6 +939,12 @@ function renderTools() {
       h += b('gy-fix', S.tool === 'fix' ? 'Listo' : 'Corregir punto', { on: S.tool === 'fix' });
       h += b('gy-from', 'Seguir desde acá', { attr: curPoint() ? '' : ' disabled title="En este cuadro no hay punto: tocá el centro"' });
     }
+    if (!S.live && !tracking && S.tool !== 'disco') {
+      const fr = (t) => t == null ? '' : ` ✓ <small>${f(t, 1)} s</small>`;
+      h += b('gy-ini', `⏵ Inicio${fr(S.rango.a)}`, { on: S.rango.a != null, attr: ' title="Marca en este cuadro dónde empieza la primera repetición (tocá de nuevo en el mismo cuadro para quitarlo)"' });
+      h += b('gy-fin', `⏹ Fin${fr(S.rango.b)}`, { on: S.rango.b != null, attr: ' title="Marca en este cuadro dónde termina la última repetición"' });
+    }
+    if (S.live && !done && tracking && S.rango.a == null) h += b('gy-ini-vivo', '▶ Empieza la serie', { primary: true });
     if ((S.zoom || 1) > 1 && !S.live) h += b('gy-zoom-off', `🔍 ${fmtZoom()} · Quitar zoom`, { on: true });
     if (S.live && !done) h += b('gy-live-sound', S.sound ? 'Sonido ✓' : 'Sin sonido', { on: S.sound }) + b('gy-live-end', 'Terminar la serie', { primary: true });
     if (finVivo() && !tracking) h += b('gy-otra-serie', 'Siguiente serie ▶', { primary: true });
@@ -916,10 +980,13 @@ function barPanel() {
     <div class="gy-row"><label>Diámetro del disco (mm)<input type="text" id="gy-plate" inputmode="decimal" value="${esc(sc ? Math.round(sc.D * 1000) : PLATE_MM)}"></label></div>
     ${sc ? `<p class="fine ok-line">Disco: ${f(sc.px, 0)} px = ${f(sc.D * 1000, 0)} mm. Error de la escala ±${f(100 * sc.rel, 1)} % (1 px en cada borde).</p>` : ''}</div></div>
     <div class="gy-step"><div class="gy-step-n">2</div><div><b>Seguir la barra</b>
-    <p class="fine">${S.live ? 'Con el deportista quieto antes de empezar, tocá el centro del disco: lo sigo en vivo y cada repetición aparece al terminar la subida.' : 'Pausá antes de que empiece la serie y tocá el centro del disco: lo sigo cuadro a cuadro hasta el final del video.'}</p>
+    <p class="fine">${S.live ? 'Apenas tocás «Listo, es el disco» lo empiezo a seguir: el círculo se mueve con el disco. Cuando el deportista va a empezar, tocá <b>▶ Empieza la serie</b>; recién ahí cuento repeticiones, hasta que tocás «Terminar la serie».' : 'Pausá antes de que empiece la serie y marcá el disco: al tocar «Listo, es el disco» lo sigo solo cuadro a cuadro hasta el final del video, y el círculo va con el disco.'}</p>
     ${S.live && !S.live.done ? `<div class="gy-row">${liveBox()}</div>` : ''}
     <p class="fine">Los botones están arriba del video. Si la línea se va del disco en algún cuadro, tocá <b>Corregir punto</b> y arrastralo (o tocá donde va); <b>Seguir desde acá</b> vuelve a seguir desde el punto corregido.</p>
-    <p class="fine" id="gy-hint">${esc(S.hint)}</p></div></div>`;
+    <p class="fine" id="gy-hint">${esc(S.hint)}</p></div></div>
+    ${S.live ? '' : `<div class="gy-step"><div class="gy-step-n">3</div><div><b>Marcar la serie</b>
+    <p class="fine">Para que cuente solo lo que vos querés: pará el video justo antes de que empiece la primera repetición y tocá <b>⏵ Inicio</b>; después, donde termina la última, tocá <b>⏹ Fin</b>. Lo de afuera (sacar la barra, acomodarse, dejarla) no se cuenta. Si no marcás nada, busca las repeticiones solo en todo el video.</p>
+    ${S.rango.a != null || S.rango.b != null ? `<p class="fine ok-line">Serie marcada: ${S.rango.a != null ? `desde ${f(S.rango.a, 2)} s` : 'desde el principio'} ${S.rango.b != null ? `hasta ${f(S.rango.b, 2)} s` : 'hasta el final'}. ${S.rango.a != null ? '<button class="linkish" type="button" data-gyir="a">ver inicio</button> ' : ''}${S.rango.b != null ? '<button class="linkish" type="button" data-gyir="b">ver fin</button> ' : ''}<button class="linkish" type="button" id="gy-rango-borrar">quitar marcas</button></p>` : ''}</div></div>`}`;
   if (!S.live && S.fps) { const fv = fpsVerdict('bar', S.fps); if (fv.text) h = `<p class="${fv.ok ? 'fine ok-line' : 'notice'}">${esc(fv.text)}</p>` + h; }
   if (S.pts.length > 10 && !sc) h += '<p class="notice">Falta la escala (paso 1) para pasar el recorrido a metros.</p>';
   if (r?.error) h += `<p class="notice">${esc(r.error)}</p>`;
@@ -1085,6 +1152,7 @@ export async function openSaved(ev, file) {
     S.hint = S.jumps.length ? 'Medición guardada. Para mover una marca tocá «Corregir» en el salto; para sumar otro, marcalo y tocá «Agregar el salto».' : '';
   } else {
     if (d.scale?.p1 && d.scale?.p2 && d.scale.D) { S.scalePts = [d.scale.p1, d.scale.p2]; S.scale = barScale(d.scale.p1, d.scale.p2, d.scale.D); S.tool = 'center'; }
+    if (d.rango) S.rango = { a: d.rango.a ?? null, b: d.rango.b ?? null };
     S.hint = 'Medición guardada: tocá el centro del disco en el primer cuadro para volver a seguirlo y corregir la serie.';
   }
   panel(); draw();
@@ -1126,6 +1194,7 @@ function bindPanel() {
     S.tool = null; S.disco = null; S.hint = S.scale ? '' : 'El círculo quedó muy chico: agrandalo hasta el borde del disco.';
     if (!S.scale) { S.tool = 'disco'; S.disco = d; }
     if (S.scale && S.pts.length > 1) compute();
+    if (S.scale && seguirAlMarcar()) { arrancarSeguimiento([d.x, d.y]); return; }
     panel(); draw();
   });
   on('gy-zoom-off', () => { S.zoom = 1; S.zv = S.zm = null; renderTools(); bindPanel(); draw(); });
@@ -1140,6 +1209,17 @@ function bindPanel() {
   on('gy-recorte', () => { S.recorte = S.recorte ? null : tramoDelSalto(); recortar(S.recorte); if (S.recorte) { video().pause(); seekFrame(frameAt(S.recorte.a + 0.001)); } renderTools(); bindPanel(); draw(); });
   on('gy-live-sound', () => { S.sound = !S.sound; unlock(); panel(); });
   on('gy-stop', () => S.abort?.abort());
+  on('gy-ini', () => { video().pause(); marcarRango('a'); });
+  on('gy-rango-borrar', () => { snap(); S.rango = { a: null, b: null }; S.hint = 'Se quitaron las marcas de inicio y fin.'; compute(); panel(); draw(); });
+  document.querySelectorAll('[data-gyir]').forEach(b => b.onclick = () => { const t = S.rango[b.dataset.gyir]; if (t != null) { video().pause(); seekFrame(frameAt(t + 1e-4)); } });
+  on('gy-fin', () => { video().pause(); marcarRango('b'); });
+  on('gy-ini-vivo', () => {
+    if (!S.live || S.live.done) return;
+    const u = S.pts[S.pts.length - 1];
+    S.rango = { a: u ? u.t : 0, b: null };
+    S.hint = 'Contando desde ahora. Al terminar la última repetición tocá «Terminar la serie».';
+    unlock(); liveUpdate(true); panel();
+  });
   const pl = $('gy-plate');
   if (pl) pl.onchange = () => { if (S.scalePts.length === 2) { S.scale = barScale(S.scalePts[0], S.scalePts[1], num(pl.value) / 1000); compute(); panel(); } };
   document.querySelectorAll('[data-gyrep]').forEach(b => b.onclick = () => { if (S.live) return; const r = S.res.reps[+b.dataset.gyrep - 1]; video().pause(); seekFrame(frameAt(r.t0)); });
@@ -1219,7 +1299,7 @@ async function save() {
     let ev;
     if (S.mode === 'bar') {
       const ex = $('gy-ex').value, load = num($('gy-load').value);
-      const data = barSaved(S.res, { exercise: ex, load: Number.isFinite(load) ? load : null, meta, scale: { p1: S.scalePts[0], p2: S.scalePts[1], D: S.scale.D }, corte: corteId() });
+      const data = barSaved(S.res, { exercise: ex, load: Number.isFinite(load) ? load : null, meta, scale: { p1: S.scalePts[0], p2: S.scalePts[1], D: S.scale.D }, corte: corteId(), rango: S.rango.a != null || S.rango.b != null ? S.rango : null });
       ev = { athleteId: aid, kind: 'gym', date, title: `Gym · ${EXERCISES[ex].label}`, event: Number.isFinite(load) ? `${f(load, 1)} kg` : '', summary: { mv: data.best.mv }, data };
     } else {
       const fv = fvProfile(num(S.mass), num(S.hpo), S.jumps.filter(j => j.type === 'loaded').map(j => ({ h: j.h, load: j.load || 0 })));

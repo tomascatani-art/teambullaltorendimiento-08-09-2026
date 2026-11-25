@@ -157,7 +157,8 @@ export function uniform(path) {
 
 // Repeticiones y serie. Una subida cuenta cuando la barra sube al menos `minRom` (y el 35 % del
 // recorrido total), entre un punto bajo y el siguiente alto. half: ventana del ajuste local (s).
-export function analyzeBar(path, sc, { half = null, minRom = 0.05 } = {}) {
+// win: [desde, hasta] (s) marcados a mano: solo cuentan las subidas que caen entre esas dos marcas.
+export function analyzeBar(path, sc, { half = null, minRom = 0.05, win = null } = {}) {
   if (path.t.length < 10) return { error: 'Hacen falta más cuadros seguidos.' };
   const rawT = path.t;
   const { t, x, y } = uniform(path), n = t.length;
@@ -227,7 +228,12 @@ export function analyzeBar(path, sc, { half = null, minRom = 0.05 } = {}) {
     const ecc = k > 0 && turns[k - 1].kind === 'top' ? t[i0] - t[turns[k - 1].i] : null;
     reps.push({ n: reps.length + 1, from: i0, to: i1, t0: s0.t, t1: s1.t, mv, se, pv, pvAt, rom, dur, ecc, dx: Math.max(...xs) - Math.min(...xs) });
   }
-  if (!reps.length) return { error: `No encontré ninguna subida de al menos ${Math.round(100 * P)} cm. Revisá que el punto seguido sea el disco y que se vea la serie entera.`, curve: { t, v: vs.v, y: ys } };
+  if (win) {
+    const [wa, wb] = [win[0] ?? -Infinity, win[1] ?? Infinity];
+    const dentro = reps.filter(r => r.t1 > wa + 0.02 && r.t0 < wb - 0.02);
+    reps.length = 0; dentro.forEach((r, k) => reps.push({ ...r, n: k + 1 }));
+  }
+  if (!reps.length) return { error: win ? 'Entre el inicio y el fin que marcaste no encontré ninguna subida completa. Revisá las marcas: el inicio va antes de que empiece la primera repetición y el fin después de que termina la última.' : `No encontré ninguna subida de al menos ${Math.round(100 * P)} cm. Revisá que el punto seguido sea el disco y que se vea la serie entera.`, curve: { t, v: vs.v, y: ys } };
   const best = reps.reduce((a, b) => (b.mv > a.mv ? b : a)), last = reps[reps.length - 1];
   // pérdida de velocidad: de la repetición más rápida a la última (en %)
   let vl = null;
