@@ -2,7 +2,7 @@
 // grande la velocidad media de cada repetición que mide el celular que filma de costado.
 // La imagen puede ser la cámara de esta pantalla (espejo) o el video del celular (WebRTC, misma red).
 import { openLink } from './gym-link.js';
-import { EXERCISES, zoneOf, DEFICIT_LIMIT } from './gym.js';
+import { EXERCISES, zoneOf, faseVivo, DEFICIT_LIMIT } from './gym.js';
 import { unlock, beep } from './beep.js';
 
 const $ = (id) => document.getElementById(id);
@@ -113,7 +113,9 @@ function render(st) {
   rep.textContent = last ? `${st.serie > 1 ? `Serie ${st.serie} · ` : ''}Rep ${last.n}${ex ? ' · ' + ex : ''}${Number.isFinite(st.load) ? ` · ${f(st.load, 1)} kg` : ''}` : st ? (st.done ? 'Serie terminada' : 'Esperando la primera repetición…') : 'Escribí el código que muestra el celular';
   big.innerHTML = last ? `${f(last.mv)}<small> m/s</small>` : '–';
   const z = last ? zoneOf(last.mv) : null;
-  zone.textContent = z ? (z.zone ? z.zone.label : z.out === 'below' ? 'Debajo de la tabla' : 'Arriba de la tabla') : '';
+  // en qué fase está trabajando según la velocidad (tabla de Prilepin y su adaptación a la práctica)
+  const fz = last ? faseVivo(last.mv) : null;
+  zone.innerHTML = fz ? `<span class="gy-show-fase" style="color:${fz.color}">${fz.fase}</span><span class="gy-show-calidad">${fz.calidad}${fz.pct ? ` · ${fz.pct}` : ''}</span>` : '';
   $('gy-show-stage').dataset.zone = z?.zone?.id || '';
   const d = st?.deficit;
   // corte elegido en el celular que filma (las versiones anteriores mandaban solo el déficit)

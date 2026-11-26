@@ -9,7 +9,7 @@ import { fpsHint, fpsVerdict, GUIDE, halfFrameMs, jumpErrCm } from './fpsguide.j
 import { unlock, beep } from './beep.js';
 import { detectJump } from './jumpauto.js';
 import { filmGuide } from './filmguide.js';
-import { EXERCISES, ZONES, PRACTICE, DEFICIT_LIMIT, zoneOf, practiceOf, seriesDeficit, effectiveSet, PLATE_MM, CORTES, corteSerie, barScale, barPath, analyzeBar, barSaved, jumpHeight, dropJump, fvProfile, loadVelocity } from './gym.js';
+import { EXERCISES, ZONES, PRACTICE, DEFICIT_LIMIT, zoneOf, practiceOf, faseVivo, seriesDeficit, effectiveSet, PLATE_MM, CORTES, corteSerie, barScale, barPath, analyzeBar, barSaved, jumpHeight, dropJump, fvProfile, loadVelocity } from './gym.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -649,7 +649,7 @@ function hudVivo() {
   const reps = S.res?.reps || [], u = reps[reps.length - 1];
   el.hidden = false;
   const fc = fpsCamara(), cuadros = Number.isFinite(fc) ? `<span class="gy-vivo-code${fc < 50 ? ' bajo' : ''}">${f(fc, 0)} cuadros/s${fc < 50 ? ' · poné más luz' : ''}</span>` : '';
-  el.innerHTML = `<span class="gy-vivo-code">Código <b class="mono">${S.live.code}</b></span>${cuadros}${u ? `<span class="gy-vivo-rep"><small>Rep ${u.n}</small><b class="mono">${f(u.mv)}</b><small>m/s</small></span>` : ''}${S.hint ? `<span class="gy-vivo-hint">${esc(S.hint)}</span>` : ''}`;
+  el.innerHTML = `<span class="gy-vivo-code">Código <b class="mono">${S.live.code}</b></span>${cuadros}${u ? `<span class="gy-vivo-rep"><small>Rep ${u.n}</small><b class="mono">${f(u.mv)}</b><small>m/s</small></span>` : ''}${(() => { const fz = u && faseVivo(u.mv); return fz ? `<span class="gy-vivo-fase" style="--fz:${fz.color}"><small>Fase</small><b>${esc(fz.fase)}</b><small>${esc(fz.calidad)}${fz.pct ? ` · ${esc(fz.pct)}` : ''}</small></span>` : ''; })()}${S.hint ? `<span class="gy-vivo-hint">${esc(S.hint)}</span>` : ''}`;
 }
 
 // Cuadros por segundo fijos: la cámara baja sola a 30 (o menos) cuando hay poca luz, y entonces la

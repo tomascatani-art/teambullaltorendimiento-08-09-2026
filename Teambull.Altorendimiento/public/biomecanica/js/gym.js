@@ -73,6 +73,14 @@ export const zoneOf = (v, se) => {
   return r;
 };
 export const practiceOf = (v, se) => inBands(PRACTICE, v, se);
+// En vivo: en qué fase está trabajando según la velocidad de la repetición (las dos tablas de arriba).
+const COLOR_ZONA = { abs: '#E85D5D', max: '#FF6B35', acc: '#FFD166', fv: '#7DD6C0', vf: '#4FC3F7' };
+export function faseVivo(v) {
+  if (!Number.isFinite(v)) return null;
+  const z = zoneOf(v), p = practiceOf(v);
+  const calidad = z?.zone ? z.zone.label : z?.out === 'below' ? 'Debajo de la tabla' : 'Arriba de la tabla';
+  return { fase: p?.zone?.label || '', calidad, pct: z?.zone?.pct || '', color: COLOR_ZONA[z?.zone?.id] || (z?.out === 'below' ? '#E85D5D' : '#4FC3F7') };
+}
 
 // Déficit de la serie como en la planilla de control: (velocidad media de las repeticiones − velocidad de la 1.ª)
 // / velocidad media × 100. Negativo = la serie se frenó.

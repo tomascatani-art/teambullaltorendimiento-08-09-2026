@@ -432,3 +432,11 @@ body[data-view="results"] #view-results .guardar-fijo, body[data-view="race"] #v
 body[data-view="results"] #view-results, body[data-view="race"] #view-race { padding-bottom: 96px; }
 .guardar-fijo .btn { min-height: 48px; }
 html.vb-full-on .guardar-fijo { display: none !important; }
+
+/* En vivo: fase en la que trabaja según la velocidad (tabla de Prilepin + adaptación a la práctica) */
+.gy-vivo-fase { flex-basis: 100%; display: flex; flex-direction: column; align-items: flex-end; margin-left: auto; max-width: 70%; background: rgba(18,16,23,.82); border: 2px solid var(--fz, #FF6B35); border-radius: 14px; padding: 6px 12px; color: #fff; text-align: right; }
+.gy-vivo-fase b { font: 700 18px/1.15 var(--display); color: var(--fz, #FF6B35); text-transform: uppercase; letter-spacing: .02em; }
+.gy-vivo-fase small { font: 600 10.5px var(--sans); color: #ddd; }
+.gy-vivo-fase small:first-child { font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: #aaa; }
+.gy-show-fase { display: block; font-weight: 800; text-transform: uppercase; letter-spacing: .02em; }
+.gy-show-calidad { display: block; font-size: .55em; opacity: .85; margin-top: .15em; }
