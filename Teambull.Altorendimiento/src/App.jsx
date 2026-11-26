@@ -752,9 +752,15 @@ function agruparCircuitos(lista) {
   });
   return grupos;
 }
+// El link de un ejercicio de la biblioteca: el que le pusiste en la biblioteca, o el que le pegaste
+// en la planificación de cualquier alumno (se recuerda por nombre). Las búsquedas de YouTube no
+// cuentan como link: así un ejercicio sin link no tapa el que cargaste en otra planificación.
 function videoEfectivo(ex) {
-  return VIDEOS_GUARDADOS[ex.id] || ex.video;
+  if (!ex) return null;
+  return VIDEOS_GUARDADOS[ex.id] || VIDEOS_GUARDADOS[claveVideoNombre(ex.nombre)] || (esLinkDeVideo(ex.video) ? ex.video : null);
 }
+// Para abrir: el link cargado, o si no hay, el video por defecto / búsqueda de YouTube.
+const videoParaVer = (ex) => videoEfectivo(ex) || videoDe({ nombre: ex.nombre });
 
 // Videos reales y verificados por tipo de movimiento — se usan como respaldo cuando el coach
 // todavía no cargó un link específico para ese ejercicio, en vez de una búsqueda con varios resultados.
@@ -791,10 +797,17 @@ function videoConocido(nombre) {
 }
 let RECORDAR_VIDEO = null; // lo conecta la app: (nombre, video) => guarda en videosGuardados
 const recordarVideo = (nombre, video) => { if (RECORDAR_VIDEO && nombre && esLinkDeVideo(video)) RECORDAR_VIDEO(nombre, video); };
+// Link que cargó el coach para esta fila: el suyo propio o el que le puso a ese ejercicio en otra
+// planificación o en la biblioteca. null si no hay ninguno (ahí se usa un video por defecto).
+function linkCargado(pe) {
+  if (!pe) return null;
+  if (esLinkDeVideo(pe.video)) return pe.video;
+  return videoConocido(pe.nombre);
+}
 function videoDe(pe) {
+  const cargado = linkCargado(pe);
+  if (cargado) return cargado;
   if (pe.video) return pe.video;
-  const conocido = videoConocido(pe.nombre);
-  if (conocido) return conocido;
   const cat = VIDEOS_POR_CATEGORIA.find((c) => c.match.test(pe.nombre));
   if (cat) return cat.video;
   return `https://www.youtube.com/results?search_query=${encodeURIComponent(pe.nombre + " técnica")}`;
@@ -3080,7 +3093,7 @@ function FilaEjercicio({ fila, onChange, onRemove, onAddToLibrary, rolesPersonal
 
       <div style={{ marginBottom: 8 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
-          <div className="font-body" style={{ fontSize: 9, color: esBusqueda ? "#FF6B35" : "#8B8698" }}>{fila.video ? "Link de YouTube (lo cargaste vos)" : videoConocido(fila.nombre) ? "✓ Usa el video que ya le cargaste a este ejercicio. Pegá otro acá si querés cambiarlo:" : esBusqueda ? "⚠ Todavía no hay un video puntual — pegá el link acá:" : "Sin link puntual — se usa un video por defecto. Pegá uno acá si querés poner otro:"}</div>
+          <div className="font-body" style={{ fontSize: 9, color: esBusqueda ? "#FF6B35" : "#8B8698" }}>{esLinkDeVideo(fila.video) ? "Link de YouTube (lo cargaste vos — queda guardado en la biblioteca para todos)" : videoConocido(fila.nombre) ? "✓ Usa el video que ya le cargaste a este ejercicio. Pegá otro acá si querés cambiarlo:" : esBusqueda ? "⚠ Todavía no hay un video puntual — pegá el link acá:" : "Sin link puntual — se usa un video por defecto. Pegá uno acá si querés poner otro:"}</div>
           <a href={`https://www.youtube.com/results?search_query=${encodeURIComponent(fila.nombre + " técnica")}`} target="_blank" rel="noopener noreferrer" className="font-body" style={{ fontSize: 9, color: "#7DD6C0", fontWeight: 700, textDecoration: "none", flexShrink: 0, marginLeft: 8 }}>🔍 Buscar en YouTube</a>
         </div>
         <div style={{ display: "flex", gap: 6 }}>
@@ -3386,6 +3399,8 @@ function PlanEditor({ plan, onChange, version, onGuardarHistorialRM, onAddToLibr
                 <button onClick={() => openVideo(w.video)} className="font-body" style={{ background: "none", border: "none", color: "#7DD6C0", fontSize: 9, fontWeight: 700, cursor: "pointer", padding: 0, whiteSpace: "nowrap" }}>▶ ver video</button>
                 <button onClick={() => updateWarm(w.id, { video: null })} style={{ background: "none", border: "none", color: "#E85D5D", fontSize: 12, cursor: "pointer", padding: "0 2px", flexShrink: 0 }}>✕</button>
               </>
+            ) : videoConocido(w.nombre) ? (
+              <button onClick={() => openVideo(videoConocido(w.nombre))} className="font-body" style={{ background: "none", border: "none", color: "#7DD6C0", fontSize: 9, fontWeight: 700, cursor: "pointer", padding: 0, whiteSpace: "nowrap" }}>✓ ▶ ya tiene link</button>
             ) : (
               <a href={`https://www.youtube.com/results?search_query=${encodeURIComponent(w.nombre + " técnica")}`} target="_blank" rel="noopener noreferrer" className="font-body" style={{ fontSize: 9, color: "#7DD6C0", fontWeight: 700, textDecoration: "none", whiteSpace: "nowrap" }}>🔍 Buscar en YouTube</a>
             )}
@@ -5913,7 +5928,7 @@ function CoachEjercicios({ onAddExercise, version, onToggleFav, onEditVideo, onE
           return (
             <div key={e.id} style={{ background: "#1C1A24", border: `1.5px solid ${e.color}`, borderRadius: 12, padding: 10, width: "100%" }}>
               <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                <button onClick={() => openVideo(videoEf)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", gap: 10, alignItems: "center", flex: 1, textAlign: "left" }}>
+                <button onClick={() => openVideo(videoParaVer(e))} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", gap: 10, alignItems: "center", flex: 1, textAlign: "left" }}>
                   <div style={{ width: 34, height: 34, borderRadius: 8, background: `${e.color}22`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 16 }}>{e.emoji}</div>
                   <div style={{ flex: 1 }}>
                     <div className="font-display" style={{ fontSize: 12, color: "#F4F1EA", fontWeight: 600 }}>{e.nombre}{e.custom && <span style={{ color: "#7DD6C0", fontSize: 9 }}> ★ tuyo</span>}</div>
@@ -6926,9 +6941,9 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, onUpdateKg, rolesP
           <div className="font-body" style={{ fontSize: 12.5, color: "#FF6B35", fontWeight: 800, letterSpacing: 0.8, marginBottom: 10 }}>🔥 ENTRADA EN CALOR</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {planActivo.calentamiento.map((w) => (
-              <button key={w.id} onClick={() => w.video && openVideo(w.video)} className="font-body" style={{ display: "flex", flexDirection: "column", width: "100%", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, padding: "9px 12px", cursor: w.video ? "pointer" : "default", textAlign: "left" }}>
+              <button key={w.id} onClick={() => linkCargado(w) && openVideo(linkCargado(w))} className="font-body" style={{ display: "flex", flexDirection: "column", width: "100%", background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, padding: "9px 12px", cursor: w.video ? "pointer" : "default", textAlign: "left" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
-                  <span style={{ color: "#F4F1EA", fontWeight: 600, fontSize: 12 }}>{w.nombre}{w.video && <span style={{ color: "#7DD6C0" }}> ▶</span>}</span>
+                  <span style={{ color: "#F4F1EA", fontWeight: 600, fontSize: 12 }}>{w.nombre}{linkCargado(w) && <span style={{ color: "#7DD6C0" }}> ▶</span>}</span>
                   <span style={{ color: "#8B8698", fontSize: 11 }}>{w.series && w.reps ? `${w.series} x ${w.reps}` : (w.series || w.reps || "")}</span>
                 </div>
                 {w.nota && <span style={{ color: "#7DD6C0", fontSize: 10, marginTop: 3 }}>{w.nota}</span>}
@@ -6964,11 +6979,11 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, onUpdateKg, rolesP
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", minHeight: 20 }}>
                           <span className="font-body" style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, overflow: "hidden", marginRight: 8, color: "#8B8698", fontSize: 9.5, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase" }}>
                             {rolPE && <span style={{ color: rolPE.color, background: `${rolPE.color}26`, border: `1px solid ${rolPE.color}66`, borderRadius: 999, padding: "3px 9px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{rolPE.label}</span>}
-                            {activeId === pe.id && pe.video && <span style={{ color: "#FF6B35", textTransform: "none", letterSpacing: 0 }}>{rolPE ? " · " : ""}▶ tocá el nombre para el video</span>}
+                            {activeId === pe.id && linkCargado(pe) && <span style={{ color: "#FF6B35", textTransform: "none", letterSpacing: 0 }}>{rolPE ? " · " : ""}▶ tocá el nombre para el video</span>}
                           </span>
                           <button onClick={(e) => { e.stopPropagation(); toggleHecho(pe.id); }} aria-label={done ? "Desmarcar" : "Marcar como hecho"} style={{ width: 18, height: 18, borderRadius: "50%", border: done ? "none" : "1.5px solid #4A4656", background: done ? "#33D6A6" : "transparent", color: "#0B2A2E", fontSize: 11, fontWeight: 900, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, flexShrink: 0 }}>{done ? "✓" : ""}</button>
                         </div>
-                        <button onClick={(e) => { e.stopPropagation(); if (activeId === pe.id && pe.video) { openVideo(videoFila); } else { setActiveId(pe.id); } }} className="font-display" style={{ background: "none", border: "none", padding: 0, marginTop: 4, cursor: "pointer", textAlign: "center", display: "block", width: "100%", color: "#F4F1EA", fontWeight: 600, fontSize: 17, letterSpacing: ".02em", overflowWrap: "anywhere", lineHeight: 1.25 }}>
+                        <button onClick={(e) => { e.stopPropagation(); if (activeId === pe.id && linkCargado(pe)) { openVideo(videoFila); } else { setActiveId(pe.id); } }} className="font-display" style={{ background: "none", border: "none", padding: 0, marginTop: 4, cursor: "pointer", textAlign: "center", display: "block", width: "100%", color: "#F4F1EA", fontWeight: 600, fontSize: 17, letterSpacing: ".02em", overflowWrap: "anywhere", lineHeight: 1.25 }}>
                           {pe.nombre}
                         </button>
                         {(() => {
@@ -7018,7 +7033,7 @@ function AthleteEntrenar({ alumno, onFinalizar, onUpdateNota, onUpdateKg, rolesP
         <div style={{ background: "linear-gradient(160deg, #1C1A24, #26232F)", border: "1px solid #322E3D", borderRadius: 20, padding: 20, marginBottom: 14 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
             <div style={{ width: 56, height: 56, borderRadius: 16, background: `${iconoBg}22`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28 }}>{activePE.emoji || "🏋️"}</div>
-            {activePE.video && (
+            {linkCargado(activePE) && (
               <button onClick={() => openVideo(activeVideo)} className="font-body" style={{ background: "rgba(125,214,192,0.15)", border: "1px solid #7DD6C0", borderRadius: 999, color: "#7DD6C0", fontWeight: 700, fontSize: 11, padding: "7px 12px", cursor: "pointer" }}>▶ Ver en YouTube</button>
             )}
           </div>
@@ -8552,7 +8567,7 @@ function BuscarGlobal({ alumnos, templates, version, onGoAlumno, onGoPlantillas 
             <div className="font-body" style={{ fontSize: 11, color: "#7DD6C0", fontWeight: 700, marginBottom: 8 }}>EJERCICIOS ({ejerciciosMatch.length}{ejerciciosMatch.length === 25 ? "+" : ""})</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {ejerciciosMatch.map((e) => (
-                <button key={e.id} onClick={() => openVideo(e.video)} className="font-body" style={{ display: "flex", alignItems: "center", gap: 10, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, padding: 10, cursor: "pointer", textAlign: "left" }}>
+                <button key={e.id} onClick={() => openVideo(videoParaVer(e))} className="font-body" style={{ display: "flex", alignItems: "center", gap: 10, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, padding: 10, cursor: "pointer", textAlign: "left" }}>
                   <span style={{ fontSize: 16 }}>{e.emoji}</span>
                   <div style={{ flex: 1, color: "#F4F1EA", fontSize: 12, fontWeight: 600 }}>{e.nombre}</div>
                   <span style={{ color: e.color, fontSize: 9, fontWeight: 700 }}>{e.categoria}</span>
@@ -9167,7 +9182,17 @@ export default function GymPlannerCoachApp() {
   const [videosGuardados, setVideosGuardados] = useState(guardado.videosGuardados || {});
   useEffect(() => { VIDEOS_GUARDADOS = videosGuardados; }, [videosGuardados]);
   useEffect(() => {
-    RECORDAR_VIDEO = (nombre, video) => setVideosGuardados((prev) => { const k = claveVideoNombre(nombre); if (prev[k] === video) return prev; const n = { ...prev, [k]: video }; VIDEOS_GUARDADOS = n; return n; });
+    // Un link pegado en cualquier planificación queda en la biblioteca: se guarda por nombre y también
+    // en el ejercicio de la biblioteca que se llama igual, así aparece para todos los alumnos.
+    RECORDAR_VIDEO = (nombre, video) => setVideosGuardados((prev) => {
+      const k = claveVideoNombre(nombre);
+      const n = { ...prev, [k]: video };
+      EXERCISES.forEach((e) => { if (claveVideoNombre(e.nombre) === k) n[e.id] = video; });
+      if (igualesProfundo(n, prev)) return prev;
+      VIDEOS_GUARDADOS = n;
+      setLibVersion((v) => v + 1);
+      return n;
+    });
     return () => { RECORDAR_VIDEO = null; };
   }, []);
   const crearGrupo = (nombre, coachIds) => setGrupos((prev) => [...prev, { id: uid(), nombre, coachIds }]);
@@ -9497,6 +9522,9 @@ export default function GymPlannerCoachApp() {
     setVideosGuardados((prev) => {
       const actualizado = { ...prev };
       if (nuevoVideo) actualizado[id] = nuevoVideo; else delete actualizado[id];
+      // también por nombre, así las planificaciones que tienen este ejercicio usan el link nuevo
+      const ex = EXERCISES.find((e) => e.id === id);
+      if (ex) { const k = claveVideoNombre(ex.nombre); if (nuevoVideo) actualizado[k] = nuevoVideo; else delete actualizado[k]; }
       VIDEOS_GUARDADOS = actualizado;
       return actualizado;
     });
