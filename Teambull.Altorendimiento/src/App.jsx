@@ -4293,7 +4293,7 @@ function PanelHoy({ alumnos, goAlumnos, onUsarPeso, onDescartarPeso }) {
   );
 }
 
-function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coaches, onAddCoach, onRemoveCoach, mensajeRecordatorio, onUpdateMensajeRecordatorio, notificacionesActivas, onToggleNotificaciones, modoPausa, onToggleModoPausa, diasAvisoPlan, onSetDiasAvisoPlan, coachId, onCambiarPassword, onSetRecoveryPin, onSetTelefono, onReclamarAlumnos, logActividad, grupos, onCrearGrupo, onEliminarGrupo, onUsarPesoDeNota, onDescartarPesoDeNota }) {
+function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coaches, onAddCoach, onRemoveCoach, mensajeRecordatorio, onUpdateMensajeRecordatorio, notificacionesActivas, onToggleNotificaciones, modoPausa, onToggleModoPausa, diasAvisoPlan, onSetDiasAvisoPlan, coachId, onCambiarPassword, onSetRecoveryPin, onSetTelefono, onReclamarAlumnos, logActividad, grupos, onCrearGrupo, onEliminarGrupo, onUsarPesoDeNota, onDescartarPesoDeNota, plantelGrupos, onGuardarPlanAgua, onBorrarPlanAgua }) {
   const [editando, setEditando] = useState(false);
   const [tipoAlertaAbierto, setTipoAlertaAbierto] = useState(null);
   const accDash = React.useContext(AccionesCtx);
@@ -4362,6 +4362,7 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
           );
         })()}
       </div>
+      {onGuardarPlanAgua && <AccesoPlanAguaCoach alumnos={alumnos} plantelGrupos={plantelGrupos} onGuardar={onGuardarPlanAgua} onBorrar={onBorrarPlanAgua} />}
       <PanelHoy alumnos={alumnosActivos} goAlumnos={goAlumnos} onUsarPeso={onUsarPesoDeNota} onDescartarPeso={onDescartarPesoDeNota} />
       {editando && (
         <div id="ajustes-coach" style={{ padding: "0 20px 14px", scrollMarginTop: "calc(56px + env(safe-area-inset-top, 0px))" }}>
@@ -6544,6 +6545,7 @@ function AthleteInicio({ alumno, goEntrenar, onCheckin, onUpdateFoto, onMarcarAv
         <CompetitionCountdown competencias={alumno.competencias} />
         <div style={{ height: 12 }} />
 
+        <AccesoPlanAguaAlumno alumno={alumno} />
         {/* Juegos y Biomecánica en vivo: dos accesos chicos, uno al lado del otro */}
         <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
           {(onGuardarReaccion || onGuardarRelevo) && (
@@ -8416,6 +8418,232 @@ function ChatScreen({ alumno, onSendMsg }) {
 }
 
 /* =========================================================
+   PLANIFICACIÓN DE AGUA (natación)
+   El coach arma la sesión de pileta y la manda a los alumnos/as que elija. Cada alumno/a guarda
+   su copia en alumno.planesAgua (así viaja con el resto de sus datos, también en modo seguro);
+   el coach las ve juntas porque todas las copias comparten el mismo id.
+   ========================================================= */
+const BLOQUES_AGUA_BASE = ["Entrada en calor", "Principal", "Vuelta a la calma"];
+const nuevaSerieAgua = () => ({ id: uid(), reps: "1", metros: "", detalle: "" });
+const nuevoPlanAgua = () => ({ id: uid(), titulo: "", fecha: todayISO(), nota: "", bloques: BLOQUES_AGUA_BASE.map((n) => ({ id: uid(), nombre: n, series: [nuevaSerieAgua()] })) });
+const metrosSerieAgua = (s) => (Number(s.reps) || 1) * (Number(s.metros) || 0);
+const metrosBloqueAgua = (b) => (b.series || []).reduce((t, s) => t + metrosSerieAgua(s), 0);
+const metrosPlanAgua = (p) => (p.bloques || []).reduce((t, b) => t + metrosBloqueAgua(b), 0);
+const fmtMetros = (m) => `${m.toLocaleString("es-AR")} m`;
+const fechaAgua = (iso) => {
+  if (!iso) return "";
+  if (iso === todayISO()) return "Hoy";
+  try { const t = new Date(iso + "T00:00:00").toLocaleDateString("es-AR", { weekday: "short", day: "numeric", month: "short" }); return t.charAt(0).toUpperCase() + t.slice(1); } catch { return iso; }
+};
+// Todas las planificaciones de agua que hay entre los alumnos/as, una sola vez cada una.
+function planesAguaDelPlantel(alumnos) {
+  const mapa = new Map();
+  alumnos.forEach((a) => (a.planesAgua || []).forEach((p) => {
+    const e = mapa.get(p.id);
+    if (e) e.alumnoIds.push(a.id); else mapa.set(p.id, { plan: p, alumnoIds: [a.id] });
+  }));
+  return [...mapa.values()].sort((x, y) => (y.plan.fecha || "").localeCompare(x.plan.fecha || ""));
+}
+// Lo que le toca ahora: la de hoy, si no la próxima, si no la última que tuvo.
+function planAguaActual(planes) {
+  const hoy = todayISO();
+  const lista = [...(planes || [])].sort((a, b) => (a.fecha || "").localeCompare(b.fecha || ""));
+  return lista.find((p) => p.fecha >= hoy) || lista[lista.length - 1] || null;
+}
+
+function PantallaAgua({ titulo, onClose, children }) {
+  return createPortal((
+    <div style={{ position: "fixed", inset: 0, zIndex: 680, background: "#121017", overflowY: "auto", paddingTop: "env(safe-area-inset-top, 0px)" }}>
+      <div style={{ maxWidth: 520, margin: "0 auto", padding: "16px 18px 40px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+          <span className="font-display" style={{ color: "#F4F1EA", fontSize: 22, fontWeight: 700 }}>{titulo}</span>
+          <button onClick={onClose} className="font-body" style={{ background: "#26232F", border: "none", borderRadius: 999, color: "#F4F1EA", width: 32, height: 32, fontSize: 14, cursor: "pointer", flexShrink: 0 }}>✕</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  ), document.body);
+}
+
+// Cómo se ve una planificación (la misma tarjeta para el coach y para el alumno/a).
+function TarjetaPlanAgua({ plan, abierta, onToggle, pie }) {
+  const total = metrosPlanAgua(plan);
+  return (
+    <div style={{ background: "#1C1A24", border: `1px solid ${plan.fecha === todayISO() ? "#4FC3F7" : "#322E3D"}`, borderRadius: 14, marginBottom: 10, overflow: "hidden" }}>
+      <button onClick={onToggle} className="font-body" style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, background: "none", border: "none", padding: "12px 14px", cursor: "pointer", textAlign: "left" }}>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: "block", color: "#4FC3F7", fontSize: 10, fontWeight: 700, textTransform: "uppercase" }}>{fechaAgua(plan.fecha)}</span>
+          <span className="font-display" style={{ display: "block", color: "#F4F1EA", fontSize: 17, fontWeight: 700, marginTop: 1 }}>{plan.titulo || "Sesión de agua"}</span>
+        </span>
+        <span className="font-display" style={{ color: "#F4F1EA", fontSize: 18, fontWeight: 700, whiteSpace: "nowrap" }}>{fmtMetros(total)}</span>
+        <span style={{ color: "#8B8698", fontSize: 12 }}>{abierta ? "▴" : "▾"}</span>
+      </button>
+      {abierta && (
+        <div style={{ padding: "0 14px 12px" }}>
+          {(plan.bloques || []).filter((b) => (b.series || []).some((s) => s.metros || s.detalle)).map((b) => (
+            <div key={b.id} style={{ borderTop: "1px solid #26232F", padding: "8px 0" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                <span className="font-body" style={{ color: "#7DD6C0", fontSize: 11, fontWeight: 700 }}>{b.nombre}</span>
+                <span className="font-body" style={{ color: "#8B8698", fontSize: 10.5 }}>{fmtMetros(metrosBloqueAgua(b))}</span>
+              </div>
+              {b.series.filter((s) => s.metros || s.detalle).map((s) => (
+                <div key={s.id} className="font-body" style={{ display: "flex", gap: 8, color: "#F4F1EA", fontSize: 13, lineHeight: 1.45 }}>
+                  <span style={{ fontWeight: 700, minWidth: 62, whiteSpace: "nowrap" }}>{s.metros ? `${Number(s.reps) > 1 ? `${s.reps} × ` : ""}${s.metros}` : ""}</span>
+                  <span style={{ color: "#C9C5D2" }}>{s.detalle}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+          {plan.nota && <div className="font-body" style={{ borderTop: "1px solid #26232F", paddingTop: 8, color: "#C9C5D2", fontSize: 12, whiteSpace: "pre-wrap" }}>📝 {plan.nota}</div>}
+          {pie}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const inputAgua = { background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, color: "#F4F1EA", fontSize: 13, padding: "8px 9px", boxSizing: "border-box", outline: "none", minWidth: 0 };
+
+function EditorPlanAgua({ inicial, alumnoIdsIniciales, alumnos, plantelGrupos, onGuardar, onCancelar }) {
+  const [p, setP] = useState(inicial);
+  const [para, setPara] = useState(alumnoIdsIniciales || []);
+  const activos = alumnos.filter((a) => a.activo !== false);
+  const setBloque = (bid, fn) => setP((x) => ({ ...x, bloques: x.bloques.map((b) => (b.id === bid ? fn(b) : b)) }));
+  const setSerie = (bid, sid, campo, valor) => setBloque(bid, (b) => ({ ...b, series: b.series.map((s) => (s.id === sid ? { ...s, [campo]: valor } : s)) }));
+  const toggle = (id) => setPara((l) => (l.includes(id) ? l.filter((x) => x !== id) : [...l, id]));
+  const todosMarcados = activos.length > 0 && activos.every((a) => para.includes(a.id));
+  const total = metrosPlanAgua(p);
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+        <input value={p.titulo} onChange={(e) => setP({ ...p, titulo: e.target.value })} placeholder="Nombre (ej: Aeróbico)" className="font-body" style={{ ...inputAgua, flex: 1 }} />
+        <input type="date" value={p.fecha} onChange={(e) => setP({ ...p, fecha: e.target.value })} className="font-body" style={{ ...inputAgua, width: 140 }} />
+      </div>
+      {p.bloques.map((b) => (
+        <div key={b.id} style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 12, padding: 10, marginBottom: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <input value={b.nombre} onChange={(e) => setBloque(b.id, (x) => ({ ...x, nombre: e.target.value }))} className="font-body" style={{ background: "none", border: "none", color: "#7DD6C0", fontSize: 12, fontWeight: 700, flex: 1, padding: 0, outline: "none", minWidth: 0 }} />
+            <span className="font-body" style={{ color: "#8B8698", fontSize: 10.5 }}>{fmtMetros(metrosBloqueAgua(b))}</span>
+            <button onClick={() => setP((x) => ({ ...x, bloques: x.bloques.filter((y) => y.id !== b.id) }))} style={{ background: "none", border: "none", color: "#6B6678", fontSize: 12, cursor: "pointer", padding: 0 }}>✕</button>
+          </div>
+          {b.series.map((s) => (
+            <div key={s.id} style={{ display: "flex", gap: 5, alignItems: "center", marginBottom: 5 }}>
+              <input inputMode="numeric" value={s.reps} onChange={(e) => setSerie(b.id, s.id, "reps", e.target.value.replace(/\D/g, ""))} className="font-body" style={{ ...inputAgua, width: 38, textAlign: "center", padding: "8px 2px" }} />
+              <span className="font-body" style={{ color: "#8B8698", fontSize: 12 }}>×</span>
+              <input inputMode="numeric" value={s.metros} onChange={(e) => setSerie(b.id, s.id, "metros", e.target.value.replace(/\D/g, ""))} placeholder="m" className="font-body" style={{ ...inputAgua, width: 52, textAlign: "center", padding: "8px 2px" }} />
+              <input value={s.detalle} onChange={(e) => setSerie(b.id, s.id, "detalle", e.target.value)} placeholder="libre suave c/1:45" className="font-body" style={{ ...inputAgua, flex: 1 }} />
+              <button onClick={() => setBloque(b.id, (x) => ({ ...x, series: x.series.filter((y) => y.id !== s.id) }))} style={{ background: "none", border: "none", color: "#6B6678", fontSize: 12, cursor: "pointer", padding: "0 2px" }}>✕</button>
+            </div>
+          ))}
+          <button onClick={() => setBloque(b.id, (x) => ({ ...x, series: [...x.series, nuevaSerieAgua()] }))} className="font-body" style={{ background: "none", border: "none", color: "#4FC3F7", fontSize: 11, fontWeight: 700, cursor: "pointer", padding: "2px 0" }}>＋ Serie</button>
+        </div>
+      ))}
+      <button onClick={() => setP((x) => ({ ...x, bloques: [...x.bloques, { id: uid(), nombre: "Bloque nuevo", series: [nuevaSerieAgua()] }] }))} className="font-body" style={{ background: "none", border: "1px dashed #322E3D", borderRadius: 10, color: "#8B8698", fontSize: 11, fontWeight: 700, cursor: "pointer", padding: "7px 0", width: "100%", marginBottom: 8 }}>＋ Bloque</button>
+      <textarea value={p.nota} onChange={(e) => setP({ ...p, nota: e.target.value })} placeholder="Nota para los nadadores (opcional)" rows={2} className="font-body" style={{ ...inputAgua, width: "100%", resize: "vertical", marginBottom: 12 }} />
+
+      <div className="font-body" style={{ color: "#F4F1EA", fontSize: 12, fontWeight: 700, marginBottom: 6 }}>¿Quién la ve?</div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+        <Pill active={todosMarcados} onClick={() => setPara(todosMarcados ? [] : activos.map((a) => a.id))} activeColor="#4FC3F7">Todos/as</Pill>
+        {(plantelGrupos || []).map((g) => {
+          const ids = activos.filter((a) => a.plantelGrupoId === g.id).map((a) => a.id);
+          const marcado = ids.length > 0 && ids.every((id) => para.includes(id));
+          return <Pill key={g.id} active={marcado} onClick={() => setPara((l) => (marcado ? l.filter((id) => !ids.includes(id)) : [...new Set([...l, ...ids])]))} activeColor="#4FC3F7">{g.nombre}</Pill>;
+        })}
+      </div>
+      <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 14 }}>
+        {activos.map((a) => (
+          <button key={a.id} onClick={() => toggle(a.id)} className="font-body" style={{ background: para.includes(a.id) ? "rgba(79,195,247,0.16)" : "#1C1A24", border: `1px solid ${para.includes(a.id) ? "#4FC3F7" : "#322E3D"}`, borderRadius: 999, color: para.includes(a.id) ? "#F4F1EA" : "#8B8698", fontSize: 11, padding: "5px 10px", cursor: "pointer" }}>{para.includes(a.id) ? "✓ " : ""}{nombreCorto(a.nombre)}</button>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button onClick={onCancelar} className="font-body" style={{ flex: 1, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, color: "#8B8698", fontWeight: 700, fontSize: 13, padding: "11px 0", cursor: "pointer" }}>Cancelar</button>
+        <button disabled={para.length === 0} onClick={() => onGuardar(p, para)} className="font-body" style={{ flex: 2, background: para.length ? "#4FC3F7" : "#26232F", border: "none", borderRadius: 10, color: para.length ? "#0B2230" : "#6B6678", fontWeight: 700, fontSize: 13, padding: "11px 0", cursor: para.length ? "pointer" : "default" }}>
+          Guardar · {fmtMetros(total)} · {para.length} nadador{para.length === 1 ? "" : "es"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Coach: acceso chico en el Dashboard + pantalla con la lista y el editor.
+function AccesoPlanAguaCoach({ alumnos, plantelGrupos, onGuardar, onBorrar }) {
+  const [abierto, setAbierto] = useState(false);
+  const [editando, setEditando] = useState(null); // { plan, alumnoIds }
+  const [abiertaId, setAbiertaId] = useState(null);
+  const planes = planesAguaDelPlantel(alumnos);
+  const proxima = planAguaActual(planes.map((x) => x.plan));
+  const nombreDe = (id) => nombreCorto(alumnos.find((a) => a.id === id)?.nombre || "");
+  return (
+    <>
+      <div style={{ padding: "0 20px 12px" }}>
+        <button onClick={() => setAbierto(true)} className="font-body" style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 12, padding: "10px 12px", cursor: "pointer", textAlign: "left" }}>
+          <span style={{ fontSize: 20 }}>🌊</span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: "block", color: "#F4F1EA", fontSize: 12.5, fontWeight: 700 }}>Planificación de agua</span>
+            <span style={{ display: "block", color: "#8B8698", fontSize: 9.5 }}>{proxima ? `${fechaAgua(proxima.fecha)} · ${proxima.titulo || "Sesión"} · ${fmtMetros(metrosPlanAgua(proxima))}` : "Armá las sesiones de pileta"}</span>
+          </span>
+          <span style={{ color: "#4FC3F7", fontSize: 12, fontWeight: 700 }}>Abrir ›</span>
+        </button>
+      </div>
+      {abierto && (
+        <PantallaAgua titulo={editando ? (editando.nueva ? "🌊 Nueva sesión" : "🌊 Editar sesión") : "🌊 Planificación de agua"} onClose={() => { if (editando) setEditando(null); else setAbierto(false); }}>
+          {editando ? (
+            <EditorPlanAgua inicial={editando.plan} alumnoIdsIniciales={editando.alumnoIds} alumnos={alumnos} plantelGrupos={plantelGrupos}
+              onCancelar={() => setEditando(null)}
+              onGuardar={(plan, ids) => { onGuardar(plan, ids); setAbiertaId(plan.id); setEditando(null); }} />
+          ) : (
+            <>
+              <button onClick={() => setEditando({ plan: nuevoPlanAgua(), alumnoIds: [], nueva: true })} className="font-body" style={{ width: "100%", background: "#4FC3F7", border: "none", borderRadius: 12, color: "#0B2230", fontWeight: 700, fontSize: 14, padding: "12px 0", cursor: "pointer", marginBottom: 14 }}>＋ Nueva sesión de agua</button>
+              {planes.length === 0 && <div className="font-body" style={{ color: "#8B8698", fontSize: 12, textAlign: "center", padding: "20px 0" }}>Todavía no armaste ninguna. Cada sesión se suma sola los metros y la ven los nadadores que elijas en su Inicio.</div>}
+              {planes.map(({ plan, alumnoIds }) => (
+                <TarjetaPlanAgua key={plan.id} plan={plan} abierta={abiertaId === plan.id} onToggle={() => setAbiertaId(abiertaId === plan.id ? null : plan.id)}
+                  pie={(
+                    <div style={{ borderTop: "1px solid #26232F", paddingTop: 8, marginTop: 4 }}>
+                      <div className="font-body" style={{ color: "#8B8698", fontSize: 10.5, marginBottom: 8 }}>👥 {alumnoIds.map(nombreDe).join(", ")}</div>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button onClick={() => setEditando({ plan, alumnoIds })} className="font-body" style={{ flex: 1, background: "#26232F", border: "none", borderRadius: 8, color: "#F4F1EA", fontSize: 11, fontWeight: 700, padding: "7px 0", cursor: "pointer" }}>✎ Editar</button>
+                        <button onClick={() => setEditando({ plan: { ...plan, id: uid(), fecha: todayISO(), bloques: plan.bloques.map((b) => ({ ...b, id: uid(), series: b.series.map((s) => ({ ...s, id: uid() })) })) }, alumnoIds, nueva: true })} className="font-body" style={{ flex: 1, background: "#26232F", border: "none", borderRadius: 8, color: "#F4F1EA", fontSize: 11, fontWeight: 700, padding: "7px 0", cursor: "pointer" }}>⧉ Repetir</button>
+                        <button onClick={() => { if (window.confirm("¿Borrar esta sesión de agua? Los nadadores dejan de verla.")) onBorrar(plan.id); }} className="font-body" style={{ background: "#26232F", border: "none", borderRadius: 8, color: "#E85D5D", fontSize: 11, fontWeight: 700, padding: "7px 10px", cursor: "pointer" }}>🗑</button>
+                      </div>
+                    </div>
+                  )} />
+              ))}
+            </>
+          )}
+        </PantallaAgua>
+      )}
+    </>
+  );
+}
+
+// Alumno/a: acceso chico en Inicio (solo aparece si el coach le cargó alguna).
+function AccesoPlanAguaAlumno({ alumno }) {
+  const [abierto, setAbierto] = useState(false);
+  const planes = alumno.planesAgua || [];
+  const actual = planAguaActual(planes);
+  const [abiertaId, setAbiertaId] = useState(null);
+  if (!actual) return null;
+  const lista = [...planes].sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
+  return (
+    <>
+      <button onClick={() => { setAbiertaId(actual.id); setAbierto(true); }} className="font-body" style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, background: "#1C1A24", border: `1px solid ${actual.fecha === todayISO() ? "#4FC3F7" : "#322E3D"}`, borderRadius: 12, padding: "10px 12px", cursor: "pointer", textAlign: "left", marginBottom: 10 }}>
+        <span style={{ fontSize: 20 }}>🌊</span>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: "block", color: "#F4F1EA", fontSize: 12.5, fontWeight: 700 }}>Planificación de agua</span>
+          <span style={{ display: "block", color: "#8B8698", fontSize: 9.5 }}>{fechaAgua(actual.fecha)} · {actual.titulo || "Sesión"} · {fmtMetros(metrosPlanAgua(actual))}</span>
+        </span>
+        <span style={{ color: "#4FC3F7", fontSize: 12, fontWeight: 700 }}>Ver ›</span>
+      </button>
+      {abierto && (
+        <PantallaAgua titulo="🌊 Planificación de agua" onClose={() => setAbierto(false)}>
+          {lista.map((p) => <TarjetaPlanAgua key={p.id} plan={p} abierta={abiertaId === p.id} onToggle={() => setAbiertaId(abiertaId === p.id ? null : p.id)} />)}
+        </PantallaAgua>
+      )}
+    </>
+  );
+}
+
+/* =========================================================
    SHELL
    ========================================================= */
 const COACH_TABS = [
@@ -9929,6 +10157,16 @@ export default function GymPlannerCoachApp() {
   const reclamarAlumnosSinDueño = (coachIdQueReclama) => {
     setAlumnos((prev) => prev.map((a) => (a.coachIds === null ? { ...a, coachIds: [coachIdQueReclama] } : a)));
   };
+  // Planificación de agua: la sesión se copia a cada nadador elegido (y se saca a los que ya no están).
+  const guardarPlanAgua = (plan, alumnoIds) => {
+    setAlumnos((prev) => prev.map((a) => {
+      const sin = (a.planesAgua || []).filter((p) => p.id !== plan.id);
+      const tenia = sin.length !== (a.planesAgua || []).length;
+      if (alumnoIds.includes(a.id)) return { ...a, planesAgua: [...sin, plan] };
+      return tenia ? { ...a, planesAgua: sin } : a;
+    }));
+  };
+  const borrarPlanAgua = (planId) => setAlumnos((prev) => prev.map((a) => ((a.planesAgua || []).some((p) => p.id === planId) ? { ...a, planesAgua: a.planesAgua.filter((p) => p.id !== planId) } : a)));
   const crearPlantilla = (tpl) => setTemplates((prev) => [...prev, tpl]);
   const editarPlantilla = (id, nuevoPlan) => setTemplates((prev) => prev.map((t) => (t.id === id ? { ...t, plan: nuevoPlan } : t)));
   const eliminarPlantilla = (id) => setTemplates((prev) => prev.filter((t) => t.id !== id));
@@ -9965,7 +10203,7 @@ export default function GymPlannerCoachApp() {
     // salvo que se comparta — así un entrenador nuevo (ej: le vendiste la app a otro) no ve tus
     // plantillas personalizadas, solo puede armar las suyas.
     const templatesVisibles = templates.filter((t) => t.coachIds == null || t.coachIds.includes(session.coachId));
-    if (tab === "dashboard") body = <CoachDashboard alumnos={alumnosVisibles} goAlumnos={(id) => { setTab("alumnos"); abrirAlumno(id); }} coachNombre={coachNombre} onUpdateCoach={setCoachNombre} coaches={coaches} onAddCoach={addCoach} onRemoveCoach={removeCoach} mensajeRecordatorio={mensajeRecordatorio} onUpdateMensajeRecordatorio={setMensajeRecordatorio} notificacionesActivas={notificacionesActivas} onToggleNotificaciones={setNotificacionesActivas} modoPausa={modoPausa} onToggleModoPausa={setModoPausa} diasAvisoPlan={diasAvisoPlan} onSetDiasAvisoPlan={setDiasAvisoPlan} coachId={session?.coachId} onCambiarPassword={cambiarPasswordCoach} onSetRecoveryPin={setRecoveryPin} onSetTelefono={setTelefonoCoach} onReclamarAlumnos={reclamarAlumnosSinDueño} logActividad={logActividad} grupos={grupos} onCrearGrupo={crearGrupo} onEliminarGrupo={eliminarGrupo} onUsarPesoDeNota={usarPesoDeNota} onDescartarPesoDeNota={marcarNotaRevisada} />;
+    if (tab === "dashboard") body = <CoachDashboard alumnos={alumnosVisibles} goAlumnos={(id) => { setTab("alumnos"); abrirAlumno(id); }} coachNombre={coachNombre} onUpdateCoach={setCoachNombre} coaches={coaches} onAddCoach={addCoach} onRemoveCoach={removeCoach} mensajeRecordatorio={mensajeRecordatorio} onUpdateMensajeRecordatorio={setMensajeRecordatorio} notificacionesActivas={notificacionesActivas} onToggleNotificaciones={setNotificacionesActivas} modoPausa={modoPausa} onToggleModoPausa={setModoPausa} diasAvisoPlan={diasAvisoPlan} onSetDiasAvisoPlan={setDiasAvisoPlan} coachId={session?.coachId} onCambiarPassword={cambiarPasswordCoach} onSetRecoveryPin={setRecoveryPin} onSetTelefono={setTelefonoCoach} onReclamarAlumnos={reclamarAlumnosSinDueño} logActividad={logActividad} grupos={grupos} onCrearGrupo={crearGrupo} onEliminarGrupo={eliminarGrupo} onUsarPesoDeNota={usarPesoDeNota} onDescartarPesoDeNota={marcarNotaRevisada} plantelGrupos={plantelGrupos} onGuardarPlanAgua={guardarPlanAgua} onBorrarPlanAgua={borrarPlanAgua} />;
     else if (tab === "alumnos") body = <CoachAlumnos alumnos={alumnosVisibles} selectedId={selectedCoachAlumno} setSelectedId={abrirAlumno} templates={templatesVisibles} onAsignarPlantilla={asignarPlantilla} onCopiarPlan={copiarPlan} onCopiarVersionAOtro={copiarVersionAOtro} onCopiarSoloCalentamiento={copiarSoloCalentamiento} onAgregarPlanSecundario={agregarPlanSecundario} onQuitarPlanSecundario={quitarPlanSecundario} onToggleFijoPlanSecundario={toggleFijoPlanSecundario} onGuardarComoPlantilla={guardarComoPlantilla} onUpdatePlan={updatePlan} onUpdateAlumno={updateAlumno} onDeleteAlumno={deleteAlumno} onAddAlumno={addAlumno} onSendMsg={sendMsg} onGuardarVersion={guardarVersion} onRestaurarVersion={restaurarVersion} onEliminarVersion={eliminarVersion} onGuardarHistorialRM={agregarHistorialRM} onAddToLibrary={addCustomExercise} version={libVersion} coaches={coaches} coachIdActual={session.coachId} onCompartirAlumno={compartirAlumnoConCoach} onDejarDeCompartir={dejarDeCompartirAlumno} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={agregarRolPersonalizado} grupos={grupos} onCompartirGrupo={compartirAlumnoConGrupo} plantelGrupos={plantelGrupos} onCrearPlantelGrupo={crearPlantelGrupo} onRenombrarPlantelGrupo={renombrarPlantelGrupo} onEliminarPlantelGrupo={eliminarPlantelGrupo} onAsignarPlantelGrupo={asignarPlantelGrupo} />;
     else if (tab === "plantillas") body = <CoachPlantillas templates={templatesVisibles} alumnos={alumnosVisibles} onAsignar={asignarPlantilla} onAgregarPlanSecundario={agregarPlanSecundario} onCrearPlantilla={crearPlantilla} onEditarPlantilla={editarPlantilla} onEliminarPlantilla={eliminarPlantilla} onAddToLibrary={addCustomExercise} version={libVersion} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={agregarRolPersonalizado} coachIdActual={session.coachId} />;
     else if (tab === "biomecanica") body = null;
