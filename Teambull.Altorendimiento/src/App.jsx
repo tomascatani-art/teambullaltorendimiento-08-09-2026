@@ -1194,11 +1194,11 @@ function pdfCortar(texto, fuente, tam, ancho) {
 const pdfEsc = (s) => s.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
 const pdfColor = (hex) => { const h = hex.replace("#", ""); return [0, 2, 4].map((i) => (parseInt(h.slice(i, i + 2), 16) / 255).toFixed(3)).join(" "); };
 
-function crearDocumentoPDF() {
+function crearDocumentoPDF(fondoPagina = "#121017") {
   const W = 595, H = 842;
   const paginas = [];
   let pag = null;
-  const nueva = () => { pag = { ops: [], links: [] }; paginas.push(pag); pag.ops.push(`${pdfColor("#121017")} rg 0 0 ${W} ${H} re f`); };
+  const nueva = () => { pag = { ops: [], links: [] }; paginas.push(pag); pag.ops.push(`${pdfColor(fondoPagina)} rg 0 0 ${W} ${H} re f`); };
   nueva();
   return {
     W, H,
@@ -8451,6 +8451,86 @@ function planAguaActual(planes) {
   return lista.find((p) => p.fecha >= hoy) || lista[lista.length - 1] || null;
 }
 
+// ---- Imprimir / mandar por WhatsApp una sesión de agua (hoja blanca, para que se pueda imprimir) ----
+const escHTML = (t) => String(t || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const lineaSerieAgua = (s) => (s.metros ? `${Number(s.reps) > 1 ? `${s.reps} x ` : ""}${s.metros}` : "");
+const bloquesConAlgo = (plan) => (plan.bloques || []).filter((b) => (b.series || []).some((s) => s.metros || s.detalle));
+function generarPDFPlanAgua(plan, nombre) {
+  const doc = crearDocumentoPDF("#FFFFFF");
+  const M = 40, ANCHO = doc.W - 2 * M, ABAJO = doc.H - 40;
+  const C = { negro: "#121017", gris: "#6B6678", azul: "#0277BD", borde: "#D9D6E0" };
+  let y = M;
+  const lugar = (alto) => { if (y + alto > ABAJO) { doc.nueva(); y = M; } };
+  doc.texto(M, y + 10, pdfCodificar("TEAM BULL · PLANIFICACIÓN DE AGUA"), "F2", 9.5, C.azul);
+  y += 34;
+  pdfCortar(plan.titulo || "Sesión de agua", "F2", 22, ANCHO - 120).forEach((l) => { doc.texto(M, y, l, "F2", 22, C.negro); y += 25; });
+  const tot = pdfCodificar(fmtMetros(metrosPlanAgua(plan)));
+  doc.texto(M + ANCHO - pdfAncho(tot, "F2", 22), M + 44, tot, "F2", 22, C.negro);
+  const sub = [fechaAgua(plan.fecha) === "Hoy" ? fechaLegible(plan.fecha) : fechaAgua(plan.fecha), nombre].filter(Boolean).join("   ·   ");
+  doc.texto(M, y, pdfCodificar(sub), "F1", 10, C.gris);
+  y += 14;
+  doc.linea(M, y, M + ANCHO, y, C.borde, 1);
+  y += 22;
+  bloquesConAlgo(plan).forEach((b) => {
+    lugar(40);
+    doc.texto(M, y, pdfCodificar(b.nombre.toUpperCase()), "F2", 10.5, C.azul);
+    const mb = pdfCodificar(fmtMetros(metrosBloqueAgua(b)));
+    doc.texto(M + ANCHO - pdfAncho(mb, "F1", 10), y, mb, "F1", 10, C.gris);
+    y += 8;
+    b.series.filter((s) => s.metros || s.detalle).forEach((s) => {
+      const renglones = pdfCortar(s.detalle || "", "F1", 12, ANCHO - 90);
+      lugar(Math.max(1, renglones.length) * 16 + 8);
+      y += 16;
+      doc.texto(M, y, pdfCodificar(lineaSerieAgua(s)), "F2", 13, C.negro);
+      (renglones.length ? renglones : [""]).forEach((r, i) => { doc.texto(M + 90, y + i * 16, r, "F1", 12, C.negro); });
+      y += (Math.max(1, renglones.length) - 1) * 16 + 4;
+    });
+    y += 14;
+    doc.linea(M, y - 6, M + ANCHO, y - 6, C.borde);
+    y += 8;
+  });
+  if (plan.nota) {
+    lugar(40);
+    doc.texto(M, y, pdfCodificar("NOTA DEL COACH"), "F2", 9, C.gris); y += 15;
+    pdfCortar(plan.nota, "F1", 11, ANCHO).forEach((l) => { lugar(16); doc.texto(M, y, l, "F1", 11, C.negro); y += 15; });
+  }
+  return doc.generar();
+}
+function htmlPlanAgua(plan, nombre) {
+  const bloques = bloquesConAlgo(plan).map((b) => `<h3><span>${escHTML(b.nombre)}</span><small>${fmtMetros(metrosBloqueAgua(b))}</small></h3>` +
+    b.series.filter((s) => s.metros || s.detalle).map((s) => `<div class="s"><b>${escHTML(lineaSerieAgua(s))}</b><span>${escHTML(s.detalle)}</span></div>`).join("")).join("");
+  return `<html><head><meta charset="utf-8"><title>${escHTML(plan.titulo || "Sesión de agua")}</title><style>
+    body{font-family:Helvetica,Arial,sans-serif;color:#121017;margin:28px;} .tb{color:#0277BD;font-weight:700;font-size:12px;letter-spacing:.5px}
+    .cab{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:1.5px solid #D9D6E0;padding-bottom:8px;margin-bottom:6px}
+    h1{margin:6px 0 2px;font-size:26px} .tot{font-size:26px;font-weight:700} .sub{color:#6B6678;font-size:13px}
+    h3{display:flex;justify-content:space-between;color:#0277BD;font-size:14px;text-transform:uppercase;margin:18px 0 6px} h3 small{color:#6B6678;font-weight:400}
+    .s{display:flex;gap:14px;font-size:16px;padding:3px 0} .s b{min-width:80px} .nota{margin-top:20px;border-top:1px solid #D9D6E0;padding-top:10px;font-size:14px;white-space:pre-wrap}
+  </style></head><body><div class="tb">TEAM BULL · PLANIFICACIÓN DE AGUA</div><div class="cab"><div><h1>${escHTML(plan.titulo || "Sesión de agua")}</h1><div class="sub">${escHTML([fechaLegible(plan.fecha), nombre].filter(Boolean).join(" · "))}</div></div><div class="tot">${fmtMetros(metrosPlanAgua(plan))}</div></div>
+  ${bloques}${plan.nota ? `<div class="nota"><b>Nota del coach:</b><br>${escHTML(plan.nota)}</div>` : ""}</body></html>`;
+}
+// Imprimir en papel: una hoja blanca en un marco invisible y el diálogo de impresión del celular/compu.
+function imprimirPlanAgua(plan, nombre) {
+  const fr = document.createElement("iframe");
+  fr.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;";
+  document.body.appendChild(fr);
+  const d = fr.contentWindow.document;
+  d.open(); d.write(sinEmojis(htmlPlanAgua(plan, nombre))); d.close();
+  setTimeout(() => { try { fr.contentWindow.focus(); fr.contentWindow.print(); } catch { window.print(); } setTimeout(() => fr.remove(), 60000); }, 300);
+}
+// Mandar por WhatsApp como PDF: en el celular abre el menú de compartir con el PDF (se elige WhatsApp).
+// En la compu, que no puede adjuntar archivos así, baja el PDF y abre WhatsApp para adjuntarlo.
+async function compartirPlanAguaPDF(plan, nombre) {
+  const archivo = new File([generarPDFPlanAgua(plan, nombre)], `Agua-${slugify(plan.titulo || "sesion")}-${plan.fecha || todayISO()}.pdf`, { type: "application/pdf" });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [archivo] })) { await navigator.share({ files: [archivo] }); return; }
+  } catch (e) { if (e && e.name === "AbortError") return; }
+  const url = URL.createObjectURL(archivo);
+  const a = document.createElement("a"); a.href = url; a.download = archivo.name;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  window.open(`https://wa.me/?text=${encodeURIComponent(`${plan.titulo || "Sesión de agua"} · ${fmtMetros(metrosPlanAgua(plan))} (te adjunto el PDF)`)}`, "_blank", "noopener,noreferrer");
+}
+
 function PantallaAgua({ titulo, onClose, children }) {
   return createPortal((
     <div style={{ position: "fixed", inset: 0, zIndex: 680, background: "#121017", overflowY: "auto", paddingTop: "env(safe-area-inset-top, 0px)" }}>
@@ -8636,7 +8716,13 @@ function AccesoPlanAguaAlumno({ alumno }) {
       </button>
       {abierto && (
         <PantallaAgua titulo="🌊 Planificación de agua" onClose={() => setAbierto(false)}>
-          {lista.map((p) => <TarjetaPlanAgua key={p.id} plan={p} abierta={abiertaId === p.id} onToggle={() => setAbiertaId(abiertaId === p.id ? null : p.id)} />)}
+          {lista.map((p) => <TarjetaPlanAgua key={p.id} plan={p} abierta={abiertaId === p.id} onToggle={() => setAbiertaId(abiertaId === p.id ? null : p.id)}
+            pie={(
+              <div style={{ display: "flex", gap: 6, borderTop: "1px solid #26232F", paddingTop: 10, marginTop: 4 }}>
+                <button onClick={() => imprimirPlanAgua(p, alumno.nombre)} className="font-body" style={{ flex: 1, background: "#26232F", border: "none", borderRadius: 8, color: "#F4F1EA", fontSize: 11.5, fontWeight: 700, padding: "9px 0", cursor: "pointer" }}>🖨️ Imprimir</button>
+                <button onClick={() => compartirPlanAguaPDF(p, alumno.nombre)} className="font-body" style={{ flex: 1.4, background: "#25D366", border: "none", borderRadius: 8, color: "#0B2A17", fontSize: 11.5, fontWeight: 700, padding: "9px 0", cursor: "pointer" }}>WhatsApp (PDF)</button>
+              </div>
+            )} />)}
         </PantallaAgua>
       )}
     </>
