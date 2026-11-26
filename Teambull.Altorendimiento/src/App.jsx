@@ -8587,6 +8587,133 @@ function TarjetaPlanAgua({ plan, abierta, onToggle, pie }) {
 
 const inputAgua = { background: "#26232F", border: "1px solid #322E3D", borderRadius: 8, color: "#F4F1EA", fontSize: 13, padding: "8px 9px", boxSizing: "border-box", outline: "none", minWidth: 0 };
 
+// ---- Cargar una sesión de agua sola: desde texto pegado, un Excel o una captura ----
+const NOMBRES_BLOQUE_AGUA = /^(entrada en calor|calentamiento|ec|activaci[oó]n|principal|central|parte principal|bloque|serie principal|vuelta a la calma|vc|aflojar|aflojamiento|enfriamiento|regenerativo|t[eé]cnica|patada|brazada|piernas|brazos|velocidad|sprint|resistencia|aer[oó]bico)\b/i;
+// Lee renglones tipo «4x50 espalda c/1:10», «400 libre», «2 x (4x25 mariposa)», «300m crol».
+function leerRenglonAgua(t) {
+  const linea = t.replace(/[•·\-–*]\s+/, "").replace(/\s+/g, " ").trim();
+  let m = linea.match(/^(\d{1,2})\s*[x×*]\s*\(\s*(\d{1,2})\s*[x×*]\s*(\d{2,4})\s*(?:m|mts?|metros)?\b\.?\s*([^)]*)\)?\s*(.*)$/i);
+  if (m) return { reps: String(Number(m[1]) * Number(m[2])), metros: m[3], detalle: `${m[4]} ${m[5]}`.replace(/\s+/g, " ").trim() };
+  m = linea.match(/^(\d{1,3})\s*[x×*]\s*(\d{2,4})\s*(?:m|mts?|metros)?\b\.?\s*[:\-–]?\s*(.*)$/i);
+  if (m) return { reps: m[1], metros: m[2], detalle: m[3].trim() };
+  m = linea.match(/^(\d{2,4})\s*(?:m|mts?|metros)?\b\.?\s*[:\-–]?\s*(.*)$/i);
+  if (m && Number(m[1]) >= 25) return { reps: "1", metros: m[1], detalle: m[2].trim() };
+  return null;
+}
+// «EC», «VC» y otras abreviaturas de bloque, con el nombre completo.
+function nombreBloqueAgua(n) {
+  const t = String(n || "").trim();
+  if (/^e\.?\s?c\.?$/i.test(t)) return "Entrada en calor";
+  if (/^v\.?\s?c\.?$/i.test(t)) return "Vuelta a la calma";
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : "Principal";
+}
+function textoAPlanAgua(texto) {
+  const plan = { ...nuevoPlanAgua(), bloques: [] };
+  let bloque = null;
+  const nuevoBloque = (nombre) => { bloque = { id: uid(), nombre: nombreBloqueAgua(nombre), series: [] }; plan.bloques.push(bloque); };
+  String(texto || "").split(/\r?\n/).flatMap((l) => l.split(/\s+\+\s+(?=\d)/)).map((l) => l.trim().replace(/^[•·*–-]\s*/, "")).filter(Boolean).forEach((l) => {
+    if (/^total\b/i.test(l)) return;
+    // «EC: 400 libre» o «Principal - 8x100»: el bloque y la primera serie en el mismo renglón
+    const mixto = l.match(/^([^\d:–-]{2,30}?)\s*[:–-]?\s*(\d.*)$/);
+    if (mixto && leerRenglonAgua(mixto[2])) { nuevoBloque(mixto[1].trim()); bloque.series.push({ id: uid(), ...leerRenglonAgua(mixto[2]) }); return; }
+    const s = leerRenglonAgua(l);
+    if (s) { if (!bloque) nuevoBloque("Principal"); bloque.series.push({ id: uid(), ...s }); return; }
+    const limpio = l.replace(/[:：]\s*$/, "").replace(/\s*\(?\d[\d.]*\s*m\)?\s*$/i, "").trim();
+    const esTitulo = l.length <= 45 && (NOMBRES_BLOQUE_AGUA.test(limpio) || /:\s*$/.test(l) || (limpio === limpio.toUpperCase() && /[A-ZÁÉÍÓÚÑ]/.test(limpio)));
+    if (!plan.titulo && !bloque && !/^(entrada en calor|calentamiento|e\.?c\.?|principal|central)\b/i.test(limpio)) { plan.titulo = (limpio === limpio.toUpperCase() ? limpio.charAt(0) + limpio.slice(1).toLowerCase() : limpio).slice(0, 60); return; }
+    if (esTitulo && NOMBRES_BLOQUE_AGUA.test(limpio)) { nuevoBloque(limpio.charAt(0).toUpperCase() + limpio.slice(1).toLowerCase()); return; }
+    if (esTitulo && !plan.titulo && !bloque) { plan.titulo = limpio.charAt(0).toUpperCase() + limpio.slice(1).toLowerCase(); return; }
+    if (esTitulo) { nuevoBloque(limpio.charAt(0).toUpperCase() + limpio.slice(1).toLowerCase()); return; }
+    if (bloque && bloque.series.length) { bloque.series.push({ id: uid(), reps: "1", metros: "", detalle: l }); return; }
+    if (!plan.titulo && !bloque) { plan.titulo = l.slice(0, 60); return; }
+    plan.nota = plan.nota ? `${plan.nota}\n${l}` : l;
+  });
+  plan.bloques = plan.bloques.filter((b) => b.series.length);
+  return plan;
+}
+// Un Excel (o CSV) pasa a renglones de texto: cada fila con sus celdas una al lado de la otra.
+async function excelATextoAgua(file) {
+  const XLSX = await import("xlsx");
+  const libro = XLSX.read(await file.arrayBuffer(), { type: "array" });
+  return libro.SheetNames.map((n) => XLSX.utils.sheet_to_json(libro.Sheets[n], { header: 1, raw: false, blankrows: false })
+    .map((fila) => fila.filter((c) => c !== null && c !== undefined && String(c).trim() !== "").join(" ")).filter(Boolean).join("\n")).join("\n");
+}
+// La IA (la misma que usa Bull Vision) lee una captura o un texto desordenado y devuelve la sesión.
+async function iaAPlanAgua({ texto, imagenBase64, tipoImagen }) {
+  const pedido = `Sos entrenador de natación. ${imagenBase64 ? "En la imagen hay" : "Abajo hay"} una planificación de una sesión de pileta. Pasala a JSON, SIN texto extra, con esta forma exacta:
+{"titulo":"","nota":"","bloques":[{"nombre":"Entrada en calor","series":[{"reps":4,"metros":50,"detalle":"espalda técnica c/1:10"}]}]}
+Reglas: "reps" es la cantidad de repeticiones (1 si es una sola) y "metros" la distancia de cada una. Si hay series anidadas como 2x(4x50) poné reps 8 y metros 50. En "detalle" va el estilo, intensidad, material y salida/descanso, en castellano, tal cual lo escribió el coach. Respetá los nombres de los bloques que aparezcan (EC = Entrada en calor, VC = Vuelta a la calma); si no hay, usá "Principal". En "titulo" no pongas emojis. No inventes nada que no esté. Ignorá los totales.${texto ? `\n\nTEXTO:\n${texto.slice(0, 6000)}` : ""}`;
+  const content = [];
+  if (imagenBase64) content.push({ type: "image", source: { type: "base64", media_type: tipoImagen || "image/jpeg", data: imagenBase64 } });
+  content.push({ type: "text", text: pedido });
+  let ultimoError = "";
+  for (let intento = 0; intento < 3; intento++) {
+    if (intento) await new Promise((r) => setTimeout(r, 2500 * intento));
+    try {
+      const res = await fetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content }) });
+      let data; try { data = await res.json(); } catch { data = null; }
+      if (!res.ok) { ultimoError = (typeof data?.error === "string" ? data.error : data?.error?.message) || `Error ${res.status}`; continue; }
+      const txt = (data?.content || []).map((b) => b.text || "").join("\n");
+      const json = txt.slice(txt.indexOf("{"), txt.lastIndexOf("}") + 1);
+      const r = JSON.parse(json);
+      const plan = nuevoPlanAgua();
+      plan.titulo = String(r.titulo || "").slice(0, 80);
+      plan.nota = String(r.nota || "");
+      plan.bloques = (r.bloques || []).map((b) => ({ id: uid(), nombre: nombreBloqueAgua(b.nombre), series: (b.series || []).map((s) => ({ id: uid(), reps: String(parseInt(s.reps, 10) || 1), metros: s.metros ? String(parseInt(s.metros, 10) || "") : "", detalle: String(s.detalle || "") })) })).filter((b) => b.series.length);
+      if (plan.bloques.length) return plan;
+      ultimoError = "No encontré series en lo que mandaste.";
+    } catch (e) { ultimoError = e?.message || "No se pudo leer."; }
+  }
+  throw new Error(ultimoError);
+}
+
+// Panel arriba del editor: pegar texto, subir Excel o subir captura.
+function CargarPlanAgua({ onCargado }) {
+  const [modo, setModo] = useState(null); // "texto"
+  const [texto, setTexto] = useState("");
+  const [estado, setEstado] = useState(null); // { cargando, error, ok }
+  const listo = (plan, como) => { onCargado(plan); setModo(null); setTexto(""); setEstado({ ok: `✓ Cargada ${como}: ${fmtMetros(metrosPlanAgua(plan))}. Revisala y elegí quién la ve.` }); };
+  const desdeTexto = async (t, como) => {
+    const local = textoAPlanAgua(t);
+    if (metrosPlanAgua(local) > 0) { listo(local, como); return; }
+    setEstado({ cargando: "Leyendo con IA..." });
+    try { listo(await iaAPlanAgua({ texto: t }), como); } catch (e) { setEstado({ error: `No la pude leer: ${e.message}` }); }
+  };
+  const boton = { flex: 1, background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 10, color: "#F4F1EA", fontSize: 11.5, fontWeight: 700, padding: "9px 4px", cursor: "pointer", textAlign: "center" };
+  return (
+    <div style={{ background: "rgba(79,195,247,0.07)", border: "1px solid rgba(79,195,247,0.35)", borderRadius: 12, padding: 10, marginBottom: 10 }}>
+      <div className="font-body" style={{ color: "#4FC3F7", fontSize: 11, fontWeight: 700, marginBottom: 7 }}>⚡ Cargala sola desde:</div>
+      <div style={{ display: "flex", gap: 6 }}>
+        <button onClick={() => { setModo(modo === "texto" ? null : "texto"); setEstado(null); }} className="font-body" style={{ ...boton, borderColor: modo === "texto" ? "#4FC3F7" : "#322E3D" }}>📝 Texto</button>
+        <label className="font-body" style={boton}>📊 Excel
+          <input type="file" accept=".xlsx,.xls,.csv,.ods" style={{ display: "none" }} onChange={async (e) => {
+            const f = e.target.files && e.target.files[0]; e.target.value = ""; if (!f) return;
+            setModo(null); setEstado({ cargando: "Leyendo el Excel..." });
+            try { await desdeTexto(await excelATextoAgua(f), "del Excel"); } catch (err) { setEstado({ error: `No pude abrir el Excel: ${err.message}` }); }
+          }} />
+        </label>
+        <label className="font-body" style={boton}>📷 Captura
+          <input type="file" accept="image/*" style={{ display: "none" }} onChange={async (e) => {
+            const f = e.target.files && e.target.files[0]; e.target.value = ""; if (!f) return;
+            setModo(null); setEstado({ cargando: "Leyendo la captura con IA... (unos segundos)" });
+            try {
+              const dataUrl = await archivoADataURL(f, 1600, 0.85);
+              listo(await iaAPlanAgua({ imagenBase64: dataUrl.split(",")[1], tipoImagen: dataUrl.slice(5, dataUrl.indexOf(";")) }), "de la captura");
+            } catch (err) { setEstado({ error: `No pude leer la captura: ${err.message}. Probá de nuevo en un rato o pegá el texto.` }); }
+          }} />
+        </label>
+      </div>
+      {modo === "texto" && (
+        <div style={{ marginTop: 8 }}>
+          <textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={7} placeholder={"Pegá o escribí la sesión, por ejemplo:\n\nEntrada en calor\n400 libre suave\n4x50 técnica espalda c/1:10\n\nPrincipal\n8x100 libre ritmo c/1:45"} className="font-body" style={{ ...inputAgua, width: "100%", resize: "vertical" }} />
+          <button disabled={!texto.trim()} onClick={() => desdeTexto(texto, "del texto")} className="font-body" style={{ width: "100%", marginTop: 6, background: texto.trim() ? "#4FC3F7" : "#26232F", border: "none", borderRadius: 8, color: texto.trim() ? "#0B2230" : "#6B6678", fontWeight: 700, fontSize: 12.5, padding: "9px 0", cursor: texto.trim() ? "pointer" : "default" }}>Pasarlo a la sesión</button>
+        </div>
+      )}
+      {estado && <div className="font-body" style={{ marginTop: 7, fontSize: 11, color: estado.error ? "#E85D5D" : estado.ok ? "#33D6A6" : "#8B8698" }}>{estado.error || estado.ok || estado.cargando}</div>}
+    </div>
+  );
+}
+
 function EditorPlanAgua({ inicial, alumnoIdsIniciales, alumnos, plantelGrupos, onGuardar, onCancelar }) {
   const [p, setP] = useState(inicial);
   const [para, setPara] = useState(alumnoIdsIniciales || []);
@@ -8598,6 +8725,7 @@ function EditorPlanAgua({ inicial, alumnoIdsIniciales, alumnos, plantelGrupos, o
   const total = metrosPlanAgua(p);
   return (
     <div>
+      <CargarPlanAgua onCargado={(nuevo) => setP((x) => ({ ...x, titulo: nuevo.titulo || x.titulo, nota: nuevo.nota || x.nota, bloques: nuevo.bloques }))} />
       <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
         <input value={p.titulo} onChange={(e) => setP({ ...p, titulo: e.target.value })} placeholder="Nombre (ej: Aeróbico)" className="font-body" style={{ ...inputAgua, flex: 1 }} />
         <input type="date" value={p.fecha} onChange={(e) => setP({ ...p, fecha: e.target.value })} className="font-body" style={{ ...inputAgua, width: 140 }} />
@@ -8684,6 +8812,8 @@ function AccesoPlanAguaCoach({ alumnos, plantelGrupos, onGuardar, onBorrar }) {
                     <div style={{ borderTop: "1px solid #26232F", paddingTop: 8, marginTop: 4 }}>
                       <div className="font-body" style={{ color: "#8B8698", fontSize: 10.5, marginBottom: 8 }}>👥 {alumnoIds.map(nombreDe).join(", ")}</div>
                       <div style={{ display: "flex", gap: 6 }}>
+                        <button onClick={() => compartirPlanAguaPDF(plan, "")} className="font-body" style={{ flex: 1.3, background: "#25D366", border: "none", borderRadius: 8, color: "#0B2A17", fontSize: 11, fontWeight: 700, padding: "7px 0", cursor: "pointer" }}>WhatsApp</button>
+                        <button onClick={() => imprimirPlanAgua(plan, "")} className="font-body" style={{ background: "#26232F", border: "none", borderRadius: 8, color: "#F4F1EA", fontSize: 11, fontWeight: 700, padding: "7px 9px", cursor: "pointer" }}>🖨️</button>
                         <button onClick={() => setEditando({ plan, alumnoIds })} className="font-body" style={{ flex: 1, background: "#26232F", border: "none", borderRadius: 8, color: "#F4F1EA", fontSize: 11, fontWeight: 700, padding: "7px 0", cursor: "pointer" }}>✎ Editar</button>
                         <button onClick={() => setEditando({ plan: { ...plan, id: uid(), fecha: todayISO(), bloques: plan.bloques.map((b) => ({ ...b, id: uid(), series: b.series.map((s) => ({ ...s, id: uid() })) })) }, alumnoIds, nueva: true })} className="font-body" style={{ flex: 1, background: "#26232F", border: "none", borderRadius: 8, color: "#F4F1EA", fontSize: 11, fontWeight: 700, padding: "7px 0", cursor: "pointer" }}>⧉ Repetir</button>
                         <button onClick={() => { if (window.confirm("¿Borrar esta sesión de agua? Los nadadores dejan de verla.")) onBorrar(plan.id); }} className="font-body" style={{ background: "#26232F", border: "none", borderRadius: 8, color: "#E85D5D", fontSize: 11, fontWeight: 700, padding: "7px 10px", cursor: "pointer" }}>🗑</button>
