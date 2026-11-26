@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
+import { AccesoPretemporadaCoach, AccesoPretemporadaAlumno } from "./Pretemporada.jsx";
 
 /* ---------- Tokens ----------
   bg #121017 · surface #1C1A24 · surface2 #26232F · hairline #322E3D
@@ -4293,7 +4294,7 @@ function PanelHoy({ alumnos, goAlumnos, onUsarPeso, onDescartarPeso }) {
   );
 }
 
-function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coaches, onAddCoach, onRemoveCoach, mensajeRecordatorio, onUpdateMensajeRecordatorio, notificacionesActivas, onToggleNotificaciones, modoPausa, onToggleModoPausa, diasAvisoPlan, onSetDiasAvisoPlan, coachId, onCambiarPassword, onSetRecoveryPin, onSetTelefono, onReclamarAlumnos, logActividad, grupos, onCrearGrupo, onEliminarGrupo, onUsarPesoDeNota, onDescartarPesoDeNota, plantelGrupos, onGuardarPlanAgua, onBorrarPlanAgua }) {
+function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coaches, onAddCoach, onRemoveCoach, mensajeRecordatorio, onUpdateMensajeRecordatorio, notificacionesActivas, onToggleNotificaciones, modoPausa, onToggleModoPausa, diasAvisoPlan, onSetDiasAvisoPlan, coachId, onCambiarPassword, onSetRecoveryPin, onSetTelefono, onReclamarAlumnos, logActividad, grupos, onCrearGrupo, onEliminarGrupo, onUsarPesoDeNota, onDescartarPesoDeNota, plantelGrupos, onGuardarPlanAgua, onBorrarPlanAgua, onGuardarPretemporada, onBorrarPretemporada }) {
   const [editando, setEditando] = useState(false);
   const [tipoAlertaAbierto, setTipoAlertaAbierto] = useState(null);
   const accDash = React.useContext(AccionesCtx);
@@ -4363,6 +4364,7 @@ function CoachDashboard({ alumnos, goAlumnos, coachNombre, onUpdateCoach, coache
         })()}
       </div>
       {onGuardarPlanAgua && <AccesoPlanAguaCoach alumnos={alumnos} plantelGrupos={plantelGrupos} onGuardar={onGuardarPlanAgua} onBorrar={onBorrarPlanAgua} />}
+      {onGuardarPretemporada && <AccesoPretemporadaCoach alumnos={alumnos} plantelGrupos={plantelGrupos} onGuardar={onGuardarPretemporada} onBorrar={onBorrarPretemporada} />}
       <PanelHoy alumnos={alumnosActivos} goAlumnos={goAlumnos} onUsarPeso={onUsarPesoDeNota} onDescartarPeso={onDescartarPesoDeNota} />
       {editando && (
         <div id="ajustes-coach" style={{ padding: "0 20px 14px", scrollMarginTop: "calc(56px + env(safe-area-inset-top, 0px))" }}>
@@ -6546,6 +6548,7 @@ function AthleteInicio({ alumno, goEntrenar, onCheckin, onUpdateFoto, onMarcarAv
         <div style={{ height: 12 }} />
 
         <AccesoPlanAguaAlumno alumno={alumno} />
+        <AccesoPretemporadaAlumno alumno={alumno} />
         {/* Juegos y Biomecánica en vivo: dos accesos chicos, uno al lado del otro */}
         <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
           {(onGuardarReaccion || onGuardarRelevo) && (
@@ -10253,6 +10256,16 @@ export default function GymPlannerCoachApp() {
     }));
   };
   const borrarPlanAgua = (planId) => setAlumnos((prev) => prev.map((a) => ((a.planesAgua || []).some((p) => p.id === planId) ? { ...a, planesAgua: a.planesAgua.filter((p) => p.id !== planId) } : a)));
+  // Pretemporada: igual que el agua, se copia a cada alumno/a elegido (y se saca a los que ya no están).
+  const guardarPretemporada = (plan, alumnoIds) => {
+    setAlumnos((prev) => prev.map((a) => {
+      const sin = (a.pretemporadas || []).filter((p) => p.id !== plan.id);
+      const tenia = sin.length !== (a.pretemporadas || []).length;
+      if (alumnoIds.includes(a.id)) return { ...a, pretemporadas: [...sin, plan] };
+      return tenia ? { ...a, pretemporadas: sin } : a;
+    }));
+  };
+  const borrarPretemporada = (planId) => setAlumnos((prev) => prev.map((a) => ((a.pretemporadas || []).some((p) => p.id === planId) ? { ...a, pretemporadas: a.pretemporadas.filter((p) => p.id !== planId) } : a)));
   const crearPlantilla = (tpl) => setTemplates((prev) => [...prev, tpl]);
   const editarPlantilla = (id, nuevoPlan) => setTemplates((prev) => prev.map((t) => (t.id === id ? { ...t, plan: nuevoPlan } : t)));
   const eliminarPlantilla = (id) => setTemplates((prev) => prev.filter((t) => t.id !== id));
@@ -10289,7 +10302,7 @@ export default function GymPlannerCoachApp() {
     // salvo que se comparta — así un entrenador nuevo (ej: le vendiste la app a otro) no ve tus
     // plantillas personalizadas, solo puede armar las suyas.
     const templatesVisibles = templates.filter((t) => t.coachIds == null || t.coachIds.includes(session.coachId));
-    if (tab === "dashboard") body = <CoachDashboard alumnos={alumnosVisibles} goAlumnos={(id) => { setTab("alumnos"); abrirAlumno(id); }} coachNombre={coachNombre} onUpdateCoach={setCoachNombre} coaches={coaches} onAddCoach={addCoach} onRemoveCoach={removeCoach} mensajeRecordatorio={mensajeRecordatorio} onUpdateMensajeRecordatorio={setMensajeRecordatorio} notificacionesActivas={notificacionesActivas} onToggleNotificaciones={setNotificacionesActivas} modoPausa={modoPausa} onToggleModoPausa={setModoPausa} diasAvisoPlan={diasAvisoPlan} onSetDiasAvisoPlan={setDiasAvisoPlan} coachId={session?.coachId} onCambiarPassword={cambiarPasswordCoach} onSetRecoveryPin={setRecoveryPin} onSetTelefono={setTelefonoCoach} onReclamarAlumnos={reclamarAlumnosSinDueño} logActividad={logActividad} grupos={grupos} onCrearGrupo={crearGrupo} onEliminarGrupo={eliminarGrupo} onUsarPesoDeNota={usarPesoDeNota} onDescartarPesoDeNota={marcarNotaRevisada} plantelGrupos={plantelGrupos} onGuardarPlanAgua={guardarPlanAgua} onBorrarPlanAgua={borrarPlanAgua} />;
+    if (tab === "dashboard") body = <CoachDashboard alumnos={alumnosVisibles} goAlumnos={(id) => { setTab("alumnos"); abrirAlumno(id); }} coachNombre={coachNombre} onUpdateCoach={setCoachNombre} coaches={coaches} onAddCoach={addCoach} onRemoveCoach={removeCoach} mensajeRecordatorio={mensajeRecordatorio} onUpdateMensajeRecordatorio={setMensajeRecordatorio} notificacionesActivas={notificacionesActivas} onToggleNotificaciones={setNotificacionesActivas} modoPausa={modoPausa} onToggleModoPausa={setModoPausa} diasAvisoPlan={diasAvisoPlan} onSetDiasAvisoPlan={setDiasAvisoPlan} coachId={session?.coachId} onCambiarPassword={cambiarPasswordCoach} onSetRecoveryPin={setRecoveryPin} onSetTelefono={setTelefonoCoach} onReclamarAlumnos={reclamarAlumnosSinDueño} logActividad={logActividad} grupos={grupos} onCrearGrupo={crearGrupo} onEliminarGrupo={eliminarGrupo} onUsarPesoDeNota={usarPesoDeNota} onDescartarPesoDeNota={marcarNotaRevisada} plantelGrupos={plantelGrupos} onGuardarPlanAgua={guardarPlanAgua} onBorrarPlanAgua={borrarPlanAgua} onGuardarPretemporada={guardarPretemporada} onBorrarPretemporada={borrarPretemporada} />;
     else if (tab === "alumnos") body = <CoachAlumnos alumnos={alumnosVisibles} selectedId={selectedCoachAlumno} setSelectedId={abrirAlumno} templates={templatesVisibles} onAsignarPlantilla={asignarPlantilla} onCopiarPlan={copiarPlan} onCopiarVersionAOtro={copiarVersionAOtro} onCopiarSoloCalentamiento={copiarSoloCalentamiento} onAgregarPlanSecundario={agregarPlanSecundario} onQuitarPlanSecundario={quitarPlanSecundario} onToggleFijoPlanSecundario={toggleFijoPlanSecundario} onGuardarComoPlantilla={guardarComoPlantilla} onUpdatePlan={updatePlan} onUpdateAlumno={updateAlumno} onDeleteAlumno={deleteAlumno} onAddAlumno={addAlumno} onSendMsg={sendMsg} onGuardarVersion={guardarVersion} onRestaurarVersion={restaurarVersion} onEliminarVersion={eliminarVersion} onGuardarHistorialRM={agregarHistorialRM} onAddToLibrary={addCustomExercise} version={libVersion} coaches={coaches} coachIdActual={session.coachId} onCompartirAlumno={compartirAlumnoConCoach} onDejarDeCompartir={dejarDeCompartirAlumno} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={agregarRolPersonalizado} grupos={grupos} onCompartirGrupo={compartirAlumnoConGrupo} plantelGrupos={plantelGrupos} onCrearPlantelGrupo={crearPlantelGrupo} onRenombrarPlantelGrupo={renombrarPlantelGrupo} onEliminarPlantelGrupo={eliminarPlantelGrupo} onAsignarPlantelGrupo={asignarPlantelGrupo} />;
     else if (tab === "plantillas") body = <CoachPlantillas templates={templatesVisibles} alumnos={alumnosVisibles} onAsignar={asignarPlantilla} onAgregarPlanSecundario={agregarPlanSecundario} onCrearPlantilla={crearPlantilla} onEditarPlantilla={editarPlantilla} onEliminarPlantilla={eliminarPlantilla} onAddToLibrary={addCustomExercise} version={libVersion} rolesPersonalizados={rolesPersonalizados} onAgregarRolPersonalizado={agregarRolPersonalizado} coachIdActual={session.coachId} />;
     else if (tab === "biomecanica") body = null;
