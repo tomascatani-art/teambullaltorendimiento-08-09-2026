@@ -7,6 +7,8 @@ import { unlock, beep } from './beep.js';
 
 const $ = (id) => document.getElementById(id);
 const f = (v, d = 2) => (Number.isFinite(v) ? v.toLocaleString('es-AR', { minimumFractionDigits: d, maximumFractionDigits: d }) : '–');
+// la tablet recuerda el último código con el que se enlazó y se vuelve a conectar sola
+const PANTALLA_KEY = 'tb-gym-codigo-pantalla';
 const X = { link: null, cam: null, pc: null, last: '', lastN: 0, ready: false, timer: 0 };
 window.__swimGymScreen = X; // para las pruebas automáticas
 
@@ -37,7 +39,10 @@ export function openScreen() {
   $('gy-show-stage').dataset.image = X.link ? $('gy-view').value : 'none';
   render(null);
   $('gy-show').scrollIntoView({ block: 'start' });
-  $('gy-code').focus();
+  let guardado = '';
+  try { guardado = localStorage.getItem(PANTALLA_KEY) || ''; } catch {}
+  if (/^\d{4}$/.test(guardado) && !X.link) { $('gy-code').value = guardado; join(); }
+  else if (!X.link) $('gy-code').focus();
 }
 
 export function closeScreen() {
@@ -54,8 +59,10 @@ async function join() {
   try {
     X.link = await openLink(code, onMsg);
   } catch (err) { status(err.message); return; }
+  try { localStorage.setItem(PANTALLA_KEY, code); } catch {}
   status(X.link.kind === 'local' ? 'Conectado (solo con otra pestaña de este dispositivo).' : 'Conectado. Esperando la serie…');
   X.link.send({ type: 'hello' });
+  render(null);
   setView();
   // en la tablet, dejar a la vista el número (y no los controles de arriba)
   $('gy-show-stage').scrollIntoView({ block: 'end' });
@@ -110,7 +117,7 @@ function render(st) {
   const last = reps[reps.length - 1];
   const big = $('gy-show-big'), zone = $('gy-show-zone'), rep = $('gy-show-rep'), list = $('gy-show-list');
   const ex = EXERCISES[st?.ex]?.label || '';
-  rep.textContent = last ? `${st.serie > 1 ? `Serie ${st.serie} · ` : ''}Rep ${last.n}${ex ? ' · ' + ex : ''}${Number.isFinite(st.load) ? ` · ${f(st.load, 1)} kg` : ''}` : st ? (st.done ? 'Serie terminada' : 'Esperando la primera repetición…') : 'Escribí el código que muestra el celular';
+  rep.textContent = last ? `${st.serie > 1 ? `Serie ${st.serie} · ` : ''}Rep ${last.n}${ex ? ' · ' + ex : ''}${Number.isFinite(st.load) ? ` · ${f(st.load, 1)} kg` : ''}` : st ? (st.done ? 'Serie terminada' : 'Esperando la primera repetición…') : (X.link ? 'Esperando la serie del celular…' : 'Escribí el código que muestra el celular (después queda guardado)');
   big.innerHTML = last ? `${f(last.mv)}<small> m/s</small>` : '–';
   const z = last ? zoneOf(last.mv) : null;
   // en qué fase está trabajando según la velocidad (tabla de Prilepin y su adaptación a la práctica)

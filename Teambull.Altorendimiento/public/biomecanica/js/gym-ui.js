@@ -112,6 +112,7 @@ export function initGym(helpers) {
   };
   document.addEventListener('fullscreenchange', () => setTimeout(draw, 50));
   $('gy-screen').onclick = () => { stopLive(); openScreen(); };
+  cajaCodigo();
   $('gy-athlete').addEventListener('change', () => { cargarDatos().then(() => { if (S.mode === 'jump') panel(); }); });
   setMode('bar');
 }
@@ -688,7 +689,7 @@ async function startLive(seguir = null) {
   if (!v.videoWidth) await new Promise(r => v.addEventListener('loadedmetadata', r, { once: true }));
   H?.notify?.('');
   $('gy-show').hidden = true;
-  S.live = { stream, code: seguir?.code || newCode(), link: seguir?.link || null, kind: seguir?.kind || '', quiereVideo: !!seguir?.quiereVideo, T0: null, times: [], peer: null, done: false };
+  S.live = { stream, code: seguir?.code || miCodigo(), link: seguir?.link || null, kind: seguir?.kind || '', quiereVideo: !!seguir?.quiereVideo, T0: null, times: [], peer: null, done: false };
   S.live.rec = grabarVivo(stream, S.live);
   S.file = { name: 'en vivo' }; S.times = null; S.grabado = null; S.W = v.videoWidth; S.Hh = v.videoHeight;
   S.scale = null; S.scalePts = []; S.pts = []; S.res = null; S.tool = 'scale'; S.hint = ''; hist.length = 0; S.evId = null; S.rango = { a: null, b: null };
@@ -705,6 +706,48 @@ async function startLive(seguir = null) {
   if (seguir?.link) { sendState(true); if (L.quiereVideo) startPeer(); return; }
   try { L.link = await openLink(L.code, onLinkMsg); L.kind = L.link.kind; } catch (err) { L.kind = 'error'; S.hint = err.message; }
   if (S.live === L) panel();
+}
+
+// Código fijo: el celular que filma usa siempre el mismo (lo elige el entrenador/a con «Cambiar código»),
+// así la tablet queda enlazada y no hay que escribir uno nuevo en cada serie ni en cada sesión.
+const CODIGO_KEY = 'tb-gym-codigo';
+function miCodigo() {
+  try { const c = localStorage.getItem(CODIGO_KEY); if (/^\d{4}$/.test(c || '')) return c; } catch {}
+  const c = newCode();
+  try { localStorage.setItem(CODIGO_KEY, c); } catch {}
+  return c;
+}
+async function cambiarCodigo(c) {
+  const L = S.live;
+  if (!/^\d{4}$/.test(c)) { H?.notify?.('El código tiene 4 números.'); return; }
+  try { localStorage.setItem(CODIGO_KEY, c); } catch {}
+  S.editCodigo = false; cajaCodigo();
+  if (!L || L.code === c) return;
+  L.link?.close(); L.link = null; L.code = c; L.kind = '';
+  panel(); hudVivo();
+  try { L.link = await openLink(c, onLinkMsg); L.kind = L.link.kind; } catch (err) { L.kind = 'error'; S.hint = err.message; }
+  if (S.live === L) { panel(); hudVivo(); sendState(true); }
+}
+
+// Debajo de los botones de Gym: el código que usa este celular, con «Cambiar» para elegir uno propio.
+function cajaCodigo() {
+  const fila = $('gy-screen')?.parentElement;
+  if (!fila) return;
+  let el = $('gy-codigo-box');
+  if (!el) { el = document.createElement('div'); el.id = 'gy-codigo-box'; el.className = 'gy-codigo-box'; fila.after(el); }
+  const c = miCodigo();
+  el.innerHTML = S.editCodigo
+    ? `<span class="fine-label">Código nuevo (4 números)</span><input type="text" id="gy-mi-codigo" inputmode="numeric" maxlength="4" value="${esc(c)}" aria-label="Código nuevo"><button class="btn primary small" id="gy-codigo-ok" type="button">Guardar</button><button class="btn ghost small" id="gy-codigo-no" type="button">Cancelar</button>`
+    : `<span class="fine-label">Código para la pantalla del deportista</span><b class="mono">${esc(c)}</b><button class="btn ghost small" id="gy-cambiar-codigo" type="button">Cambiar</button><span class="fine">Es siempre el mismo: en la tablet se escribe una sola vez y queda enlazada.</span>`;
+  const on = (id, fn) => { const b = $(id); if (b) b.onclick = fn; };
+  on('gy-cambiar-codigo', () => { S.editCodigo = true; cajaCodigo(); const i = $('gy-mi-codigo'); i?.focus(); i?.select(); });
+  on('gy-codigo-no', () => { S.editCodigo = false; cajaCodigo(); });
+  on('gy-codigo-ok', () => cambiarCodigo(($('gy-mi-codigo')?.value || '').trim()));
+  const i = $('gy-mi-codigo');
+  if (i) {
+    i.oninput = () => { const v = i.value.replace(/\D/g, '').slice(0, 4); if (v !== i.value) i.value = v; };
+    i.onkeydown = (e) => { if (e.key === 'Enter') cambiarCodigo(i.value.trim()); };
+  }
 }
 
 function liveBox() {

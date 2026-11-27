@@ -442,3 +442,9 @@ html.vb-full-on .guardar-fijo { display: none !important; }
 .gy-show-calidad { display: block; font-size: .55em; opacity: .85; margin-top: .15em; }
 /* Un solo color (rojo) para la fase en vivo, también en el borde de la pantalla del deportista (Diego, 2026-11-26) */
 .gy-show-stage[data-zone]:not([data-zone=""]) { border-color: #FF1E1E; }
+
+/* código fijo para la pantalla del deportista (debajo de los botones de Gym) */
+.gy-codigo-box { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 10px; }
+.gy-codigo-box b.mono { font-size: 20px; letter-spacing: 3px; color: #FF6B35; }
+.gy-codigo-box input { width: 6em; font-size: 18px; letter-spacing: 3px; text-align: center; }
+.gy-codigo-box .fine { flex-basis: 100%; }
