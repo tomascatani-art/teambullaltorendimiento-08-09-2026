@@ -8460,56 +8460,102 @@ const lineaSerieAgua = (s) => (s.metros ? `${Number(s.reps) > 1 ? `${s.reps} x `
 const bloquesConAlgo = (plan) => (plan.bloques || []).filter((b) => (b.series || []).some((s) => s.metros || s.detalle));
 function generarPDFPlanAgua(plan, nombre) {
   const doc = crearDocumentoPDF("#FFFFFF");
-  const M = 40, ANCHO = doc.W - 2 * M, ABAJO = doc.H - 40;
-  const C = { negro: "#121017", gris: "#6B6678", azul: "#0277BD", borde: "#D9D6E0" };
-  let y = M;
-  const lugar = (alto) => { if (y + alto > ABAJO) { doc.nueva(); y = M; } };
-  doc.texto(M, y + 10, pdfCodificar("TEAM BULL · PLANIFICACIÓN DE AGUA"), "F2", 9.5, C.azul);
-  y += 34;
-  pdfCortar(plan.titulo || "Sesión de agua", "F2", 22, ANCHO - 120).forEach((l) => { doc.texto(M, y, l, "F2", 22, C.negro); y += 25; });
+  const M = 40, ANCHO = doc.W - 2 * M, ABAJO = doc.H - 44;
+  const C = { negro: "#121017", texto: "#2A2633", gris: "#6B6678", azul: "#0277BD", celeste: "#E8F3FA", zebra: "#F7F6F9", borde: "#D9D6E0", naranja: "#FF6B35" };
+  const COL = [{ t: "SERIES", w: 62 }, { t: "DIST.", w: 66 }, { t: "DESCRIPCIÓN", w: ANCHO - 128 }];
+  let y = 0;
+  // Encabezado: franja oscura con la marca
+  doc.rect(0, 0, doc.W, 62, C.negro);
+  doc.texto(M, 30, pdfCodificar("TEAM BULL"), "F2", 15, C.naranja);
+  doc.texto(M, 46, pdfCodificar("PLANIFICACIÓN DE AGUA"), "F2", 8.5, "#C9C5D2");
+  const fechaTxt = pdfCodificar(fechaLegible(plan.fecha || todayISO()));
+  doc.texto(doc.W - M - pdfAncho(fechaTxt, "F2", 10), 38, fechaTxt, "F2", 10, "#F4F1EA");
+  y = 100;
+  const titulo = pdfCortar(plan.titulo || "Sesión de agua", "F2", 22, ANCHO - 150);
+  titulo.forEach((l, i) => doc.texto(M, y + i * 25, l, "F2", 22, C.negro));
+  // Total en una cajita a la derecha
+  doc.rect(M + ANCHO - 130, y - 22, 130, 46, C.celeste);
+  doc.texto(M + ANCHO - 120, y - 8, pdfCodificar("TOTAL"), "F2", 7.5, C.azul);
   const tot = pdfCodificar(fmtMetros(metrosPlanAgua(plan)));
-  doc.texto(M + ANCHO - pdfAncho(tot, "F2", 22), M + 44, tot, "F2", 22, C.negro);
-  const sub = [fechaAgua(plan.fecha) === "Hoy" ? fechaLegible(plan.fecha) : fechaAgua(plan.fecha), nombre].filter(Boolean).join("   ·   ");
-  doc.texto(M, y, pdfCodificar(sub), "F1", 10, C.gris);
-  y += 14;
-  doc.linea(M, y, M + ANCHO, y, C.borde, 1);
-  y += 22;
+  doc.texto(M + ANCHO - 120, y + 14, tot, "F2", 18, C.negro);
+  y += (titulo.length - 1) * 25 + 18;
+  if (nombre) { doc.texto(M, y, pdfCodificar(`Nadador/a: ${nombre}`), "F1", 10, C.gris); }
+  y += 30;
+  const lugar = (alto) => { if (y + alto > ABAJO) { doc.nueva(); y = M; return true; } return false; };
+  const cabecera = () => {
+    doc.rect(M, y, ANCHO, 16, "#FFFFFF");
+    let x = M; COL.forEach((c) => { doc.texto(x + 8, y + 11, pdfCodificar(c.t), "F2", 7, C.gris); x += c.w; });
+    y += 16; doc.linea(M, y, M + ANCHO, y, C.borde);
+  };
   bloquesConAlgo(plan).forEach((b) => {
-    lugar(40);
-    doc.texto(M, y, pdfCodificar(b.nombre.toUpperCase()), "F2", 10.5, C.azul);
+    lugar(70);
+    doc.rect(M, y, ANCHO, 22, C.celeste);
+    doc.rect(M, y, 3, 22, C.azul);
+    doc.texto(M + 10, y + 15, pdfCodificar(b.nombre.toUpperCase()), "F2", 10, C.azul);
     const mb = pdfCodificar(fmtMetros(metrosBloqueAgua(b)));
-    doc.texto(M + ANCHO - pdfAncho(mb, "F1", 10), y, mb, "F1", 10, C.gris);
-    y += 8;
-    b.series.filter((s) => s.metros || s.detalle).forEach((s) => {
-      const renglones = pdfCortar(s.detalle || "", "F1", 12, ANCHO - 90);
-      lugar(Math.max(1, renglones.length) * 16 + 8);
-      y += 16;
-      doc.texto(M, y, pdfCodificar(lineaSerieAgua(s)), "F2", 13, C.negro);
-      (renglones.length ? renglones : [""]).forEach((r, i) => { doc.texto(M + 90, y + i * 16, r, "F1", 12, C.negro); });
-      y += (Math.max(1, renglones.length) - 1) * 16 + 4;
+    doc.texto(M + ANCHO - 8 - pdfAncho(mb, "F2", 10), y + 15, mb, "F2", 10, C.azul);
+    y += 22;
+    cabecera();
+    b.series.filter((s) => s.metros || s.detalle).forEach((s, i) => {
+      const renglones = pdfCortar(s.detalle || "", "F1", 10.5, COL[2].w - 16);
+      const alto = Math.max(1, renglones.length) * 14 + 10;
+      if (lugar(alto)) cabecera();
+      if (i % 2) doc.rect(M, y, ANCHO, alto, C.zebra);
+      const reps = Number(s.reps) > 1 ? `${s.reps} x` : "";
+      doc.texto(M + 8, y + 17, pdfCodificar(reps), "F2", 12, C.negro);
+      doc.texto(M + COL[0].w + 8, y + 17, pdfCodificar(s.metros ? `${s.metros} m` : ""), "F2", 12, C.negro);
+      renglones.forEach((r, k) => doc.texto(M + COL[0].w + COL[1].w + 8, y + 16 + k * 14, r, "F1", 10.5, C.texto));
+      y += alto;
+      doc.linea(M, y, M + ANCHO, y, C.borde, 0.4);
     });
-    y += 14;
-    doc.linea(M, y - 6, M + ANCHO, y - 6, C.borde);
-    y += 8;
+    y += 16;
   });
+  // Resumen
+  lugar(30 + bloquesConAlgo(plan).length * 15);
+  doc.linea(M, y, M + ANCHO, y, C.negro, 1.2); y += 18;
+  doc.texto(M, y, pdfCodificar("RESUMEN"), "F2", 9, C.gris);
+  y += 4;
+  bloquesConAlgo(plan).forEach((b) => {
+    y += 15;
+    doc.texto(M, y, pdfCodificar(b.nombre), "F1", 10, C.texto);
+    const mb = pdfCodificar(fmtMetros(metrosBloqueAgua(b)));
+    doc.texto(M + 260 - pdfAncho(mb, "F1", 10), y, mb, "F1", 10, C.texto);
+  });
+  y += 17;
+  doc.linea(M, y - 11, M + 260, y - 11, C.borde);
+  doc.texto(M, y, pdfCodificar("Total"), "F2", 11, C.negro);
+  doc.texto(M + 260 - pdfAncho(tot, "F2", 11), y, tot, "F2", 11, C.negro);
+  y += 24;
   if (plan.nota) {
-    lugar(40);
-    doc.texto(M, y, pdfCodificar("NOTA DEL COACH"), "F2", 9, C.gris); y += 15;
-    pdfCortar(plan.nota, "F1", 11, ANCHO).forEach((l) => { lugar(16); doc.texto(M, y, l, "F1", 11, C.negro); y += 15; });
+    const lineas = pdfCortar(plan.nota, "F3", 10.5, ANCHO - 24);
+    lugar(lineas.length * 14 + 34);
+    doc.rect(M, y, ANCHO, lineas.length * 14 + 30, C.zebra);
+    doc.rect(M, y, 3, lineas.length * 14 + 30, C.naranja);
+    doc.texto(M + 12, y + 15, pdfCodificar("INDICACIONES DEL COACH"), "F2", 7.5, C.gris);
+    lineas.forEach((l, k) => doc.texto(M + 12, y + 30 + k * 14, l, "F3", 10.5, C.texto));
   }
   return doc.generar();
 }
 function htmlPlanAgua(plan, nombre) {
-  const bloques = bloquesConAlgo(plan).map((b) => `<h3><span>${escHTML(b.nombre)}</span><small>${fmtMetros(metrosBloqueAgua(b))}</small></h3>` +
-    b.series.filter((s) => s.metros || s.detalle).map((s) => `<div class="s"><b>${escHTML(lineaSerieAgua(s))}</b><span>${escHTML(s.detalle)}</span></div>`).join("")).join("");
+  const bloques = bloquesConAlgo(plan).map((b) => `<table><tr class="bq"><td colspan="2">${escHTML(b.nombre)}</td><td class="r">${fmtMetros(metrosBloqueAgua(b))}</td></tr>
+    <tr class="th"><td>Series</td><td>Dist.</td><td>Descripción</td></tr>` +
+    b.series.filter((s) => s.metros || s.detalle).map((s) => `<tr><td class="n">${Number(s.reps) > 1 ? `${s.reps} x` : ""}</td><td class="n">${s.metros ? `${s.metros} m` : ""}</td><td>${escHTML(s.detalle)}</td></tr>`).join("") + `</table>`).join("");
   return `<html><head><meta charset="utf-8"><title>${escHTML(plan.titulo || "Sesión de agua")}</title><style>
-    body{font-family:Helvetica,Arial,sans-serif;color:#121017;margin:28px;} .tb{color:#0277BD;font-weight:700;font-size:12px;letter-spacing:.5px}
-    .cab{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:1.5px solid #D9D6E0;padding-bottom:8px;margin-bottom:6px}
-    h1{margin:6px 0 2px;font-size:26px} .tot{font-size:26px;font-weight:700} .sub{color:#6B6678;font-size:13px}
-    h3{display:flex;justify-content:space-between;color:#0277BD;font-size:14px;text-transform:uppercase;margin:18px 0 6px} h3 small{color:#6B6678;font-weight:400}
-    .s{display:flex;gap:14px;font-size:16px;padding:3px 0} .s b{min-width:80px} .nota{margin-top:20px;border-top:1px solid #D9D6E0;padding-top:10px;font-size:14px;white-space:pre-wrap}
-  </style></head><body><div class="tb">TEAM BULL · PLANIFICACIÓN DE AGUA</div><div class="cab"><div><h1>${escHTML(plan.titulo || "Sesión de agua")}</h1><div class="sub">${escHTML([fechaLegible(plan.fecha), nombre].filter(Boolean).join(" · "))}</div></div><div class="tot">${fmtMetros(metrosPlanAgua(plan))}</div></div>
-  ${bloques}${plan.nota ? `<div class="nota"><b>Nota del coach:</b><br>${escHTML(plan.nota)}</div>` : ""}</body></html>`;
+    @page{margin:14mm} body{font-family:Helvetica,Arial,sans-serif;color:#2A2633;margin:0}
+    .top{background:#121017;color:#F4F1EA;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .top b{color:#FF6B35;font-size:18px;letter-spacing:.5px} .top small{display:block;color:#C9C5D2;font-size:10px;font-weight:700;letter-spacing:1px}
+    .cab{display:flex;justify-content:space-between;align-items:center;margin:22px 0 18px}
+    h1{margin:0;font-size:28px;color:#121017} .sub{color:#6B6678;font-size:13px;margin-top:4px}
+    .tot{background:#E8F3FA;padding:8px 16px;-webkit-print-color-adjust:exact;print-color-adjust:exact} .tot small{display:block;color:#0277BD;font-size:9px;font-weight:700} .tot b{font-size:22px;color:#121017}
+    table{width:100%;border-collapse:collapse;margin-bottom:16px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    td{padding:7px 8px;border-bottom:1px solid #E4E1EA;font-size:14px;vertical-align:top} td.n{font-weight:700;white-space:nowrap;width:60px;color:#121017;font-size:15px}
+    tr.bq td{background:#E8F3FA;color:#0277BD;font-weight:700;text-transform:uppercase;font-size:12px;border-left:3px solid #0277BD} tr.bq td+td{border-left:0} td.r{text-align:right}
+    tr.th td{color:#6B6678;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+    tr:nth-child(even):not(.th):not(.bq) td{background:#F7F6F9}
+    .nota{background:#F7F6F9;border-left:3px solid #FF6B35;padding:10px 14px;font-style:italic;font-size:14px;white-space:pre-wrap;-webkit-print-color-adjust:exact;print-color-adjust:exact} .nota small{display:block;font-style:normal;color:#6B6678;font-size:9px;font-weight:700;margin-bottom:4px}
+  </style></head><body><div class="top"><div><b>TEAM BULL</b><small>PLANIFICACIÓN DE AGUA</small></div><div>${escHTML(fechaLegible(plan.fecha || todayISO()))}</div></div>
+  <div class="cab"><div><h1>${escHTML(plan.titulo || "Sesión de agua")}</h1>${nombre ? `<div class="sub">Nadador/a: ${escHTML(nombre)}</div>` : ""}</div><div class="tot"><small>TOTAL</small><b>${fmtMetros(metrosPlanAgua(plan))}</b></div></div>
+  ${bloques}${plan.nota ? `<div class="nota"><small>INDICACIONES DEL COACH</small>${escHTML(plan.nota)}</div>` : ""}</body></html>`;
 }
 // Imprimir en papel: una hoja blanca en un marco invisible y el diálogo de impresión del celular/compu.
 function imprimirPlanAgua(plan, nombre) {
@@ -8563,21 +8609,31 @@ function TarjetaPlanAgua({ plan, abierta, onToggle, pie }) {
       </button>
       {abierta && (
         <div style={{ padding: "0 14px 12px" }}>
-          {(plan.bloques || []).filter((b) => (b.series || []).some((s) => s.metros || s.detalle)).map((b) => (
-            <div key={b.id} style={{ borderTop: "1px solid #26232F", padding: "8px 0" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                <span className="font-body" style={{ color: "#7DD6C0", fontSize: 11, fontWeight: 700 }}>{b.nombre}</span>
-                <span className="font-body" style={{ color: "#8B8698", fontSize: 10.5 }}>{fmtMetros(metrosBloqueAgua(b))}</span>
+          {bloquesConAlgo(plan).map((b) => (
+            <div key={b.id} style={{ marginTop: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(79,195,247,0.10)", borderLeft: "3px solid #4FC3F7", borderRadius: "0 6px 6px 0", padding: "6px 10px" }}>
+                <span className="font-display" style={{ color: "#4FC3F7", fontSize: 13, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase" }}>{b.nombre}</span>
+                <span className="font-display" style={{ color: "#4FC3F7", fontSize: 13, fontWeight: 600 }}>{fmtMetros(metrosBloqueAgua(b))}</span>
               </div>
-              {b.series.filter((s) => s.metros || s.detalle).map((s) => (
-                <div key={s.id} className="font-body" style={{ display: "flex", gap: 8, color: "#F4F1EA", fontSize: 13, lineHeight: 1.45 }}>
-                  <span style={{ fontWeight: 700, minWidth: 62, whiteSpace: "nowrap" }}>{s.metros ? `${Number(s.reps) > 1 ? `${s.reps} × ` : ""}${s.metros}` : ""}</span>
-                  <span style={{ color: "#C9C5D2" }}>{s.detalle}</span>
+              {b.series.filter((s) => s.metros || s.detalle).map((s, i) => (
+                <div key={s.id} style={{ display: "grid", gridTemplateColumns: "34px 56px 1fr", alignItems: "baseline", gap: 6, padding: "7px 10px", background: i % 2 ? "rgba(255,255,255,0.025)" : "transparent", borderBottom: "1px solid #26232F" }}>
+                  <span className="font-display" style={{ color: "#8B8698", fontSize: 15, fontWeight: 600, textAlign: "right" }}>{Number(s.reps) > 1 ? `${s.reps}×` : ""}</span>
+                  <span className="font-display" style={{ color: "#F4F1EA", fontSize: 17, fontWeight: 700 }}>{s.metros ? <>{s.metros}<span style={{ fontSize: 11, color: "#8B8698", marginLeft: 1 }}>m</span></> : ""}</span>
+                  <span className="font-body" style={{ color: "#D8D4E0", fontSize: 13, lineHeight: 1.4 }}>{s.detalle}</span>
                 </div>
               ))}
             </div>
           ))}
-          {plan.nota && <div className="font-body" style={{ borderTop: "1px solid #26232F", paddingTop: 8, color: "#C9C5D2", fontSize: 12, whiteSpace: "pre-wrap" }}>📝 {plan.nota}</div>}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "10px 10px 4px" }}>
+            <span className="font-body" style={{ color: "#8B8698", fontSize: 10, fontWeight: 700, letterSpacing: 1 }}>TOTAL DE LA SESIÓN</span>
+            <span className="font-display" style={{ color: "#F4F1EA", fontSize: 20, fontWeight: 700 }}>{fmtMetros(total)}</span>
+          </div>
+          {plan.nota && (
+            <div style={{ background: "rgba(255,255,255,0.03)", borderLeft: "3px solid #FF6B35", borderRadius: "0 8px 8px 0", padding: "8px 12px", marginTop: 6 }}>
+              <div className="font-body" style={{ color: "#8B8698", fontSize: 9, fontWeight: 700, letterSpacing: 1, marginBottom: 3 }}>INDICACIONES DEL COACH</div>
+              <div className="font-body" style={{ color: "#D8D4E0", fontSize: 12.5, fontStyle: "italic", whiteSpace: "pre-wrap" }}>{plan.nota}</div>
+            </div>
+          )}
           {pie}
         </div>
       )}
@@ -8607,6 +8663,27 @@ function nombreBloqueAgua(n) {
   if (/^v\.?\s?c\.?$/i.test(t)) return "Vuelta a la calma";
   return t ? t.charAt(0).toUpperCase() + t.slice(1) : "Principal";
 }
+// Un chat de WhatsApp pegado tal cual: saca fecha/hora/nombre de cada mensaje, emojis, negritas
+// (*texto*), saludos y avisos del sistema, para que quede solo la sesión.
+function limpiarChatAgua(texto) {
+  return String(texto || "").split(/\r?\n/).map((l) => l
+    .replace(/^\s*\[\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4},?\s+\d{1,2}:\d{2}(?::\d{2})?\s*(?:[ap]\.?\s?m\.?)?\]\s*[^:]{1,40}:\s*/i, "")
+    .replace(/^\s*\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4},?\s+\d{1,2}:\d{2}\s*(?:[ap]\.?\s?m\.?)?\s*[-–]\s*[^:]{1,40}:\s*/i, "")
+    .replace(/[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}\u{1F3FB}-\u{1F3FF}️‍⃣]+/gu, "")
+    .replace(/(^|\s)[*_~]+(\S)/g, "$1$2").replace(/(\S)[*_~]+(?=\s|$|[.,:;!])/g, "$1")
+    .replace(/\s*\(editado\)\s*$/i, "").replace(/[✓✔]{1,2}\s*$/, "").trim())
+    .filter((l) => l && !/^\d{1,2}:\d{2}\s*(?:[ap]\.?\s?m\.?)?$/i.test(l)
+      && !/^(<?multimedia omitido>?|<?media omitted>?|se elimin[oó] este mensaje|este mensaje fue eliminado|mensaje eliminado|los mensajes y las llamadas est[aá]n cifrados.*|hoy|ayer)$/i.test(l)
+      && !/^(hola|holi|buen[oa]s|buen d[ií]a|buenas tardes|buenas noches|chic[oa]s|gente|equipo|saludos|abrazo|besos?|nos vemos|vamos|dale|ok|okey|gracias)\b[\s!.,¡]*\w*[\s!.,]*$/i.test(l))
+    .join("\n");
+}
+// Deja la descripción prolija: primera letra mayúscula, 1'40 → 1:40, espacios de más.
+function prolijoAgua(t) {
+  let x = String(t || "").replace(/\s+/g, " ").trim()
+    .replace(/(\d)'\s?(\d{2})"?/g, "$1:$2").replace(/(\d)'(?!\d)/g, "$1:00").replace(/(\d)"/g, "$1 s")
+    .replace(/\bc\s?\/\s?/gi, "c/ ").replace(/\s+([,.;])/g, "$1").replace(/^[-–:,.]\s*/, "");
+  return x ? x.charAt(0).toUpperCase() + x.slice(1) : "";
+}
 function textoAPlanAgua(texto) {
   const plan = { ...nuevoPlanAgua(), bloques: [] };
   let bloque = null;
@@ -8628,7 +8705,13 @@ function textoAPlanAgua(texto) {
     if (!plan.titulo && !bloque) { plan.titulo = l.slice(0, 60); return; }
     plan.nota = plan.nota ? `${plan.nota}\n${l}` : l;
   });
-  plan.bloques = plan.bloques.filter((b) => b.series.length);
+  // Renglones sin metros al final de todo («traer tabla y pullbuoy») van a la nota, no a una serie.
+  const ultimo = plan.bloques[plan.bloques.length - 1];
+  const sueltos = [];
+  while (ultimo && ultimo.series.length > 1 && !ultimo.series[ultimo.series.length - 1].metros) sueltos.unshift(ultimo.series.pop().detalle);
+  if (sueltos.length) plan.nota = [plan.nota, ...sueltos].filter(Boolean).join("\n");
+  plan.bloques = plan.bloques.filter((b) => b.series.length).map((b) => ({ ...b, series: b.series.map((x) => ({ ...x, detalle: prolijoAgua(x.detalle) })) }));
+  plan.titulo = prolijoAgua(plan.titulo); plan.nota = plan.nota ? prolijoAgua(plan.nota) : "";
   return plan;
 }
 // Un Excel (o CSV) pasa a renglones de texto: cada fila con sus celdas una al lado de la otra.
@@ -8642,7 +8725,7 @@ async function excelATextoAgua(file) {
 async function iaAPlanAgua({ texto, imagenBase64, tipoImagen }) {
   const pedido = `Sos entrenador de natación. ${imagenBase64 ? "En la imagen hay" : "Abajo hay"} una planificación de una sesión de pileta. Pasala a JSON, SIN texto extra, con esta forma exacta:
 {"titulo":"","nota":"","bloques":[{"nombre":"Entrada en calor","series":[{"reps":4,"metros":50,"detalle":"espalda técnica c/1:10"}]}]}
-Reglas: "reps" es la cantidad de repeticiones (1 si es una sola) y "metros" la distancia de cada una. Si hay series anidadas como 2x(4x50) poné reps 8 y metros 50. En "detalle" va el estilo, intensidad, material y salida/descanso, en castellano, tal cual lo escribió el coach. Respetá los nombres de los bloques que aparezcan (EC = Entrada en calor, VC = Vuelta a la calma); si no hay, usá "Principal". En "titulo" no pongas emojis. No inventes nada que no esté. Ignorá los totales.${texto ? `\n\nTEXTO:\n${texto.slice(0, 6000)}` : ""}`;
+Reglas: "reps" es la cantidad de repeticiones (1 si es una sola) y "metros" la distancia de cada una. Si hay series anidadas como 2x(4x50) poné reps 8 y metros 50. En "detalle" va el estilo, intensidad, material y salida/descanso, en castellano, tal cual lo escribió el coach. Respetá los nombres de los bloques que aparezcan (EC = Entrada en calor, VC = Vuelta a la calma); si no hay, usá "Principal". En "titulo" no pongas emojis. No inventes nada que no esté. Ignorá los totales. Si es un chat de WhatsApp, ignorá horas, nombres, saludos y charla: quedate solo con la sesión. Escribí el detalle prolijo, con la primera letra en mayúscula y sin emojis.${texto ? `\n\nTEXTO:\n${texto.slice(0, 6000)}` : ""}`;
   const content = [];
   if (imagenBase64) content.push({ type: "image", source: { type: "base64", media_type: tipoImagen || "image/jpeg", data: imagenBase64 } });
   content.push({ type: "text", text: pedido });
@@ -8659,7 +8742,8 @@ Reglas: "reps" es la cantidad de repeticiones (1 si es una sola) y "metros" la d
       const plan = nuevoPlanAgua();
       plan.titulo = String(r.titulo || "").slice(0, 80);
       plan.nota = String(r.nota || "");
-      plan.bloques = (r.bloques || []).map((b) => ({ id: uid(), nombre: nombreBloqueAgua(b.nombre), series: (b.series || []).map((s) => ({ id: uid(), reps: String(parseInt(s.reps, 10) || 1), metros: s.metros ? String(parseInt(s.metros, 10) || "") : "", detalle: String(s.detalle || "") })) })).filter((b) => b.series.length);
+      plan.bloques = (r.bloques || []).map((b) => ({ id: uid(), nombre: nombreBloqueAgua(b.nombre), series: (b.series || []).map((s) => ({ id: uid(), reps: String(parseInt(s.reps, 10) || 1), metros: s.metros ? String(parseInt(s.metros, 10) || "") : "", detalle: prolijoAgua(s.detalle) })) })).filter((b) => b.series.length);
+      plan.titulo = prolijoAgua(sinEmojis(plan.titulo)); plan.nota = prolijoAgua(sinEmojis(plan.nota));
       if (plan.bloques.length) return plan;
       ultimoError = "No encontré series en lo que mandaste.";
     } catch (e) { ultimoError = e?.message || "No se pudo leer."; }
@@ -8673,7 +8757,8 @@ function CargarPlanAgua({ onCargado }) {
   const [texto, setTexto] = useState("");
   const [estado, setEstado] = useState(null); // { cargando, error, ok }
   const listo = (plan, como) => { onCargado(plan); setModo(null); setTexto(""); setEstado({ ok: `✓ Cargada ${como}: ${fmtMetros(metrosPlanAgua(plan))}. Revisala y elegí quién la ve.` }); };
-  const desdeTexto = async (t, como) => {
+  const desdeTexto = async (t0, como) => {
+    const t = limpiarChatAgua(t0);
     const local = textoAPlanAgua(t);
     if (metrosPlanAgua(local) > 0) { listo(local, como); return; }
     setEstado({ cargando: "Leyendo con IA..." });
@@ -8684,7 +8769,7 @@ function CargarPlanAgua({ onCargado }) {
     <div style={{ background: "rgba(79,195,247,0.07)", border: "1px solid rgba(79,195,247,0.35)", borderRadius: 12, padding: 10, marginBottom: 10 }}>
       <div className="font-body" style={{ color: "#4FC3F7", fontSize: 11, fontWeight: 700, marginBottom: 7 }}>⚡ Cargala sola desde:</div>
       <div style={{ display: "flex", gap: 6 }}>
-        <button onClick={() => { setModo(modo === "texto" ? null : "texto"); setEstado(null); }} className="font-body" style={{ ...boton, borderColor: modo === "texto" ? "#4FC3F7" : "#322E3D" }}>📝 Texto</button>
+        <button onClick={() => { setModo(modo === "texto" ? null : "texto"); setEstado(null); }} className="font-body" style={{ ...boton, borderColor: modo === "texto" ? "#4FC3F7" : "#322E3D" }}>📝 Texto / chat</button>
         <label className="font-body" style={boton}>📊 Excel
           <input type="file" accept=".xlsx,.xls,.csv,.ods" style={{ display: "none" }} onChange={async (e) => {
             const f = e.target.files && e.target.files[0]; e.target.value = ""; if (!f) return;
@@ -8705,7 +8790,7 @@ function CargarPlanAgua({ onCargado }) {
       </div>
       {modo === "texto" && (
         <div style={{ marginTop: 8 }}>
-          <textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={7} placeholder={"Pegá o escribí la sesión, por ejemplo:\n\nEntrada en calor\n400 libre suave\n4x50 técnica espalda c/1:10\n\nPrincipal\n8x100 libre ritmo c/1:45"} className="font-body" style={{ ...inputAgua, width: "100%", resize: "vertical" }} />
+          <textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={7} placeholder={"Pegá el chat tal cual (se limpian horas, nombres y emojis) o escribí la sesión, por ejemplo:\n\nEntrada en calor\n400 libre suave\n4x50 técnica espalda c/1:10\n\nPrincipal\n8x100 libre ritmo c/1:45"} className="font-body" style={{ ...inputAgua, width: "100%", resize: "vertical" }} />
           <button disabled={!texto.trim()} onClick={() => desdeTexto(texto, "del texto")} className="font-body" style={{ width: "100%", marginTop: 6, background: texto.trim() ? "#4FC3F7" : "#26232F", border: "none", borderRadius: 8, color: texto.trim() ? "#0B2230" : "#6B6678", fontWeight: 700, fontSize: 12.5, padding: "9px 0", cursor: texto.trim() ? "pointer" : "default" }}>Pasarlo a la sesión</button>
         </div>
       )}
