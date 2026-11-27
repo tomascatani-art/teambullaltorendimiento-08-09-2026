@@ -74,7 +74,7 @@ export const zoneOf = (v, se) => {
 };
 export const practiceOf = (v, se) => inBands(PRACTICE, v, se);
 // En vivo: en qué fase está trabajando según la velocidad de la repetición (las dos tablas de arriba).
-const COLOR_FASE = '#E85D5D'; // un solo color para todas las fases (Diego, 2026-11-26)
+const COLOR_FASE = '#FF1E1E'; // un solo color para todas las fases (Diego, 2026-11-26)
 export function faseVivo(v) {
   if (!Number.isFinite(v)) return null;
   const z = zoneOf(v), p = practiceOf(v);
