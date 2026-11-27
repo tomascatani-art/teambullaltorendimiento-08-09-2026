@@ -8672,10 +8672,10 @@ function limpiarChatAgua(texto) {
     .replace(/[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}\u{1F3FB}-\u{1F3FF}️‍⃣]+/gu, "")
     .replace(/(^|\s)[*_~]+(\S)/g, "$1$2").replace(/(\S)[*_~]+(?=\s|$|[.,:;!])/g, "$1")
     .replace(/\s*\(editado\)\s*$/i, "").replace(/[✓✔]{1,2}\s*$/, "").trim())
-    .filter((l) => l && !/^\d{1,2}:\d{2}\s*(?:[ap]\.?\s?m\.?)?$/i.test(l)
+    .filter((l) => !l || !/^\d{1,2}:\d{2}\s*(?:[ap]\.?\s?m\.?)?$/i.test(l)
       && !/^(<?multimedia omitido>?|<?media omitted>?|se elimin[oó] este mensaje|este mensaje fue eliminado|mensaje eliminado|los mensajes y las llamadas est[aá]n cifrados.*|hoy|ayer)$/i.test(l)
       && !/^(hola|holi|buen[oa]s|buen d[ií]a|buenas tardes|buenas noches|chic[oa]s|gente|equipo|saludos|abrazo|besos?|nos vemos|vamos|dale|ok|okey|gracias)\b[\s!.,¡]*\w*[\s!.,]*$/i.test(l))
-    .join("\n");
+    .join("\n").replace(/\n{3,}/g, "\n\n");
 }
 // Deja la descripción prolija: primera letra mayúscula, 1'40 → 1:40, espacios de más.
 function prolijoAgua(t) {
@@ -8687,21 +8687,23 @@ function prolijoAgua(t) {
 function textoAPlanAgua(texto) {
   const plan = { ...nuevoPlanAgua(), bloques: [] };
   let bloque = null;
-  const nuevoBloque = (nombre) => { bloque = { id: uid(), nombre: nombreBloqueAgua(nombre), series: [] }; plan.bloques.push(bloque); };
-  String(texto || "").split(/\r?\n/).flatMap((l) => l.split(/\s+\+\s+(?=\d)/)).map((l) => l.trim().replace(/^[•·*–-]\s*/, "")).filter(Boolean).forEach((l) => {
+  let corte = false; // hubo un renglón en blanco: lo que sigue es otro bloque
+  const nuevoBloque = (nombre, auto) => { bloque = { id: uid(), nombre: nombreBloqueAgua(nombre), series: [], auto }; plan.bloques.push(bloque); corte = false; };
+  String(texto || "").split(/\r?\n/).flatMap((l) => l.split(/\s+\+\s+(?=\d)/)).map((l) => l.trim().replace(/^[•·*–-]\s*/, "")).forEach((l) => {
+    if (!l) { if (bloque && bloque.series.length) corte = true; return; }
     if (/^total\b/i.test(l)) return;
     // «EC: 400 libre» o «Principal - 8x100»: el bloque y la primera serie en el mismo renglón
     const mixto = l.match(/^([^\d:–-]{2,30}?)\s*[:–-]?\s*(\d.*)$/);
     if (mixto && leerRenglonAgua(mixto[2])) { nuevoBloque(mixto[1].trim()); bloque.series.push({ id: uid(), ...leerRenglonAgua(mixto[2]) }); return; }
     const s = leerRenglonAgua(l);
-    if (s) { if (!bloque) nuevoBloque("Principal"); bloque.series.push({ id: uid(), ...s }); return; }
+    if (s) { if (!bloque || corte) nuevoBloque("Principal", true); bloque.series.push({ id: uid(), ...s }); return; }
     const limpio = l.replace(/[:：]\s*$/, "").replace(/\s*\(?\d[\d.]*\s*m\)?\s*$/i, "").trim();
     const esTitulo = l.length <= 45 && (NOMBRES_BLOQUE_AGUA.test(limpio) || /:\s*$/.test(l) || (limpio === limpio.toUpperCase() && /[A-ZÁÉÍÓÚÑ]/.test(limpio)));
     if (!plan.titulo && !bloque && !/^(entrada en calor|calentamiento|e\.?c\.?|principal|central)\b/i.test(limpio)) { plan.titulo = (limpio === limpio.toUpperCase() ? limpio.charAt(0) + limpio.slice(1).toLowerCase() : limpio).slice(0, 60); return; }
     if (esTitulo && NOMBRES_BLOQUE_AGUA.test(limpio)) { nuevoBloque(limpio.charAt(0).toUpperCase() + limpio.slice(1).toLowerCase()); return; }
     if (esTitulo && !plan.titulo && !bloque) { plan.titulo = limpio.charAt(0).toUpperCase() + limpio.slice(1).toLowerCase(); return; }
     if (esTitulo) { nuevoBloque(limpio.charAt(0).toUpperCase() + limpio.slice(1).toLowerCase()); return; }
-    if (bloque && bloque.series.length) { bloque.series.push({ id: uid(), reps: "1", metros: "", detalle: l }); return; }
+    if (bloque && bloque.series.length && !corte) { bloque.series.push({ id: uid(), reps: "1", metros: "", detalle: l }); return; }
     if (!plan.titulo && !bloque) { plan.titulo = l.slice(0, 60); return; }
     plan.nota = plan.nota ? `${plan.nota}\n${l}` : l;
   });
@@ -8710,7 +8712,19 @@ function textoAPlanAgua(texto) {
   const sueltos = [];
   while (ultimo && ultimo.series.length > 1 && !ultimo.series[ultimo.series.length - 1].metros) sueltos.unshift(ultimo.series.pop().detalle);
   if (sueltos.length) plan.nota = [plan.nota, ...sueltos].filter(Boolean).join("\n");
-  plan.bloques = plan.bloques.filter((b) => b.series.length).map((b) => ({ ...b, series: b.series.map((x) => ({ ...x, detalle: prolijoAgua(x.detalle) })) }));
+  plan.bloques = plan.bloques.filter((b) => b.series.length);
+  // Bloques separados con un renglón en blanco y sin nombre: el primero es la entrada en calor,
+  // el último la vuelta a la calma y los del medio la parte principal.
+  const n = plan.bloques.length;
+  const usados = new Set(plan.bloques.filter((b) => !b.auto).map((b) => b.nombre.toLowerCase()));
+  plan.bloques.forEach((b, i) => {
+    if (!b.auto || n < 2) return;
+    const sugerido = i === 0 ? "Entrada en calor" : i === n - 1 ? "Vuelta a la calma" : "Principal";
+    let nombre = sugerido, k = 2;
+    while (usados.has(nombre.toLowerCase())) nombre = `${sugerido} ${k++}`;
+    usados.add(nombre.toLowerCase()); b.nombre = nombre;
+  });
+  plan.bloques = plan.bloques.map(({ auto, ...b }) => ({ ...b, series: b.series.map((x) => ({ ...x, detalle: prolijoAgua(x.detalle) })) }));
   plan.titulo = prolijoAgua(plan.titulo); plan.nota = plan.nota ? prolijoAgua(plan.nota) : "";
   return plan;
 }
@@ -8718,14 +8732,14 @@ function textoAPlanAgua(texto) {
 async function excelATextoAgua(file) {
   const XLSX = await import("xlsx");
   const libro = XLSX.read(await file.arrayBuffer(), { type: "array" });
-  return libro.SheetNames.map((n) => XLSX.utils.sheet_to_json(libro.Sheets[n], { header: 1, raw: false, blankrows: false })
-    .map((fila) => fila.filter((c) => c !== null && c !== undefined && String(c).trim() !== "").join(" ")).filter(Boolean).join("\n")).join("\n");
+  return libro.SheetNames.map((n) => XLSX.utils.sheet_to_json(libro.Sheets[n], { header: 1, raw: false, blankrows: true })
+    .map((fila) => (fila || []).filter((c) => c !== null && c !== undefined && String(c).trim() !== "").join(" ")).join("\n")).join("\n\n");
 }
 // La IA (la misma que usa Bull Vision) lee una captura o un texto desordenado y devuelve la sesión.
 async function iaAPlanAgua({ texto, imagenBase64, tipoImagen }) {
   const pedido = `Sos entrenador de natación. ${imagenBase64 ? "En la imagen hay" : "Abajo hay"} una planificación de una sesión de pileta. Pasala a JSON, SIN texto extra, con esta forma exacta:
 {"titulo":"","nota":"","bloques":[{"nombre":"Entrada en calor","series":[{"reps":4,"metros":50,"detalle":"espalda técnica c/1:10"}]}]}
-Reglas: "reps" es la cantidad de repeticiones (1 si es una sola) y "metros" la distancia de cada una. Si hay series anidadas como 2x(4x50) poné reps 8 y metros 50. En "detalle" va el estilo, intensidad, material y salida/descanso, en castellano, tal cual lo escribió el coach. Respetá los nombres de los bloques que aparezcan (EC = Entrada en calor, VC = Vuelta a la calma); si no hay, usá "Principal". En "titulo" no pongas emojis. No inventes nada que no esté. Ignorá los totales. Si es un chat de WhatsApp, ignorá horas, nombres, saludos y charla: quedate solo con la sesión. Escribí el detalle prolijo, con la primera letra en mayúscula y sin emojis.${texto ? `\n\nTEXTO:\n${texto.slice(0, 6000)}` : ""}`;
+Reglas: "reps" es la cantidad de repeticiones (1 si es una sola) y "metros" la distancia de cada una. Si hay series anidadas como 2x(4x50) poné reps 8 y metros 50. En "detalle" va el estilo, intensidad, material y salida/descanso, en castellano, tal cual lo escribió el coach. Un renglón en blanco separa bloques: si no tienen nombre, el primero es "Entrada en calor", el último "Vuelta a la calma" y los del medio "Principal". Respetá los nombres de los bloques que aparezcan (EC = Entrada en calor, VC = Vuelta a la calma); si no hay, usá "Principal". En "titulo" no pongas emojis. No inventes nada que no esté. Ignorá los totales. Si es un chat de WhatsApp, ignorá horas, nombres, saludos y charla: quedate solo con la sesión. Escribí el detalle prolijo, con la primera letra en mayúscula y sin emojis.${texto ? `\n\nTEXTO:\n${texto.slice(0, 6000)}` : ""}`;
   const content = [];
   if (imagenBase64) content.push({ type: "image", source: { type: "base64", media_type: tipoImagen || "image/jpeg", data: imagenBase64 } });
   content.push({ type: "text", text: pedido });
@@ -8818,7 +8832,8 @@ function EditorPlanAgua({ inicial, alumnoIdsIniciales, alumnos, plantelGrupos, o
       {p.bloques.map((b) => (
         <div key={b.id} style={{ background: "#1C1A24", border: "1px solid #322E3D", borderRadius: 12, padding: 10, marginBottom: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-            <input value={b.nombre} onChange={(e) => setBloque(b.id, (x) => ({ ...x, nombre: e.target.value }))} className="font-body" style={{ background: "none", border: "none", color: "#7DD6C0", fontSize: 12, fontWeight: 700, flex: 1, padding: 0, outline: "none", minWidth: 0 }} />
+            <span style={{ color: "#7DD6C0", fontSize: 11, opacity: 0.7 }}>✎</span>
+            <input value={b.nombre} onChange={(e) => setBloque(b.id, (x) => ({ ...x, nombre: e.target.value }))} placeholder="Nombre del bloque" title="Tocá para cambiar el nombre" className="font-body" style={{ background: "none", border: "none", borderBottom: "1px dashed rgba(125,214,192,0.35)", color: "#7DD6C0", fontSize: 12, fontWeight: 700, flex: 1, padding: "0 0 2px", outline: "none", minWidth: 0 }} />
             <span className="font-body" style={{ color: "#8B8698", fontSize: 10.5 }}>{fmtMetros(metrosBloqueAgua(b))}</span>
             <button onClick={() => setP((x) => ({ ...x, bloques: x.bloques.filter((y) => y.id !== b.id) }))} style={{ background: "none", border: "none", color: "#6B6678", fontSize: 12, cursor: "pointer", padding: 0 }}>✕</button>
           </div>
