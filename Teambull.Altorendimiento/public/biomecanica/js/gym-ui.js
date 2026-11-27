@@ -9,6 +9,9 @@ import { fpsHint, fpsVerdict, GUIDE, halfFrameMs, jumpErrCm } from './fpsguide.j
 import { unlock, beep } from './beep.js';
 import { detectJump } from './jumpauto.js';
 import { filmGuide } from './filmguide.js';
+// la pantalla del deportista se carga junto con el resto (no aparte al tocar el botón): si la app se
+// actualiza mientras está abierta, así nunca se mezcla un archivo nuevo con los viejos ya cargados
+import { openScreen, closeScreen } from './gym-screen.js';
 import { EXERCISES, ZONES, PRACTICE, DEFICIT_LIMIT, zoneOf, practiceOf, faseVivo, seriesDeficit, effectiveSet, PLATE_MM, CORTES, corteSerie, barScale, barPath, analyzeBar, barSaved, jumpHeight, dropJump, fvProfile, loadVelocity } from './gym.js';
 
 const $ = (id) => document.getElementById(id);
@@ -108,7 +111,7 @@ export function initGym(helpers) {
     }
   };
   document.addEventListener('fullscreenchange', () => setTimeout(draw, 50));
-  $('gy-screen').onclick = async () => { stopLive(); const m = await import('./gym-screen.js'); m.openScreen(); };
+  $('gy-screen').onclick = () => { stopLive(); openScreen(); };
   $('gy-athlete').addEventListener('change', () => { cargarDatos().then(() => { if (S.mode === 'jump') panel(); }); });
   setMode('bar');
 }
@@ -941,7 +944,7 @@ function stopLive() {
   video().srcObject = null; $('gy-player')?.classList.remove('gy-en-vivo');
   vivoCompleto(false); hudVivo();
 }
-export function leaveGym() { stopLive(); import('./gym-screen.js').then(m => m.closeScreen()).catch(() => {}); }
+export function leaveGym() { stopLive(); closeScreen(); }
 
 // ---------- panel de la derecha ----------
 function panel() {

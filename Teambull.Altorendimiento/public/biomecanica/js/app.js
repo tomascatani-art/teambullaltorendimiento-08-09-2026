@@ -1824,6 +1824,19 @@ initCloud({ show, onReady: async () => {
   if (athleteMode) openAthlete(sheets[0].id); else { show('upload'); refreshSelect(); }
 } });
 
+// Si la app se actualizó mientras estaba abierta (por ejemplo en la tablet, que queda días abierta),
+// una parte que se carga recién al tocar un botón puede venir de la versión nueva y no encajar con la
+// vieja ya cargada: el botón no hacía nada. En ese caso se recarga sola (una vez) y queda todo nuevo.
+window.addEventListener('unhandledrejection', (e) => {
+  const msg = String(e.reason?.message || e.reason || '');
+  if (!/module|import|export named|binding name/i.test(msg)) return;
+  let ultima = 0;
+  try { ultima = Number(sessionStorage.getItem('tb-bio-recarga')) || 0; } catch {}
+  if (Date.now() - ultima < 60000) return; // ya se recargó hace poco: no entrar en un bucle
+  try { sessionStorage.setItem('tb-bio-recarga', String(Date.now())); } catch {}
+  location.reload();
+});
+
 // Acceso para pruebas automatizadas
 window.__swimlab = { state, seekFrame };
 
