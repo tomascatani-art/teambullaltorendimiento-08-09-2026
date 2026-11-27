@@ -8682,6 +8682,7 @@ function prolijoAgua(t) {
   let x = String(t || "").replace(/\s+/g, " ").trim()
     .replace(/(\d)'\s?(\d{2})"?/g, "$1:$2").replace(/(\d)'(?!\d)/g, "$1:00").replace(/(\d)"/g, "$1 s")
     .replace(/\bc\s?\/\s?/gi, "c/ ").replace(/\s+([,.;])/g, "$1").replace(/^[-–:,.]\s*/, "");
+  if (/^[a-záéíóúñ]{1,3}$/i.test(x)) return x.toUpperCase(); // abreviaturas sueltas: «pp» → «PP»
   return x ? x.charAt(0).toUpperCase() + x.slice(1) : "";
 }
 function textoAPlanAgua(texto) {
@@ -8689,7 +8690,7 @@ function textoAPlanAgua(texto) {
   let bloque = null;
   let corte = false; // hubo un renglón en blanco: lo que sigue es otro bloque
   const nuevoBloque = (nombre, auto) => { bloque = { id: uid(), nombre: nombreBloqueAgua(nombre), series: [], auto }; plan.bloques.push(bloque); corte = false; };
-  String(texto || "").split(/\r?\n/).flatMap((l) => l.split(/\s+\+\s+(?=\d)/)).map((l) => l.trim().replace(/^[•·*–-]\s*/, "")).forEach((l) => {
+  String(texto || "").split(/\r?\n/).flatMap((l) => l.split(/\s*\+\s*(?=\d{1,3}\s*[x×*]\s*\(?\s*\d)|\s+\+\s+(?=\d)|\s+(?=\d{1,3}\s*[x×*]\s*\(?\s*\d{2,4}\b)/)).map((l) => l.trim().replace(/^[•·*–-]\s*/, "")).forEach((l) => {
     if (!l) { if (bloque && bloque.series.length) corte = true; return; }
     if (/^total\b/i.test(l)) return;
     // «EC: 400 libre» o «Principal - 8x100»: el bloque y la primera serie en el mismo renglón
@@ -8739,7 +8740,7 @@ async function excelATextoAgua(file) {
 async function iaAPlanAgua({ texto, imagenBase64, tipoImagen }) {
   const pedido = `Sos entrenador de natación. ${imagenBase64 ? "En la imagen hay" : "Abajo hay"} una planificación de una sesión de pileta. Pasala a JSON, SIN texto extra, con esta forma exacta:
 {"titulo":"","nota":"","bloques":[{"nombre":"Entrada en calor","series":[{"reps":4,"metros":50,"detalle":"espalda técnica c/1:10"}]}]}
-Reglas: "reps" es la cantidad de repeticiones (1 si es una sola) y "metros" la distancia de cada una. Si hay series anidadas como 2x(4x50) poné reps 8 y metros 50. En "detalle" va el estilo, intensidad, material y salida/descanso, en castellano, tal cual lo escribió el coach. Un renglón en blanco separa bloques: si no tienen nombre, el primero es "Entrada en calor", el último "Vuelta a la calma" y los del medio "Principal". Respetá los nombres de los bloques que aparezcan (EC = Entrada en calor, VC = Vuelta a la calma); si no hay, usá "Principal". En "titulo" no pongas emojis. No inventes nada que no esté. Ignorá los totales. Si es un chat de WhatsApp, ignorá horas, nombres, saludos y charla: quedate solo con la sesión. Escribí el detalle prolijo, con la primera letra en mayúscula y sin emojis.${texto ? `\n\nTEXTO:\n${texto.slice(0, 6000)}` : ""}`;
+Reglas: "reps" es la cantidad de repeticiones (1 si es una sola) y "metros" la distancia de cada una. Si hay series anidadas como 2x(4x50) poné reps 8 y metros 50. Cada "1x", "2x", "3x"... arranca una serie nueva aunque esté en el mismo renglón o pegada con "+" (ej: "1x200 sensi/nado+1x400 pp" son dos series: 1x200 y 1x400). En "detalle" va el estilo, intensidad, material y salida/descanso, en castellano, tal cual lo escribió el coach. Un renglón en blanco separa bloques: si no tienen nombre, el primero es "Entrada en calor", el último "Vuelta a la calma" y los del medio "Principal". Respetá los nombres de los bloques que aparezcan (EC = Entrada en calor, VC = Vuelta a la calma); si no hay, usá "Principal". En "titulo" no pongas emojis. No inventes nada que no esté. Ignorá los totales. Si es un chat de WhatsApp, ignorá horas, nombres, saludos y charla: quedate solo con la sesión. Escribí el detalle prolijo, con la primera letra en mayúscula y sin emojis.${texto ? `\n\nTEXTO:\n${texto.slice(0, 6000)}` : ""}`;
   const content = [];
   if (imagenBase64) content.push({ type: "image", source: { type: "base64", media_type: tipoImagen || "image/jpeg", data: imagenBase64 } });
   content.push({ type: "text", text: pedido });
