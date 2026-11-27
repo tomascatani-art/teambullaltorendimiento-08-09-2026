@@ -440,3 +440,5 @@ html.vb-full-on .guardar-fijo { display: none !important; }
 .gy-vivo-fase small:first-child { font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: #aaa; }
 .gy-show-fase { display: block; font-weight: 800; text-transform: uppercase; letter-spacing: .02em; }
 .gy-show-calidad { display: block; font-size: .55em; opacity: .85; margin-top: .15em; }
+/* Un solo color (rojo) para la fase en vivo, también en el borde de la pantalla del deportista (Diego, 2026-11-26) */
+.gy-show-stage[data-zone]:not([data-zone=""]) { border-color: #E85D5D; }
